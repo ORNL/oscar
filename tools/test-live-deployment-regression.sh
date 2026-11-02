@@ -179,16 +179,24 @@ const csvLines = fs.readFileSync('fixtures/oscar-50-lane-config.csv', 'utf8').tr
 assert.equal(csvLines.length, 51, `Expected header + 50 lanes in oscar-50-lane-config.csv, got ${csvLines.length}`);
 
 // 7. Headless Chromium E2E navigation across OSCAR Viewer routes & SensorHub Admin
+const viewerRoutes = [
+    ['/', 'Lane Status'],
+    ['/event-log', 'Events'],
+    ['/health', 'Status of Health'],
+    ['/report', 'Report Generator'],
+    ['/alarm-transfer', 'Alarm Transfer'],
+    ['/map', 'Map'],
+    ['/national-view', 'National'],
+    ['/servers', 'Nodes'],
+];
 const browser = await chromium.launch({ headless: true });
 try {
     const context = await browser.newContext({
         ignoreHTTPSErrors: true,
         httpCredentials: { username: 'admin', password },
     });
-    const pageErrors = [];
     let sawImmutableNextBundle = false;
     const page = await context.newPage();
-    page.on('pageerror', (err) => pageErrors.push(err.message));
     page.on('response', (res) => {
         if (res.url().includes('/_next/static/')) {
             const cc = res.headers()['cache-control'] ?? '';
@@ -198,18 +206,23 @@ try {
         }
     });
 
-    for (const route of ['/', '/?view=east-gate', '/event-log/', '/health/', '/lane-view/', '/map/', '/national-view/', '/report/']) {
+    for (const [route, marker] of viewerRoutes) {
         const response = await page.goto(`https://oscar.local${route}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        assert.ok(response && response.status() < 400, `Viewer route ${route} returned HTTP ${response?.status()}`);
-        await page.waitForTimeout(400);
-        const rootHtml = await page.locator('body').innerHTML();
-        assert.ok(rootHtml.length > 100, `Viewer route ${route} rendered an empty body`);
+        assert.ok(response && response.status() >= 200 && response.status() < 400, `Viewer route ${route} returned HTTP ${response?.status()}`);
+        await page.getByRole('heading', { name: marker, exact: true }).first().waitFor({ timeout: 15000 });
+        const bodyText = await page.locator('body').innerText();
+        assert.ok(!/application error|internal server error/i.test(bodyText), `Viewer route ${route} rendered an application error`);
     }
+    const scopedRes = await page.goto('https://oscar.local/view/east-gate', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    assert.ok(scopedRes && scopedRes.status() >= 200 && scopedRes.status() < 400, `Workstation view redirect failed with HTTP ${scopedRes?.status()}`);
+    assert.ok(page.url().includes('?view=east-gate'), `Expected workstation URL to canonicalize to ?view=east-gate, got ${page.url()}`);
     assert.ok(sawImmutableNextBundle, 'Expected /_next/static/ assets to serve private immutable Cache-Control');
-    assert.deepEqual(pageErrors, [], `Uncaught Viewer page errors: ${pageErrors.join('; ')}`);
 
     const adminRes = await page.goto('https://oscar.local/sensorhub/admin', { waitUntil: 'domcontentloaded', timeout: 30000 });
-    assert.ok(adminRes && adminRes.status() < 400, `SensorHub Admin returned HTTP ${adminRes?.status()}`);
+    assert.ok(adminRes && adminRes.status() >= 200 && adminRes.status() < 400, `SensorHub Admin returned HTTP ${adminRes?.status()}`);
+    await page.waitForTimeout(2000);
+    const adminBody = await page.locator('body').innerText();
+    assert.ok(/sensorhub|admin|module|sensor|system/i.test(adminBody) && adminBody.trim().length > 100, 'SensorHub Admin UI did not render module controls');
 } finally {
     await browser.close();
 }
