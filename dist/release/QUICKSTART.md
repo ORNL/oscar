@@ -9,12 +9,14 @@ operations fail closed there.
 
 1. Choose `offline-full` when Docker Desktop or WSL may need installation. Choose `offline-images` when compatible Docker Desktop, WSL 2, and Docker Compose are already installed and running.
 2. Extract the OSCAR ZIP to a local NTFS directory.
-3. On an unattended 24/7 Windows 11 host (including mobile/laptop workstations with USB Gigabit Ethernet or external USB storage), disable sleep, hibernate, USB selective suspend, lid-close sleep, and PnP device power-off from an Administrator Windows PowerShell 5.1 window before starting continuous lane ingestion:
+3. Assign the server's network-governed static IPv4 address (or configure a router DHCP reservation) before initialization so DHCP lease renewals cannot invalidate generated `tls/server.crt` IP SANs. On an unattended 24/7 Windows 11 host (including mobile/laptop workstations with S0 Modern Standby, USB Gigabit Ethernet, or external USB storage), apply unattended server settings from an Administrator Windows PowerShell 5.1 window before starting continuous lane ingestion:
 
 ```powershell
 .\oscar.bat prepare-host
 .\oscar.bat host-check
 ```
+
+   On trusted site LANs where remote workstations connect to HTTPS `443`, pass `-ConfigureLanHttpsFirewall` to `prepare-host`. Sites that govern fixed addresses through router DHCP reservations can pass `-AllowDhcpAddress` to `host-check` or `prepare-host`.
 
 4. Double-click `oscar.bat`, approve the Windows administrator prompt, and enter `init` at the `oscar>` prompt. The launcher uses Windows PowerShell 5.1 (`powershell.exe`).
 5. Alternatively, for scripted or terminal-based setup, run:
@@ -57,9 +59,11 @@ artifact, use `oscar.bat init -Prerequisites existing` to guarantee setup will n
 installers.
 
 If a prerequisite installer requires a Windows restart, restart, sign in to the Windows desktop so
-Docker Desktop starts (and accept its license on first launch; you may then lock the screen with
-`Win+L`), and run `oscar.bat init` again. Docker Desktop license review and acceptance are
-administrator actions; OSCAR never accepts that agreement on the organization's behalf.
+Docker Desktop completes first-time initialization (and accept its license on first launch; you may
+then lock the screen with `Win+L`), run `oscar.bat prepare-host` so pre-login Session-0 (`S4U`) boot
+startup is registered for future reboots, and run `oscar.bat init` again. Docker Desktop license
+review and acceptance are administrator actions; OSCAR never accepts that agreement on the
+organization's behalf.
 
 ## Ubuntu Server 24.04
 

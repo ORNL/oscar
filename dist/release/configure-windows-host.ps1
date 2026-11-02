@@ -5,9 +5,16 @@ param(
     [string[]]$AuthorizeSshPublicKey = @(),
     [string]$AuthorizeSshPublicKeyFile,
     [switch]$ConfigureLanHttpsFirewall,
+    [switch]$AllowDhcpAddress,
     [switch]$KeepHibernate,
     [ValidateRange(0, 1440)]
     [int]$MonitorTimeoutMinutesAc = 0,
+    [ValidateRange(0, 1024)]
+    [int]$WslMemoryGb = 0,
+    [ValidateRange(0, 512)]
+    [int]$WslProcessors = 0,
+    [switch]$ForceWslConfig,
+    [switch]$SkipWslConfig,
     [switch]$Json,
     [switch]$Strict
 )
@@ -45,20 +52,28 @@ function Show-HostPrepHelp {
 OSCAR Windows 11 unattended server preparation
 
   .\configure-windows-host.ps1 [-Mode check|apply] [-Strict] [-Json]
-      [-MonitorTimeoutMinutesAc 0] [-KeepHibernate] [-ConfigureLanHttpsFirewall]
+      [-ConfigureLanHttpsFirewall] [-AllowDhcpAddress]
+      [-WslMemoryGb INT] [-WslProcessors INT] [-ForceWslConfig] [-SkipWslConfig]
+      [-MonitorTimeoutMinutesAc 0] [-KeepHibernate]
       [-AuthorizeSshPublicKey KEY[,KEY...]] [-AuthorizeSshPublicKeyFile FILE]
 
 Modes:
-  check   Read-only audit of sleep, hibernate, disk spin-down, USB selective
-          suspend, PnP USB/NIC power saving, PCIe ASPM, OpenSSH Server,
-          Windows Time, Windows Update auto-restart guard, Win32 long paths,
-          wired LAN firewall profile, WSL 2, and Docker.
+  check   Read-only audit of sleep, S0 Modern Standby display-off guard,
+          hibernate, disk spin-down, USB selective suspend, PnP USB/NIC power
+          saving, PCIe ASPM, kernel crash auto-reboot, OpenSSH Server, Windows
+          Time, Windows Update auto-restart guard, Win32 long paths, primary
+          LAN IPv4 address stability, wired LAN firewall profile, bounded WSL 2
+          resource caps (.wslconfig), and pre-login/ARSO Docker Engine startup.
   apply   Requires an Administrator Windows PowerShell 5.1 session. Applies
           24/7 unattended server settings without resetting active network
-          links, enables Win32 long paths, optionally configures Private wired
-          LAN + scoped HTTPS firewall access (-ConfigureLanHttpsFirewall),
-          optionally enrolls SSH public keys with strict Windows OpenSSH
-          administrators_authorized_keys ACLs, and re-verifies state.
+          links, enables Win32 long paths and kernel crash auto-reboot, writes
+          a hardware-proportional %USERPROFILE%\.wslconfig if none exists,
+          registers both pre-login Session-0 (S4U) and ARSO AtLogOn Docker
+          startup tasks, optionally configures Private wired LAN + scoped HTTPS
+          firewall access (-ConfigureLanHttpsFirewall), optionally enrolls SSH
+          public keys with strict administrators_authorized_keys ACLs, and
+          re-verifies state. Site IPv4 assignment remains governed by the
+          local network (static NIC config or router DHCP reservation).
 '@ | Write-Host
 }
 
@@ -83,7 +98,7 @@ function Assert-NoReparseScriptPath([string]$CandidatePath) {
         if (Test-Path -LiteralPath $current) {
             $item = Get-Item -LiteralPath $current -Force
             if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-                throw "Refusing to run from a symlink, junction, or reparse path: $current"
+                throw "Refusing to run from or write through a symlink, junction, or reparse path: $current"
             }
         }
         $parent = Split-Path -Parent $current
@@ -92,6 +107,55 @@ function Assert-NoReparseScriptPath([string]$CandidatePath) {
         }
         $current = $parent
     }
+}
+
+function Test-ModernStandbyPlatform {
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return $false }
+    try {
+        if (-not ('OscarHostPowerCapabilities' -as [type])) {
+            Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class OscarHostPowerCapabilities {
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct SYSTEM_POWER_CAPABILITIES {
+        [MarshalAs(UnmanagedType.U1)] public bool PowerButtonPresent;
+        [MarshalAs(UnmanagedType.U1)] public bool SleepButtonPresent;
+        [MarshalAs(UnmanagedType.U1)] public bool LidPresent;
+        [MarshalAs(UnmanagedType.U1)] public bool SystemS1;
+        [MarshalAs(UnmanagedType.U1)] public bool SystemS2;
+        [MarshalAs(UnmanagedType.U1)] public bool SystemS3;
+        [MarshalAs(UnmanagedType.U1)] public bool SystemS4;
+        [MarshalAs(UnmanagedType.U1)] public bool SystemS5;
+        [MarshalAs(UnmanagedType.U1)] public bool HiberFilePresent;
+        [MarshalAs(UnmanagedType.U1)] public bool FullWake;
+        [MarshalAs(UnmanagedType.U1)] public bool VideoDimPresent;
+        [MarshalAs(UnmanagedType.U1)] public bool ApmPresent;
+        [MarshalAs(UnmanagedType.U1)] public bool UpsPresent;
+        [MarshalAs(UnmanagedType.U1)] public bool ThermalControl;
+        [MarshalAs(UnmanagedType.U1)] public bool ProcessorThrottle;
+        public byte ProcessorMinThrottle;
+        public byte ProcessorMaxThrottle;
+        [MarshalAs(UnmanagedType.U1)] public bool FastSystemS4;
+        public byte Hiberboot;
+        [MarshalAs(UnmanagedType.U1)] public bool WakeAlarmPresent;
+        [MarshalAs(UnmanagedType.U1)] public bool AoAc;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 64)] public byte[] Reserved;
+    }
+    [DllImport("powrprof.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.U1)]
+    public static extern bool GetPwrCapabilities(out SYSTEM_POWER_CAPABILITIES lpSystemPowerCapabilities);
+}
+'@
+        }
+        $caps = New-Object OscarHostPowerCapabilities+SYSTEM_POWER_CAPABILITIES
+        if ([OscarHostPowerCapabilities]::GetPwrCapabilities([ref]$caps)) {
+            return [bool]$caps.AoAc
+        }
+    } catch {
+        return $false
+    }
+    return $false
 }
 
 function Test-ValidSshPublicKeyLine([string]$Line) {
@@ -207,6 +271,72 @@ function Test-HibernateEnabled {
     return ([int]$props.HibernateEnabled -ne 0)
 }
 
+function Protect-SystemAdminDirectory([string]$DirectoryPath) {
+    Assert-NoReparseScriptPath $DirectoryPath
+    if (-not (Test-Path -LiteralPath $DirectoryPath -PathType Container)) {
+        New-Item -ItemType Directory -Path $DirectoryPath -Force | Out-Null
+    }
+    Assert-NoReparseScriptPath $DirectoryPath
+    $systemSid = New-Object Security.Principal.SecurityIdentifier('S-1-5-18')
+    $adminsSid = New-Object Security.Principal.SecurityIdentifier('S-1-5-32-544')
+    $acl = New-Object Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)
+    $acl.SetOwner($adminsSid)
+    $fullControl = [Security.AccessControl.FileSystemRights]::FullControl
+    $inheritFlags = [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+    $propFlags = [Security.AccessControl.PropagationFlags]::None
+    $allow = [Security.AccessControl.AccessControlType]::Allow
+    $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($systemSid, $fullControl, $inheritFlags, $propFlags, $allow)))
+    $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($adminsSid, $fullControl, $inheritFlags, $propFlags, $allow)))
+    Set-Acl -LiteralPath $DirectoryPath -AclObject $acl
+}
+
+function Set-ProtectedSystemAdminScript([string]$ScriptPath, [string]$ScriptContent) {
+    $parentDir = Split-Path -Parent $ScriptPath
+    Protect-SystemAdminDirectory $parentDir
+    Assert-NoReparseScriptPath $ScriptPath
+    [IO.File]::WriteAllText($ScriptPath, $ScriptContent, $Utf8NoBom)
+
+    $systemSid = New-Object Security.Principal.SecurityIdentifier('S-1-5-18')
+    $adminsSid = New-Object Security.Principal.SecurityIdentifier('S-1-5-32-544')
+    $acl = New-Object Security.AccessControl.FileSecurity
+    $acl.SetAccessRuleProtection($true, $false)
+    $acl.SetOwner($adminsSid)
+    $fullControl = [Security.AccessControl.FileSystemRights]::FullControl
+    $allow = [Security.AccessControl.AccessControlType]::Allow
+    $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($systemSid, $fullControl, $allow)))
+    $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($adminsSid, $fullControl, $allow)))
+    Set-Acl -LiteralPath $ScriptPath -AclObject $acl
+}
+
+function Test-ProtectedSystemAdminAcl([string]$TargetPath, [bool]$ExpectDirectory) {
+    $expectedType = if ($ExpectDirectory) { 'Container' } else { 'Leaf' }
+    if (-not (Test-Path -LiteralPath $TargetPath -PathType $expectedType)) {
+        return [pscustomobject]@{ Present = $false; Compliant = $true; Detail = 'not present' }
+    }
+    try {
+        Assert-NoReparseScriptPath $TargetPath
+    } catch {
+        return [pscustomobject]@{ Present = $true; Compliant = $false; Detail = 'contains a reparse point' }
+    }
+    $acl = Get-Acl -LiteralPath $TargetPath
+    if (-not $acl.AreAccessRulesProtected) {
+        return [pscustomobject]@{ Present = $true; Compliant = $false; Detail = 'inheritance is still enabled' }
+    }
+    $allowedSids = @('S-1-5-18', 'S-1-5-32-544')
+    foreach ($rule in $acl.GetAccessRules($true, $false, [Security.Principal.SecurityIdentifier])) {
+        if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
+            -not ($allowedSids -ccontains $rule.IdentityReference.Value)) {
+            return [pscustomobject]@{
+                Present = $true
+                Compliant = $false
+                Detail = "unexpected principal granted access: $($rule.IdentityReference.Value)"
+            }
+        }
+    }
+    return [pscustomobject]@{ Present = $true; Compliant = $true; Detail = 'SYSTEM and Administrators only (inheritance disabled)' }
+}
+
 function Set-ProtectedAdministratorsAuthorizedKeys([string]$AuthorizedKeysPath, [string[]]$NewKeys) {
     $sshProgramDataDir = Split-Path -Parent $AuthorizedKeysPath
     if (-not (Test-Path -LiteralPath $sshProgramDataDir -PathType Container)) {
@@ -245,25 +375,7 @@ function Set-ProtectedAdministratorsAuthorizedKeys([string]$AuthorizedKeysPath, 
 }
 
 function Test-ProtectedAdministratorsAuthorizedKeysAcl([string]$AuthorizedKeysPath) {
-    if (-not (Test-Path -LiteralPath $AuthorizedKeysPath -PathType Leaf)) {
-        return [pscustomobject]@{ Present = $false; Compliant = $true; Detail = 'not present' }
-    }
-    $acl = Get-Acl -LiteralPath $AuthorizedKeysPath
-    if (-not $acl.AreAccessRulesProtected) {
-        return [pscustomobject]@{ Present = $true; Compliant = $false; Detail = 'inheritance is still enabled' }
-    }
-    $allowedSids = @('S-1-5-18', 'S-1-5-32-544')
-    foreach ($rule in $acl.GetAccessRules($true, $false, [Security.Principal.SecurityIdentifier])) {
-        if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
-            -not ($allowedSids -ccontains $rule.IdentityReference.Value)) {
-            return [pscustomobject]@{
-                Present = $true
-                Compliant = $false
-                Detail = "unexpected principal granted access: $($rule.IdentityReference.Value)"
-            }
-        }
-    }
-    return [pscustomobject]@{ Present = $true; Compliant = $true; Detail = 'SYSTEM and Administrators only (inheritance disabled)' }
+    return (Test-ProtectedSystemAdminAcl $AuthorizedKeysPath $false)
 }
 
 function Get-ServerTargetDeviceInstanceIds {
@@ -333,7 +445,330 @@ function Invoke-DisableDevicePowerSaving([bool]$ApplyChanges) {
     }
 }
 
+function Get-HostHardwareCapacity {
+    $memoryGiB = 0.0
+    if (Get-Command Get-CimInstance -ErrorAction SilentlyContinue) {
+        $cs = Get-CimInstance -Namespace 'root\cimv2' -ClassName 'Win32_ComputerSystem' -ErrorAction SilentlyContinue
+        if ($null -ne $cs -and $null -ne $cs.TotalPhysicalMemory -and [double]$cs.TotalPhysicalMemory -gt 0) {
+            $memoryGiB = [double]$cs.TotalPhysicalMemory / 1GB
+        } else {
+            $os = Get-CimInstance -Namespace 'root\cimv2' -ClassName 'Win32_OperatingSystem' -ErrorAction SilentlyContinue
+            if ($null -ne $os -and $null -ne $os.TotalVisibleMemorySize -and [double]$os.TotalVisibleMemorySize -gt 0) {
+                $memoryGiB = [double]$os.TotalVisibleMemorySize / 1MB
+            }
+        }
+    }
+    return [pscustomobject]@{
+        TotalMemoryGiB = $memoryGiB
+        LogicalProcessors = [int][Environment]::ProcessorCount
+    }
+}
+
+function Get-RecommendedWslResourceLimits([double]$TotalHostMemoryGiB, [int]$LogicalProcessors) {
+    $memoryGb = if ($TotalHostMemoryGiB -ge 20.0) {
+        [Math]::Min(32, [Math]::Max(8, [int][Math]::Round($TotalHostMemoryGiB * 0.38)))
+    } elseif ($TotalHostMemoryGiB -gt 0.0) {
+        [Math]::Max(4, [int][Math]::Round($TotalHostMemoryGiB * 0.45))
+    } else {
+        8
+    }
+    $processors = if ($LogicalProcessors -ge 6) {
+        $LogicalProcessors - [Math]::Max(2, [int][Math]::Floor($LogicalProcessors * 0.125))
+    } elseif ($LogicalProcessors -ge 4) {
+        $LogicalProcessors - 1
+    } elseif ($LogicalProcessors -gt 0) {
+        $LogicalProcessors
+    } else {
+        4
+    }
+    return [pscustomobject]@{
+        MemoryGb = $memoryGb
+        Processors = $processors
+        SwapGb = 4
+    }
+}
+
+function Get-WslConfigSectionValues([string]$Content) {
+    $inWsl2 = $false
+    $hasSection = $false
+    $memoryVal = ''
+    $processorsVal = ''
+    $swapVal = ''
+    if (-not [string]::IsNullOrWhiteSpace($Content)) {
+        foreach ($rawLine in ($Content -split '\r?\n')) {
+            $line = $rawLine.Trim()
+            if ([string]::IsNullOrWhiteSpace($line) -or $line.StartsWith('#') -or $line.StartsWith(';')) {
+                continue
+            }
+            if ($line -match '^\[([^\]]+)\]$') {
+                $inWsl2 = ([String]::Equals($Matches[1].Trim(), 'wsl2', [StringComparison]::OrdinalIgnoreCase))
+                if ($inWsl2) { $hasSection = $true }
+                continue
+            }
+            if ($inWsl2) {
+                $eqIndex = $line.IndexOf('=')
+                if ($eqIndex -gt 0) {
+                    $key = $line.Substring(0, $eqIndex).Trim().ToLowerInvariant()
+                    $val = ($line.Substring($eqIndex + 1) -replace '\s*[#;].*$', '').Trim()
+                    switch ($key) {
+                        'memory' { $memoryVal = $val }
+                        'processors' { $processorsVal = $val }
+                        'swap' { $swapVal = $val }
+                    }
+                }
+            }
+        }
+    }
+    return [pscustomobject]@{
+        HasWsl2Section = $hasSection
+        Memory = $memoryVal
+        Processors = $processorsVal
+        Swap = $swapVal
+    }
+}
+
+function Get-TargetUserProfileWslConfigPath {
+    $profileDir = $env:USERPROFILE
+    if ([string]::IsNullOrWhiteSpace($profileDir)) { return $null }
+    $fullProfile = [IO.Path]::GetFullPath($profileDir)
+    $sysRoot = $env:SystemRoot
+    if (-not [string]::IsNullOrWhiteSpace($sysRoot)) {
+        $fullSysRoot = [IO.Path]::GetFullPath($sysRoot).TrimEnd('\') + '\'
+        if ($fullProfile.StartsWith($fullSysRoot, [StringComparison]::OrdinalIgnoreCase)) {
+            return $null
+        }
+    }
+    return (Join-Path $fullProfile '.wslconfig')
+}
+
+function Ensure-BoundedWslConfig([bool]$ApplyChanges, [string]$ExplicitPath = '') {
+    $targetPath = if (-not [string]::IsNullOrWhiteSpace($ExplicitPath)) {
+        [IO.Path]::GetFullPath($ExplicitPath)
+    } else {
+        Get-TargetUserProfileWslConfigPath
+    }
+    if ([string]::IsNullOrWhiteSpace($targetPath)) {
+        return [pscustomobject]@{
+            Applicable = $false
+            Present = $false
+            Bounded = $false
+            WroteFile = $false
+            Memory = ''
+            Processors = ''
+            Detail = 'interactive administrator USERPROFILE unavailable'
+        }
+    }
+    Assert-NoReparseScriptPath $targetPath
+    $exists = Test-Path -LiteralPath $targetPath -PathType Leaf
+    $wroteFile = $false
+    $shouldWrite = $ApplyChanges -and (-not $SkipWslConfig) -and (
+        (-not $exists) -or $ForceWslConfig -or $WslMemoryGb -gt 0 -or $WslProcessors -gt 0
+    )
+    if ($shouldWrite) {
+        $parentDir = Split-Path -Parent $targetPath
+        if (-not (Test-Path -LiteralPath $parentDir -PathType Container)) {
+            New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
+        }
+        Assert-NoReparseScriptPath $targetPath
+        $capacity = Get-HostHardwareCapacity
+        $recommended = Get-RecommendedWslResourceLimits $capacity.TotalMemoryGiB $capacity.LogicalProcessors
+        $effectiveMemoryGb = if ($WslMemoryGb -gt 0) { $WslMemoryGb } else { $recommended.MemoryGb }
+        $effectiveProcessors = if ($WslProcessors -gt 0) { $WslProcessors } else { $recommended.Processors }
+        $wslLines = @(
+            '[wsl2]',
+            "memory=${effectiveMemoryGb}GB",
+            "processors=$effectiveProcessors",
+            "swap=$($recommended.SwapGb)GB"
+        )
+        [IO.File]::WriteAllText($targetPath, (($wslLines -join "`r`n") + "`r`n"), $Utf8NoBom)
+        $exists = $true
+        $wroteFile = $true
+    }
+    if (-not $exists) {
+        return [pscustomobject]@{
+            Applicable = $true
+            Present = $false
+            Bounded = $false
+            WroteFile = $false
+            Memory = ''
+            Processors = ''
+            Detail = '.wslconfig is not present; vmmemWSL has no explicit host RAM/CPU reservation'
+        }
+    }
+    $parsed = Get-WslConfigSectionValues ([IO.File]::ReadAllText($targetPath))
+    $bounded = (-not [string]::IsNullOrWhiteSpace($parsed.Memory) -and -not [string]::IsNullOrWhiteSpace($parsed.Processors))
+    $detail = if ($bounded) {
+        "memory=$($parsed.Memory), processors=$($parsed.Processors)" + $(if (-not [string]::IsNullOrWhiteSpace($parsed.Swap)) { ", swap=$($parsed.Swap)" } else { '' })
+    } elseif (-not [string]::IsNullOrWhiteSpace($parsed.Memory)) {
+        ".wslconfig sets memory=$($parsed.Memory) without processors= cap"
+    } elseif (-not [string]::IsNullOrWhiteSpace($parsed.Processors)) {
+        ".wslconfig sets processors=$($parsed.Processors) without memory= cap"
+    } else {
+        '.wslconfig has no [wsl2] memory= and processors= limits'
+    }
+    return [pscustomobject]@{
+        Applicable = $true
+        Present = $true
+        Bounded = $bounded
+        WroteFile = $wroteFile
+        Memory = $parsed.Memory
+        Processors = $parsed.Processors
+        Detail = $detail
+    }
+}
+
+function Ensure-CrashAutoReboot([bool]$ApplyChanges, [string]$RegistryPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\CrashControl') {
+    if ($ApplyChanges) {
+        if (-not (Test-Path -LiteralPath $RegistryPath)) {
+            New-Item -Path $RegistryPath -Force | Out-Null
+        }
+        Set-ItemProperty -LiteralPath $RegistryPath -Name 'AutoReboot' -Value 1 -Type DWord
+        $currentProps = Get-ItemProperty -LiteralPath $RegistryPath -ErrorAction SilentlyContinue
+        $currentDump = if ($null -ne $currentProps -and $null -ne $currentProps.PSObject.Properties['CrashDumpEnabled']) {
+            [int]$currentProps.CrashDumpEnabled
+        } else {
+            0
+        }
+        if ($currentDump -notin @(1, 2, 3, 7)) {
+            Set-ItemProperty -LiteralPath $RegistryPath -Name 'CrashDumpEnabled' -Value 7 -Type DWord
+        }
+    }
+    if (-not (Test-Path -LiteralPath $RegistryPath)) {
+        return [pscustomobject]@{
+            Compliant = $false
+            AutoReboot = $null
+            CrashDumpEnabled = $null
+            Detail = 'CrashControl registry key missing'
+        }
+    }
+    $props = Get-ItemProperty -LiteralPath $RegistryPath -ErrorAction SilentlyContinue
+    $autoReboot = if ($null -ne $props -and $null -ne $props.PSObject.Properties['AutoReboot']) { [int]$props.AutoReboot } else { 0 }
+    $crashDump = if ($null -ne $props -and $null -ne $props.PSObject.Properties['CrashDumpEnabled']) { [int]$props.CrashDumpEnabled } else { 0 }
+    $compliant = ($autoReboot -eq 1 -and $crashDump -in @(1, 2, 3, 7))
+    return [pscustomobject]@{
+        Compliant = $compliant
+        AutoReboot = $autoReboot
+        CrashDumpEnabled = $crashDump
+        Detail = "AutoReboot=$autoReboot, CrashDumpEnabled=$crashDump"
+    }
+}
+
+$DockerBootStartTaskName = 'OSCAR-DockerDesktop-BootStart'
 $DockerAutoStartTaskName = 'OSCAR-DockerDesktop-AutoStart'
+
+function Get-DockerPreloginScriptPath {
+    return (Join-Path $env:ProgramData 'OSCAR\start-docker-prelogin.ps1')
+}
+
+function Get-DockerPreloginScriptContent {
+    return (@'
+$ErrorActionPreference = 'Continue'
+$dockerCli = Join-Path $env:ProgramFiles 'Docker\Docker\resources\bin\docker.exe'
+$backendExe = Join-Path $env:ProgramFiles 'Docker\Docker\resources\com.docker.backend.exe'
+if (-not (Test-Path -LiteralPath $dockerCli -PathType Leaf)) { exit 0 }
+
+& $dockerCli info *> $null
+if ($LASTEXITCODE -eq 0) { exit 0 }
+
+$svc = Get-Service -Name 'com.docker.service' -ErrorAction SilentlyContinue
+if ($null -ne $svc -and $svc.Status -ne 'Running') {
+    Start-Service -Name 'com.docker.service' -ErrorAction SilentlyContinue
+}
+
+& $dockerCli desktop start --detach *> $null
+
+$deadline = [DateTime]::UtcNow.AddSeconds(60)
+$startedBackendFallback = $false
+while ([DateTime]::UtcNow -lt $deadline) {
+    Start-Sleep -Seconds 3
+    & $dockerCli info *> $null
+    if ($LASTEXITCODE -eq 0) { exit 0 }
+    if (-not $startedBackendFallback -and
+        -not (Get-Process -Name 'com.docker.backend' -ErrorAction SilentlyContinue) -and
+        (Test-Path -LiteralPath $backendExe -PathType Leaf)) {
+        Start-Process -FilePath $backendExe -WindowStyle Hidden
+        $startedBackendFallback = $true
+    }
+}
+
+$finalDeadline = [DateTime]::UtcNow.AddSeconds(90)
+while ([DateTime]::UtcNow -lt $finalDeadline) {
+    Start-Sleep -Seconds 3
+    & $dockerCli info *> $null
+    if ($LASTEXITCODE -eq 0) { exit 0 }
+}
+exit 1
+'@.Replace("`r`n", "`n") + "`n")
+}
+
+function Ensure-DockerDesktopBootStartTask([bool]$ApplyChanges) {
+    $dockerExe = Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe'
+    $installed = Test-Path -LiteralPath $dockerExe -PathType Leaf
+    if (-not $installed) {
+        return [pscustomobject]@{
+            Installed = $false
+            Registered = $false
+            AclCompliant = $true
+            Detail = 'Docker Desktop executable not present'
+        }
+    }
+    if (-not (Get-Command Get-ScheduledTask -ErrorAction SilentlyContinue)) {
+        return [pscustomobject]@{
+            Installed = $true
+            Registered = $false
+            AclCompliant = $true
+            Detail = 'ScheduledTasks module unavailable'
+        }
+    }
+    $scriptPath = Get-DockerPreloginScriptPath
+    $parentDir = Split-Path -Parent $scriptPath
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $isSystemIdentity = ($null -ne $identity.User -and $identity.User.Value -eq 'S-1-5-18')
+
+    if ($ApplyChanges -and (Test-HostAdministrator)) {
+        Set-ProtectedSystemAdminScript $scriptPath (Get-DockerPreloginScriptContent)
+        if (-not $isSystemIdentity) {
+            $psExe = Join-Path $PSHOME 'powershell.exe'
+            $action = New-ScheduledTaskAction -Execute $psExe -Argument ('-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $scriptPath + '"')
+            $trigger = New-ScheduledTaskTrigger -AtStartup
+            $trigger.Delay = 'PT10S'
+            $principal = New-ScheduledTaskPrincipal -UserId $identity.Name -LogonType S4U -RunLevel Highest
+            $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+                -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -MultipleInstances IgnoreNew
+            Register-ScheduledTask -TaskName $DockerBootStartTaskName -Action $action -Trigger $trigger `
+                -Principal $principal -Settings $settings -Force | Out-Null
+        }
+    }
+
+    $existing = Get-ScheduledTask -TaskName $DockerBootStartTaskName -ErrorAction SilentlyContinue
+    $registered = ($null -ne $existing -and [string]$existing.State -ne 'Disabled')
+    $dirAcl = Test-ProtectedSystemAdminAcl $parentDir $true
+    $fileAcl = Test-ProtectedSystemAdminAcl $scriptPath $false
+    $aclCompliant = ((-not $dirAcl.Present -or $dirAcl.Compliant) -and
+        (-not $fileAcl.Present -or $fileAcl.Compliant) -and
+        (-not $registered -or ($dirAcl.Present -and $fileAcl.Present)))
+    $detail = if (-not $aclCompliant) {
+        if ($dirAcl.Present -and -not $dirAcl.Compliant) {
+            "pre-login script directory ACL invalid ($($dirAcl.Detail))"
+        } elseif ($fileAcl.Present -and -not $fileAcl.Compliant) {
+            "pre-login script ACL invalid ($($fileAcl.Detail))"
+        } else {
+            'pre-login script missing for registered boot task'
+        }
+    } elseif ($registered) {
+        "S4U boot task=$DockerBootStartTaskName"
+    } elseif ($isSystemIdentity) {
+        'S4U boot task requires running -Mode apply as the installing administrator account'
+    } else {
+        'S4U boot task missing'
+    }
+    return [pscustomobject]@{
+        Installed = $true
+        Registered = $registered
+        AclCompliant = $aclCompliant
+        Detail = $detail
+    }
+}
 
 function Ensure-DockerDesktopAutoStartTask([bool]$ApplyChanges) {
     $dockerExe = Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe'
@@ -344,9 +779,11 @@ function Ensure-DockerDesktopAutoStartTask([bool]$ApplyChanges) {
     if (-not (Get-Command Get-ScheduledTask -ErrorAction SilentlyContinue)) {
         return [pscustomobject]@{ Installed = $true; Registered = $false; Detail = 'ScheduledTasks module unavailable' }
     }
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $isSystemIdentity = ($null -ne $identity.User -and $identity.User.Value -eq 'S-1-5-18')
     $existing = Get-ScheduledTask -TaskName $DockerAutoStartTaskName -ErrorAction SilentlyContinue
-    if ($ApplyChanges -and (Test-HostAdministrator)) {
-        $currentUserName = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+    if ($ApplyChanges -and (Test-HostAdministrator) -and -not $isSystemIdentity) {
+        $currentUserName = $identity.Name
         $action = New-ScheduledTaskAction -Execute $dockerExe -Argument '-Autostart'
         $trigger = New-ScheduledTaskTrigger -AtLogOn -User $currentUserName
         $principal = New-ScheduledTaskPrincipal -UserId $currentUserName -LogonType Interactive -RunLevel Limited
@@ -435,6 +872,67 @@ function Ensure-DockerDesktopAutoStart([bool]$ApplyChanges) {
     return [pscustomobject]@{ Present = $false; AutoStart = $false; ResourceSaverOff = $false; Detail = 'Docker Desktop user settings not yet initialized' }
 }
 
+function Get-ActivePhysicalServerIpRecords {
+    $wiredRecords = New-Object System.Collections.ArrayList
+    $otherRecords = New-Object System.Collections.ArrayList
+    if (-not (Get-Command Get-NetAdapter -ErrorAction SilentlyContinue) -or
+        -not (Get-Command Get-NetIPAddress -ErrorAction SilentlyContinue)) {
+        return @()
+    }
+    $physicalUp = @(Get-NetAdapter -ErrorAction SilentlyContinue |
+        Where-Object { $_.Status -eq 'Up' -and $_.HardwareInterface })
+    foreach ($adapter in $physicalUp) {
+        $ips = @(Get-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' })
+        foreach ($ip in $ips) {
+            $record = [pscustomobject]@{
+                InterfaceName = [string]$adapter.Name
+                MediaType = [string]$adapter.MediaType
+                IPAddress = [string]$ip.IPAddress
+                PrefixLength = [int]$ip.PrefixLength
+                PrefixOrigin = [string]$ip.PrefixOrigin
+            }
+            if ([string]$adapter.MediaType -eq '802.3') {
+                [void]$wiredRecords.Add($record)
+            } else {
+                [void]$otherRecords.Add($record)
+            }
+        }
+    }
+    if ($wiredRecords.Count -gt 0) {
+        return $wiredRecords.ToArray()
+    }
+    return $otherRecords.ToArray()
+}
+
+function Get-NetworkAddressStabilityStatus([bool]$AllowDhcp = $false) {
+    $records = @(Get-ActivePhysicalServerIpRecords)
+    if ($records.Count -eq 0) {
+        return [pscustomobject]@{
+            Status = 'WARN'
+            Summary = 'No active physical IPv4 LAN interface detected'
+        }
+    }
+    $formatted = @($records | ForEach-Object { "$($_.InterfaceName)=$($_.IPAddress)/$($_.PrefixLength) [$($_.PrefixOrigin)]" }) -join ', '
+    $nonManual = @($records | Where-Object { $_.PrefixOrigin -ne 'Manual' })
+    if ($nonManual.Count -eq 0) {
+        return [pscustomobject]@{
+            Status = 'PASS'
+            Summary = "Primary LAN IPv4 is statically assigned ($formatted)"
+        }
+    }
+    if ($AllowDhcp) {
+        return [pscustomobject]@{
+            Status = 'PASS'
+            Summary = "Primary LAN IPv4 uses network-governed DHCP reservation (-AllowDhcpAddress: $formatted)"
+        }
+    }
+    return [pscustomobject]@{
+        Status = 'WARN'
+        Summary = "Primary LAN IPv4 uses DHCP ($formatted); assign your network's static IPv4 or configure a router DHCP reservation before 'oscar.bat init' so lease changes do not invalidate TLS IP SANs (or pass -AllowDhcpAddress)"
+    }
+}
+
 function Get-HostNetworkSummary {
     $items = New-Object System.Collections.ArrayList
     if (-not (Get-Command Get-NetAdapter -ErrorAction SilentlyContinue)) { return @() }
@@ -444,7 +942,7 @@ function Get-HostNetworkSummary {
         if (Get-Command Get-NetIPAddress -ErrorAction SilentlyContinue) {
             $ips = @(Get-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
                 Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
-                ForEach-Object { "$($_.IPAddress)/$($_.PrefixLength)" })
+                ForEach-Object { "$($_.IPAddress)/$($_.PrefixLength) ($($_.PrefixOrigin))" })
         }
         [void]$items.Add([pscustomobject]@{
             Name = [string]$adapter.Name
@@ -460,6 +958,9 @@ function Get-HostNetworkSummary {
 
 function Invoke-WindowsHostApply([string[]]$ResolvedSshKeys) {
     Assert-HostAdministrator
+    if ($MonitorTimeoutMinutesAc -gt 0 -and (Test-ModernStandbyPlatform)) {
+        throw "Refusing -MonitorTimeoutMinutesAc $MonitorTimeoutMinutesAc on an S0 Low Power Idle (Modern Standby) system because Windows enters Modern Standby (Kernel-Power 506) when the display turns off. Leave -MonitorTimeoutMinutesAc at 0 (Never)."
+    }
     $expectedVideoSecondsAc = $MonitorTimeoutMinutesAc * 60
 
     & powercfg.exe /change standby-timeout-ac 0 *> $null
@@ -488,6 +989,7 @@ function Invoke-WindowsHostApply([string[]]$ResolvedSshKeys) {
     }
 
     [void](Invoke-DisableDevicePowerSaving $true)
+    [void](Ensure-CrashAutoReboot $true)
 
     $sshdService = Get-Service -Name 'sshd' -ErrorAction SilentlyContinue
     if ($null -ne $sshdService) {
@@ -557,6 +1059,8 @@ function Invoke-WindowsHostApply([string[]]$ResolvedSshKeys) {
         }
     }
 
+    [void](Ensure-BoundedWslConfig $true)
+
     $dockerService = Get-Service -Name 'com.docker.service' -ErrorAction SilentlyContinue
     if ($null -ne $dockerService) {
         Set-Service -Name 'com.docker.service' -StartupType Automatic
@@ -565,8 +1069,10 @@ function Invoke-WindowsHostApply([string[]]$ResolvedSshKeys) {
         }
     }
     [void](Ensure-DockerDesktopAutoStart $true)
+    $bootTaskState = Ensure-DockerDesktopBootStartTask $true
     $taskState = Ensure-DockerDesktopAutoStartTask $true
-    if ($taskState.Registered -and (Get-Command docker -ErrorAction SilentlyContinue) -and
+    if (($bootTaskState.Registered -or $taskState.Registered) -and
+        (Get-Command docker -ErrorAction SilentlyContinue) -and
         (Get-Command Start-ScheduledTask -ErrorAction SilentlyContinue)) {
         $engineUp = $false
         $prevPref = $ErrorActionPreference
@@ -578,8 +1084,24 @@ function Invoke-WindowsHostApply([string[]]$ResolvedSshKeys) {
             $ErrorActionPreference = $prevPref
         }
         if (-not $engineUp) {
-            try {
-                Start-ScheduledTask -TaskName $DockerAutoStartTaskName -ErrorAction Stop
+            $startedAnyTask = $false
+            if ($bootTaskState.Registered) {
+                try {
+                    Start-ScheduledTask -TaskName $DockerBootStartTaskName -ErrorAction Stop
+                    $startedAnyTask = $true
+                } catch {
+                    $startedAnyTask = $false
+                }
+            }
+            if (-not $startedAnyTask -and $taskState.Registered) {
+                try {
+                    Start-ScheduledTask -TaskName $DockerAutoStartTaskName -ErrorAction Stop
+                    $startedAnyTask = $true
+                } catch {
+                    $startedAnyTask = $false
+                }
+            }
+            if ($startedAnyTask) {
                 $deadline = [DateTime]::UtcNow.AddSeconds(90)
                 while ([DateTime]::UtcNow -lt $deadline) {
                     Start-Sleep -Seconds 3
@@ -592,8 +1114,6 @@ function Invoke-WindowsHostApply([string[]]$ResolvedSshKeys) {
                         $ErrorActionPreference = $prevLoopPref
                     }
                 }
-            } catch {
-                # If no interactive user session is currently signed in on the console, Task Scheduler leaves startup for next logon.
             }
         }
     }
@@ -617,6 +1137,20 @@ function Get-WindowsHostReadinessReport {
         & $addCheck 'sleep-timeout' 'PASS' "AC=$($standby.AcValue)s, DC=$($standby.DcValue)s (Never)"
     } else {
         & $addCheck 'sleep-timeout' 'FAIL' "AC=$($standby.AcValue)s, DC=$($standby.DcValue)s (expected 0/0)"
+    }
+
+    $videoIdle = Get-PowerCfgSettingValues $SubVideoGuid $SettingVideoIdleGuid
+    $modernStandby = Test-ModernStandbyPlatform
+    if ($null -eq $videoIdle) {
+        & $addCheck 'display-timeout' 'PASS' 'Display idle timeout not exposed on this platform'
+    } elseif ($modernStandby) {
+        if ($videoIdle.AcValue -eq 0 -and ($null -eq $videoIdle.DcValue -or $videoIdle.DcValue -eq 0)) {
+            & $addCheck 'display-timeout' 'PASS' "AC=$($videoIdle.AcValue)s, DC=$($videoIdle.DcValue)s (Never; prevents S0 Modern Standby entry on idle display-off)"
+        } else {
+            & $addCheck 'display-timeout' 'FAIL' "AC=$($videoIdle.AcValue)s, DC=$($videoIdle.DcValue)s on S0 Modern Standby platform (display-off triggers Kernel-Power 506 Modern Standby; run -Mode apply)"
+        }
+    } else {
+        & $addCheck 'display-timeout' 'PASS' "AC=$($videoIdle.AcValue)s, DC=$($videoIdle.DcValue)s (S0 Modern Standby not active)"
     }
 
     $unattend = Get-PowerCfgSettingValues $SubSleepGuid $SettingUnattendSleepGuid
@@ -698,6 +1232,13 @@ function Get-WindowsHostReadinessReport {
         & $addCheck 'pnp-device-power-save' 'WARN' 'Run from an Administrator session to inspect WMI MSPower_DeviceEnable flags'
     }
 
+    $crashRecovery = Ensure-CrashAutoReboot $false
+    if ($crashRecovery.Compliant) {
+        & $addCheck 'crash-autoreboot' 'PASS' "Kernel crash recovery configured ($($crashRecovery.Detail))"
+    } else {
+        & $addCheck 'crash-autoreboot' 'WARN' "Kernel crash recovery not fully configured ($($crashRecovery.Detail); run -Mode apply)"
+    }
+
     $sshdService = Get-Service -Name 'sshd' -ErrorAction SilentlyContinue
     if ($null -eq $sshdService) {
         & $addCheck 'openssh-server' 'WARN' 'Windows OpenSSH Server (sshd) is not installed'
@@ -740,6 +1281,9 @@ function Get-WindowsHostReadinessReport {
     } else {
         & $addCheck 'win32-long-paths' 'WARN' 'LongPathsEnabled is not 1 (run -Mode apply so Windows tools handle >260-char paths)'
     }
+
+    $netStability = Get-NetworkAddressStabilityStatus ([bool]$AllowDhcpAddress)
+    & $addCheck 'network-address-stability' $netStability.Status $netStability.Summary
 
     $publicWiredNames = @()
     if ((Get-Command Get-NetAdapter -ErrorAction SilentlyContinue) -and
@@ -790,17 +1334,32 @@ function Get-WindowsHostReadinessReport {
         & $addCheck 'wsl2' 'WARN' 'WSL 2 is not yet initialized (oscar.bat init can install bundled prerequisites)'
     }
 
-    $dockerAutoStart = Ensure-DockerDesktopAutoStart $false
-    $dockerTask = Ensure-DockerDesktopAutoStartTask $false
-    $autoSummary = if ($dockerAutoStart.Present) {
-        "$($dockerAutoStart.Detail); $($dockerTask.Detail)"
+    $wslCfg = Ensure-BoundedWslConfig $false
+    if (-not $wslCfg.Applicable) {
+        & $addCheck 'wsl2-resource-cap' 'WARN' "WSL 2 resource cap check skipped ($($wslCfg.Detail))"
+    } elseif ($wslCfg.Bounded) {
+        & $addCheck 'wsl2-resource-cap' 'PASS' ".wslconfig caps WSL 2 VM ($($wslCfg.Detail))"
     } else {
-        $dockerTask.Detail
+        & $addCheck 'wsl2-resource-cap' 'WARN' "$($wslCfg.Detail) (run -Mode apply or pass -ForceWslConfig to bound vmmemWSL host RAM/CPU)"
     }
-    if ($dockerEngineOk -and (-not $dockerTask.Installed -or $dockerTask.Registered) -and (-not $dockerAutoStart.Present -or $dockerAutoStart.ResourceSaverOff)) {
+
+    $dockerAutoStart = Ensure-DockerDesktopAutoStart $false
+    $dockerBootTask = Ensure-DockerDesktopBootStartTask $false
+    $dockerTask = Ensure-DockerDesktopAutoStartTask $false
+    $taskParts = @($dockerBootTask.Detail, $dockerTask.Detail)
+    $autoSummary = if ($dockerAutoStart.Present) {
+        "$($dockerAutoStart.Detail); $($taskParts -join '; ')"
+    } else {
+        ($taskParts -join '; ')
+    }
+    if ($dockerBootTask.Installed -and -not $dockerBootTask.AclCompliant) {
+        & $addCheck 'docker-runtime' 'FAIL' "Pre-login Docker startup script ACL invalid ($autoSummary)"
+    } elseif ($dockerEngineOk -and
+        (-not $dockerTask.Installed -or ($dockerBootTask.Registered -and $dockerTask.Registered)) -and
+        (-not $dockerAutoStart.Present -or $dockerAutoStart.ResourceSaverOff)) {
         & $addCheck 'docker-runtime' 'PASS' "Docker Engine reachable ($autoSummary)"
     } elseif ($dockerEngineOk) {
-        & $addCheck 'docker-runtime' 'WARN' "Docker Engine reachable, but ARSO logon task or UseResourceSaver=False not yet applied ($autoSummary)"
+        & $addCheck 'docker-runtime' 'WARN' "Docker Engine reachable, but pre-login S4U boot task, ARSO logon task, or UseResourceSaver=False not yet applied ($autoSummary)"
     } else {
         & $addCheck 'docker-runtime' 'WARN' "Docker Engine not currently reachable ($autoSummary)"
     }

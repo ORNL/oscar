@@ -1376,6 +1376,137 @@ SELECT 'single quote '' and $dollar';
         $env:APPDATA = $savedAppData
     }
 
+    $limits32g8c = Get-RecommendedWslResourceLimits 31.78 8
+    Assert-True ($limits32g8c.MemoryGb -eq 12 -and $limits32g8c.Processors -eq 6 -and $limits32g8c.SwapGb -eq 4) `
+        "Unexpected WSL sizing for 32 GiB / 8 logical CPUs: $($limits32g8c | ConvertTo-Json -Compress)"
+    $limits64g16c = Get-RecommendedWslResourceLimits 64.0 16
+    Assert-True ($limits64g16c.MemoryGb -eq 24 -and $limits64g16c.Processors -eq 14) `
+        "Unexpected WSL sizing for 64 GiB / 16 logical CPUs: $($limits64g16c | ConvertTo-Json -Compress)"
+    $limits16g8c = Get-RecommendedWslResourceLimits 15.8 8
+    Assert-True ($limits16g8c.MemoryGb -eq 7 -and $limits16g8c.Processors -eq 6) `
+        "Unexpected WSL sizing for 16 GiB / 8 logical CPUs: $($limits16g8c | ConvertTo-Json -Compress)"
+    $limits8g4c = Get-RecommendedWslResourceLimits 8.0 4
+    Assert-True ($limits8g4c.MemoryGb -eq 4 -and $limits8g4c.Processors -eq 3) `
+        "Unexpected WSL sizing for 8 GiB / 4 logical CPUs: $($limits8g4c | ConvertTo-Json -Compress)"
+
+    $wslFixtureDir = Join-Path $temporaryRoot 'wsl-profile'
+    $wslFixturePath = Join-Path $wslFixtureDir '.wslconfig'
+    $createdWslCfg = Ensure-BoundedWslConfig $true $wslFixturePath
+    Assert-True ($createdWslCfg.Present -and $createdWslCfg.Bounded -and $createdWslCfg.WroteFile) `
+        "Ensure-BoundedWslConfig did not create a bounded .wslconfig when absent: $($createdWslCfg.Detail)"
+    [IO.File]::WriteAllText($wslFixturePath, "[wsl2]`r`nmemory=10GB`r`nprocessors=5`r`n", [Text.UTF8Encoding]::new($false))
+    $preservedWslCfg = Ensure-BoundedWslConfig $true $wslFixturePath
+    Assert-True ($preservedWslCfg.Bounded -and -not $preservedWslCfg.WroteFile -and
+        $preservedWslCfg.Memory -ceq '10GB' -and $preservedWslCfg.Processors -ceq '5') `
+        'Ensure-BoundedWslConfig overwrote an existing operator .wslconfig without -ForceWslConfig.'
+    [IO.File]::WriteAllText($wslFixturePath, "[wsl2]`r`nnetworkingMode=nat`r`n", [Text.UTF8Encoding]::new($false))
+    $unboundedWslCfg = Ensure-BoundedWslConfig $false $wslFixturePath
+    Assert-True ($unboundedWslCfg.Present -and -not $unboundedWslCfg.Bounded) `
+        'Ensure-BoundedWslConfig treated a memory/CPU-unbounded .wslconfig as bounded.'
+    $ForceWslConfig = $true
+    try {
+        $forcedWslCfg = Ensure-BoundedWslConfig $true $wslFixturePath
+        Assert-True ($forcedWslCfg.Bounded -and $forcedWslCfg.WroteFile) `
+            'Ensure-BoundedWslConfig did not rewrite an unbounded .wslconfig under -ForceWslConfig.'
+    } finally {
+        $ForceWslConfig = $false
+    }
+    $wslReparseLink = Join-Path $temporaryRoot 'wsl-profile-junction'
+    New-Item -ItemType Junction -Path $wslReparseLink -Target $wslFixtureDir | Out-Null
+    $rejectedReparseWsl = $false
+    try {
+        [void](Ensure-BoundedWslConfig $true (Join-Path $wslReparseLink '.wslconfig'))
+    } catch {
+        $rejectedReparseWsl = $true
+    }
+    Assert-True $rejectedReparseWsl 'Ensure-BoundedWslConfig accepted a junction/reparse .wslconfig path.'
+
+    $preloginScriptDir = Join-Path $temporaryRoot 'programdata-oscar'
+    $preloginScriptPath = Join-Path $preloginScriptDir 'start-docker-prelogin.ps1'
+    $preloginContent = Get-DockerPreloginScriptContent
+    Assert-True ($preloginContent.Contains('desktop start --detach')) `
+        'Pre-login Session-0 Docker script does not use docker desktop start --detach.'
+    Set-ProtectedSystemAdminScript $preloginScriptPath $preloginContent
+    Assert-ScriptParses $preloginScriptPath
+    $preloginDirAcl = Test-ProtectedSystemAdminAcl $preloginScriptDir $true
+    $preloginFileAcl = Test-ProtectedSystemAdminAcl $preloginScriptPath $false
+    Assert-True ($preloginDirAcl.Present -and $preloginDirAcl.Compliant -and
+        $preloginFileAcl.Present -and $preloginFileAcl.Compliant) `
+        "Pre-login Session-0 Docker script or directory ACL is not locked to SYSTEM+Administrators: dir=$($preloginDirAcl.Detail); file=$($preloginFileAcl.Detail)"
+    $tamperedDirAcl = Get-Acl -LiteralPath $preloginScriptDir
+    $everyoneSid = [Security.Principal.SecurityIdentifier]::new('S-1-1-0')
+    [void]$tamperedDirAcl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+        $everyoneSid,
+        [Security.AccessControl.FileSystemRights]::ReadAndExecute,
+        [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit',
+        [Security.AccessControl.PropagationFlags]::None,
+        [Security.AccessControl.AccessControlType]::Allow))
+    Set-Acl -LiteralPath $preloginScriptDir -AclObject $tamperedDirAcl
+    Assert-True (-not (Test-ProtectedSystemAdminAcl $preloginScriptDir $true).Compliant) `
+        'Test-ProtectedSystemAdminAcl accepted Everyone access on the pre-login script directory.'
+
+    try {
+        function Get-ActivePhysicalServerIpRecords {
+            @([pscustomobject]@{
+                InterfaceName = 'Ethernet'
+                MediaType = '802.3'
+                IPAddress = '192.0.2.10'
+                PrefixLength = 24
+                PrefixOrigin = 'Manual'
+            })
+        }
+        $manualNetStatus = Get-NetworkAddressStabilityStatus $false
+        Assert-True ($manualNetStatus.Status -ceq 'PASS') `
+            "Static physical LAN IPv4 did not pass network-address-stability: $($manualNetStatus.Summary)"
+
+        function Get-ActivePhysicalServerIpRecords {
+            @([pscustomobject]@{
+                InterfaceName = 'Ethernet'
+                MediaType = '802.3'
+                IPAddress = '192.0.2.50'
+                PrefixLength = 24
+                PrefixOrigin = 'Dhcp'
+            })
+        }
+        $dhcpWarnStatus = Get-NetworkAddressStabilityStatus $false
+        Assert-True ($dhcpWarnStatus.Status -ceq 'WARN') `
+            'Unacknowledged DHCP LAN IPv4 did not warn in network-address-stability.'
+        $dhcpAllowedStatus = Get-NetworkAddressStabilityStatus $true
+        Assert-True ($dhcpAllowedStatus.Status -ceq 'PASS') `
+            '-AllowDhcpAddress did not satisfy network-address-stability for router-reserved DHCP.'
+    } finally {
+        Remove-Item Function:\Get-ActivePhysicalServerIpRecords -Force -ErrorAction SilentlyContinue
+    }
+
+    $crashTestKey = 'HKCU:\Software\OSCARHostPrepCrashTest-' + [Guid]::NewGuid().ToString('N')
+    try {
+        New-Item -Path $crashTestKey -Force | Out-Null
+        Set-ItemProperty -LiteralPath $crashTestKey -Name 'AutoReboot' -Value 0 -Type DWord
+        Set-ItemProperty -LiteralPath $crashTestKey -Name 'CrashDumpEnabled' -Value 0 -Type DWord
+        Assert-True (-not (Ensure-CrashAutoReboot $false $crashTestKey).Compliant) `
+            'Ensure-CrashAutoReboot accepted AutoReboot=0 and CrashDumpEnabled=0.'
+        $appliedCrash = Ensure-CrashAutoReboot $true $crashTestKey
+        Assert-True ($appliedCrash.Compliant -and $appliedCrash.AutoReboot -eq 1 -and $appliedCrash.CrashDumpEnabled -eq 7) `
+            "Ensure-CrashAutoReboot did not enforce AutoReboot=1 and CrashDumpEnabled=7: $($appliedCrash.Detail)"
+        Set-ItemProperty -LiteralPath $crashTestKey -Name 'CrashDumpEnabled' -Value 2 -Type DWord
+        $preservedKernelDump = Ensure-CrashAutoReboot $true $crashTestKey
+        Assert-True ($preservedKernelDump.Compliant -and $preservedKernelDump.CrashDumpEnabled -eq 2) `
+            'Ensure-CrashAutoReboot overwrote an existing valid kernel crash dump mode.'
+    } finally {
+        Remove-Item -LiteralPath $crashTestKey -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    $hostPrepSource = [IO.File]::ReadAllText($hostPrepScript)
+    foreach ($requiredCheckId in @(
+        "'display-timeout'",
+        "'crash-autoreboot'",
+        "'network-address-stability'",
+        "'wsl2-resource-cap'",
+        'OSCAR-DockerDesktop-BootStart')) {
+        Assert-True ($hostPrepSource.Contains($requiredCheckId)) `
+            "configure-windows-host.ps1 is missing required unattended server safeguard: $requiredCheckId"
+    }
+
     Assert-True (-not $setupSource.Contains('--accept-license')) `
         'Windows setup must never auto-accept the Docker Desktop license.'
     Assert-True ($setupSource.Contains("if (`$NonInteractive -or (Test-SessionZeroProcess))") -and
