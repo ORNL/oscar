@@ -17,49 +17,66 @@ development.
 ### Windows 11 unattended server preparation
 
 Windows 11 desktops and mobile workstations ship with `Balanced` power defaults that can suspend
-idle sessions, close-lid laptops, USB 3 buses, USB Gigabit Ethernet adapters, and external USB SSDs.
-Before running a 24/7 OSCAR deployment on Windows 11, run `configure-windows-host.ps1` (directly or
-through `oscar.bat`) from an Administrator Windows PowerShell 5.1 window:
+idle sessions, trigger S0 Low Power Idle (Modern Standby) when the display turns off, suspend
+close-lid laptops, power down USB 3 buses/USB Gigabit Ethernet adapters/external USB SSDs, and
+allow unbounded `vmmemWSL` memory/CPU growth. Before initializing a 24/7 OSCAR deployment on
+Windows 11, assign the host's network-governed static IPv4 address (or configure a site router DHCP
+reservation) so DHCP lease rotation cannot change the server IP embedded in `tls/server.crt`, then
+run `configure-windows-host.ps1` (directly or through `oscar.bat`) from an Administrator Windows
+PowerShell 5.1 window:
 
 ```powershell
 .\oscar.bat host-check
 .\oscar.bat prepare-host
 ```
 
-Standalone invocation supports JSON output, strict non-zero audit exit codes, and idempotent
-OpenSSH `administrators_authorized_keys` public-key enrollment with `SYSTEM` + `Administrators`
-ACLs (inheritance disabled):
+Standalone invocation supports JSON output, strict non-zero audit exit codes, explicit `.wslconfig`
+overrides, DHCP-reservation acknowledgement (`-AllowDhcpAddress`), and idempotent OpenSSH
+`administrators_authorized_keys` public-key enrollment with `SYSTEM` + `Administrators` ACLs
+(inheritance disabled):
 
 ```powershell
 .\configure-windows-host.ps1 -Mode apply -ConfigureLanHttpsFirewall -AuthorizeSshPublicKeyFile C:\staging\operator.pub
 .\configure-windows-host.ps1 -Mode check -Strict -Json
 ```
 
-`-Mode apply` sets AC and DC sleep, unattended-sleep, hibernate, and disk spin-down timeouts to `0`
-(Never), disables hibernation and Fast Startup unless `-KeepHibernate` is requested, sets laptop
+`-Mode apply` sets AC and DC sleep, unattended-sleep, hibernate, disk spin-down, and display-idle
+timeouts to `0` (Never — preventing Windows S0 Modern Standby `Kernel-Power 506` entry on display
+power-off), disables hibernation and Fast Startup unless `-KeepHibernate` is requested, sets laptop
 lid-close action to `Do nothing`, disables USB selective suspend and USB 3 Link Power Management,
 turns off PCIe Link State Power Management (ASPM), clears WMI `MSPower_DeviceEnable` power-off flags
 across USB controllers/storage/network devices, disables physical network-adapter power saving with
-`-NoRestart` so active SSH sessions stay connected, configures `sshd` and `w32time` for `Automatic`
-startup, sets `NoAutoRebootWithLoggedOnUsers=1`, `AlwaysAutoRebootAtScheduledTime=0`, and
-`AUOptions=3` for Windows Update, sets Win32 `LongPathsEnabled=1` for tools that inspect deep
-retained-media paths, disables Docker Desktop idle Resource Saver (`UseResourceSaver=false`), and
-registers an interactive `AtLogOn` Scheduled Task (`OSCAR-DockerDesktop-AutoStart`) alongside
-`AutoStart=true`. Because Windows 11 Automatic Restart Sign-On (ARSO) signs the operator back in
-behind a locked console after an unattended Windows Update or domain-GPO maintenance reboot while
-deferring `HKCU\...\Run` GUI startups until manual screen unlock, the `AtLogOn` Scheduled Task
-launches Docker Desktop immediately inside the locked interactive session so `restart: unless-stopped`
-OSCAR containers recover automatically without human console intervention. On trusted site LANs where newly connected USB or PCIe Ethernet
-adapters default to Windows' `Public` firewall profile (which blocks inbound Docker Desktop port
-publishing on `443`), pass `-ConfigureLanHttpsFirewall` (or `.\oscar.bat prepare-host -ConfigureLanHttpsFirewall`)
-to switch connected wired `802.3` Ethernet adapters to `Private` and configure a scoped
-`OSCAR-HTTPS-Gateway-In` rule (`TCP 443,80`, `Private,Domain`, `LocalSubnet` and `100.64.0.0/10`).
+`-NoRestart` so active SSH sessions stay connected, enables `CrashControl` `AutoReboot=1` with
+kernel/automatic crash dump retention (`CrashDumpEnabled=7` if disabled), configures `sshd` and
+`w32time` for `Automatic` startup, sets `NoAutoRebootWithLoggedOnUsers=1`,
+`AlwaysAutoRebootAtScheduledTime=0`, and `AUOptions=3` for Windows Update, sets Win32
+`LongPathsEnabled=1` for tools that inspect deep retained-media paths, writes a hardware-proportional
+`%USERPROFILE%\.wslconfig` (`memory`, `processors`, `swap=4GB`) when none exists so `vmmemWSL`
+reserves CPU and RAM headroom for Windows/Hyper-V/drivers (existing `.wslconfig` files are preserved
+unless `-ForceWslConfig`, `-WslMemoryGb`, or `-WslProcessors` is supplied), disables Docker Desktop
+idle Resource Saver (`UseResourceSaver=false`), and registers two Scheduled Tasks alongside
+`AutoStart=true`:
 
-Because Docker Desktop on Windows runs inside an interactive administrator desktop session rather
-than as a pre-logon Session-0 service, sign in to the physical console after any host reboot so
-Docker Desktop starts automatically, then lock the workstation (`Win+L`). Once Docker Desktop is
-running in that signed-in desktop session, all routine `oscar.bat` administration, backups,
-restores, and monitoring work normally over SSH.
+- `OSCAR-DockerDesktop-BootStart` (`AtStartup` `+10s`, `LogonType=S4U`, `RunLevel=Highest`) invokes
+  an ACL-protected `%ProgramData%\OSCAR\start-docker-prelogin.ps1` (`SYSTEM` and `Administrators`
+  only, inheritance disabled) to launch the Docker Desktop engine (`docker desktop start --detach`)
+  in Session 0 without storing credentials, allowing `restart: unless-stopped` OSCAR containers to
+  recover automatically after a cold power-loss or crash reboot even before anyone signs in on the
+  physical console.
+- `OSCAR-DockerDesktop-AutoStart` (`AtLogOn`, `LogonType=Interactive`) complements Windows 11
+  Automatic Restart Sign-On (ARSO) when maintenance restarts sign the installing administrator back
+  in behind a locked screen.
+
+First-time Docker Desktop installation and license acceptance still require an interactive
+administrator desktop session once; after `prepare-host` is run under that administrator account,
+both cold-boot pre-logon recovery and routine SSH administration operate without manual console
+sign-in. `host-check` also audits primary physical LAN IPv4 `PrefixOrigin` (`network-address-stability`),
+warning if DHCP is active unless `-AllowDhcpAddress` is passed for networks governed by router DHCP
+reservations. On trusted site LANs where newly connected USB or PCIe Ethernet adapters default to
+Windows' `Public` firewall profile (which blocks inbound Docker Desktop port publishing on `443`),
+pass `-ConfigureLanHttpsFirewall` (or `.\oscar.bat prepare-host -ConfigureLanHttpsFirewall`) to
+switch connected wired `802.3` Ethernet adapters to `Private` and configure a scoped
+`OSCAR-HTTPS-Gateway-In` rule (`TCP 443,80`, `Private,Domain`, `LocalSubnet` and `100.64.0.0/10`).
 
 ## Administrative CLI
 

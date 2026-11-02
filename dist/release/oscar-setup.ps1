@@ -48,6 +48,13 @@ param(
     [ValidateRange(1, 10000)]
     [int]$Keep = 0,
     [switch]$ConfigureLanHttpsFirewall,
+    [switch]$AllowDhcpAddress,
+    [ValidateRange(0, 1024)]
+    [int]$WslMemoryGb = 0,
+    [ValidateRange(0, 512)]
+    [int]$WslProcessors = 0,
+    [switch]$ForceWslConfig,
+    [switch]$SkipWslConfig,
     [switch]$Json,
     [switch]$Strict
 )
@@ -1398,7 +1405,11 @@ OSCAR deployment administration
       [-AddHostsEntry] [-SkipHostsEntry] [-SkipStart]
       [-BackupMode disabled|single] [-BackupDir ABSOLUTE_PATH]
       [-Prerequisites auto|existing|bundled]
-  .\oscar.bat check|host-check|prepare-host|verify|start|stop|restart|status
+  .\oscar.bat check|verify|start|stop|restart|status
+  .\oscar.bat host-check [-AllowDhcpAddress] [-Strict] [-Json]
+  .\oscar.bat prepare-host [-ConfigureLanHttpsFirewall] [-AllowDhcpAddress]
+      [-WslMemoryGb INT] [-WslProcessors INT] [-ForceWslConfig] [-SkipWslConfig]
+      [-Strict] [-Json]
   .\oscar.bat upgrade [-AdoptLegacyVolumes] [-AdoptLegacyStorageRoots]
       [-BackupMode disabled|single] [-BackupDir ABSOLUTE_PATH]
   .\oscar.bat logs [-Service all|oscar|postgres|gateway] [-Tail 200] [-Follow]
@@ -1438,6 +1449,7 @@ try {
             $hostPrepScript = Join-Path $ScriptRoot 'configure-windows-host.ps1'
             if (-not (Test-Path -LiteralPath $hostPrepScript -PathType Leaf)) { throw 'The Windows host readiness script is missing.' }
             $hostPrepArgs = @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $hostPrepScript, '-Mode', 'check')
+            if ($AllowDhcpAddress) { $hostPrepArgs += '-AllowDhcpAddress' }
             if ($Json) { $hostPrepArgs += '-Json' }
             if ($Strict) { $hostPrepArgs += '-Strict' }
             Invoke-External 'powershell.exe' $hostPrepArgs
@@ -1449,6 +1461,11 @@ try {
             if (-not (Test-Path -LiteralPath $hostPrepScript -PathType Leaf)) { throw 'The Windows host readiness script is missing.' }
             $hostPrepArgs = @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $hostPrepScript, '-Mode', 'apply')
             if ($ConfigureLanHttpsFirewall) { $hostPrepArgs += '-ConfigureLanHttpsFirewall' }
+            if ($AllowDhcpAddress) { $hostPrepArgs += '-AllowDhcpAddress' }
+            if ($WslMemoryGb -gt 0) { $hostPrepArgs += @('-WslMemoryGb', [string]$WslMemoryGb) }
+            if ($WslProcessors -gt 0) { $hostPrepArgs += @('-WslProcessors', [string]$WslProcessors) }
+            if ($ForceWslConfig) { $hostPrepArgs += '-ForceWslConfig' }
+            if ($SkipWslConfig) { $hostPrepArgs += '-SkipWslConfig' }
             if ($Json) { $hostPrepArgs += '-Json' }
             if ($Strict) { $hostPrepArgs += '-Strict' }
             Invoke-External 'powershell.exe' $hostPrepArgs
