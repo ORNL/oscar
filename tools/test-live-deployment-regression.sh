@@ -14,12 +14,12 @@ fi
 release_zip=${2:-"$repo_root/build/distributions/oscar-${version}.zip"}
 [[ -f $release_zip ]] || { printf 'ERROR: Packaged release ZIP not found: %s\n' "$release_zip" >&2; exit 1; }
 
-suite_repo_url=${OSCAR_REGRESSION_SUITE_REPO:-https://github.com/ORNL/oscar-regression-suite.git}
+suite_repo_url=${OSCAR_REGRESSION_SUITE_REPO:-https://github.com/ORNL/oscar-regression.git}
 suite_ref=${OSCAR_REGRESSION_SUITE_REF:-main}
 work_base=/opt/oscar-ci-regression
 deploy_dir="$work_base/oscar-${version}"
 backup_dir="$work_base/backups"
-suite_dir="${RUNNER_TEMP:-/tmp}/oscar-regression-suite-$$"
+suite_dir="${RUNNER_TEMP:-/tmp}/oscar-regression-$$"
 admin_password="OscarCiTest!${RANDOM:-4821}97531Aa"
 
 cleanup() {
@@ -38,7 +38,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-printf '== Step 1: Validate ORNL/oscar-regression-suite oracles and 50-lane fixture ==\n'
+printf '== Step 1: Validate ORNL/oscar-regression oracles and 50-lane fixture ==\n'
 rm -rf "$suite_dir"
 git clone --depth 1 --branch "$suite_ref" "$suite_repo_url" "$suite_dir"
 (
