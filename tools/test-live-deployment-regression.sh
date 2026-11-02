@@ -194,6 +194,8 @@ try {
     const context = await browser.newContext({
         ignoreHTTPSErrors: true,
         httpCredentials: { username: 'admin', password },
+        viewport: { width: 1600, height: 1000 },
+        locale: 'en-US',
     });
     let sawImmutableNextBundle = false;
     const page = await context.newPage();
@@ -205,6 +207,21 @@ try {
             }
         }
     });
+
+    await page.goto('https://oscar.local/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    const usernameInput = page.getByLabel('Username');
+    if (await usernameInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+        await usernameInput.fill('admin');
+        await page.getByLabel('Password').fill(password);
+        await Promise.all([
+            page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 20000 }),
+            page.getByRole('button', { name: 'Sign in' }).click(),
+        ]);
+    }
+    const sessionRes = await context.request.get('https://oscar.local/session');
+    assert.ok(sessionRes.ok(), `Expected /session 200 after login, got ${sessionRes.status()}`);
+    const sessionJson = await sessionRes.json();
+    assert.equal(sessionJson.username, 'admin', `Expected authenticated session user admin, got ${sessionJson.username}`);
 
     for (const [route, marker] of viewerRoutes) {
         const response = await page.goto(`https://oscar.local${route}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
