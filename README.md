@@ -14,7 +14,7 @@ The configured HTTPS port and a port 80 HTTPS redirect are published. PostgreSQL
 | [`ORNL/osh-core`](https://github.com/ORNL/osh-core) | OpenSensorHub core fork (`OSCAR` branch) |
 | [`ORNL/osh-addons`](https://github.com/ORNL/osh-addons) | OpenSensorHub addons & tiered PostGIS/Parquet storage (`OSCAR` branch) |
 | [`ORNL/osh-js`](https://github.com/ORNL/osh-js) | OpenSensorHub JavaScript ConSys/MQTT client (`add-consys` branch) |
-| [`ORNL/oscar-regression-suite`](https://github.com/ORNL/oscar-regression-suite) | End-to-end Playwright, ConSys API, emulator fault-injection, and 50-lane regression suite |
+| [`ORNL/oscar-regression`](https://github.com/ORNL/oscar-regression) | End-to-end Playwright, ConSys API, emulator fault-injection, and 50-lane regression suite |
 
 ## Installation
 
@@ -59,7 +59,7 @@ build/distributions/oscar-<version>.zip
 
 Hardware-dependent tests remain outside these packaging scripts and must be run in an appropriately equipped test environment.
 The Unix build also runs `tools/test-storage-scripts.sh`, which exercises the portable Bash and
-PowerShell storage-administration safety guards. Continuous integration and tagged release builds additionally run `tools/test-live-deployment-regression.sh`, which validates [`ORNL/oscar-regression-suite`](https://github.com/ORNL/oscar-regression-suite) (including its canonical 50-lane fixture `fixtures/oscar-50-lane-config.csv`), initializes the packaged Docker Compose deployment, exercises TLS gateway routing, ConSys API authentication, headless Chromium Viewer/Admin navigation, and verifies live archive and single-snapshot backup integrity. That harness does not replace the native Windows
+PowerShell storage-administration safety guards. Continuous integration and tagged release builds additionally run `tools/test-live-deployment-regression.sh`, which validates [`ORNL/oscar-regression`](https://github.com/ORNL/oscar-regression) (including its canonical 50-lane fixture `fixtures/oscar-50-lane-config.csv`), initializes the packaged Docker Compose deployment, exercises TLS gateway routing, ConSys API authentication, headless Chromium Viewer/Admin navigation, and verifies live archive and single-snapshot backup integrity. That harness does not replace the native Windows
 PowerShell 5.1 gate: the release workflow runs `tools/test-storage-powershell.ps1` with
 `powershell.exe` on Windows.
 

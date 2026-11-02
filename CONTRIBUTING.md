@@ -14,7 +14,7 @@ OSCAR is composed of coordinated repositories under the `ORNL` GitHub organizati
 | [`ORNL/osh-core`](https://github.com/ORNL/osh-core) | `OSCAR` | Submodule (`include/osh-core`): OpenSensorHub core fork |
 | [`ORNL/osh-addons`](https://github.com/ORNL/osh-addons) | `OSCAR` | Submodule (`include/osh-addons`): OpenSensorHub addons & tiered PostGIS/Parquet datastore |
 | [`ORNL/osh-js`](https://github.com/ORNL/osh-js) | `add-consys` | Locked tarball dependency in `ORNL/oscar-viewer` |
-| [`ORNL/oscar-regression-suite`](https://github.com/ORNL/oscar-regression-suite) | `main` | Automated Playwright, ConSys API, emulator fault-injection, and 50-lane end-to-end regression suite |
+| [`ORNL/oscar-regression`](https://github.com/ORNL/oscar-regression) | `main` | Automated Playwright, ConSys API, emulator fault-injection, and 50-lane end-to-end regression suite |
 
 ## Fork & Pull Request Workflow
 
