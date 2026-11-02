@@ -203,6 +203,7 @@ jobs:
     name: Build Release
     needs: platform-acceptance
     runs-on: ubuntu-latest
+    timeout-minutes: 75
     permissions:
       contents: write
     steps:
@@ -594,6 +595,9 @@ jobs:
 
             rm -rf "$expanded"
           done
+
+      - name: Boot packaged deployment and run Playwright + ConSys + backup regression checks
+        run: ./tools/test-live-deployment-regression.sh "${GITHUB_REF_NAME#v}" "${DIST_DIR}/oscar-${GITHUB_REF_NAME#v}.zip"
 
       - name: Stage source archive
         run: cp "${{ steps.source.outputs.archive }}" "${DIST_DIR}/"

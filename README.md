@@ -1,8 +1,20 @@
 # OSCAR
 
-OSCAR combines OpenSensorHub modules, the OSCAR viewer, PostgreSQL/PostGIS, and a TLS gateway into a hardened Docker Compose deployment.
+OSCAR (Open Source Central Alarm Monitoring) is an Oak Ridge National Laboratory (ORNL) open-source radiation portal monitoring and central alarm station platform ([`ORNL/oscar`](https://github.com/ORNL/oscar)), developed in collaboration with Botts Innovative Research on OpenSensorHub. It combines OpenSensorHub modules, the OSCAR viewer, PostgreSQL/PostGIS, and a TLS gateway into a hardened Docker Compose deployment.
 
 The configured HTTPS port and a port 80 HTTPS redirect are published. PostgreSQL and the OSCAR application port remain on private Compose networks. Java 21.0.10 is included in the OSCAR container image and is not required on deployment hosts.
+
+## Official ORNL repositories
+
+| Repository | Role |
+| --- | --- |
+| [`ORNL/oscar`](https://github.com/ORNL/oscar) | Top-level release packaging, Docker Compose runtime, storage/backup tooling, documentation, and CI/release pipelines |
+| [`ORNL/osh-oakridge-modules`](https://github.com/ORNL/osh-oakridge-modules) | Oak Ridge OpenSensorHub drivers, services, storage/media lifecycle modules, and localized operator manuals |
+| [`ORNL/oscar-viewer`](https://github.com/ORNL/oscar-viewer) | Next.js / React OSCAR web client (`en`, `es`, `fr`, `el`) |
+| [`ORNL/osh-core`](https://github.com/ORNL/osh-core) | OpenSensorHub core fork (`OSCAR` branch) |
+| [`ORNL/osh-addons`](https://github.com/ORNL/osh-addons) | OpenSensorHub addons & tiered PostGIS/Parquet storage (`OSCAR` branch) |
+| [`ORNL/osh-js`](https://github.com/ORNL/osh-js) | OpenSensorHub JavaScript ConSys/MQTT client (`add-consys` branch) |
+| [`ORNL/oscar-regression-suite`](https://github.com/ORNL/oscar-regression-suite) | End-to-end Playwright, ConSys API, emulator fault-injection, and 50-lane regression suite |
 
 ## Installation
 
@@ -25,8 +37,8 @@ There is no default administrator password. The administrator supplies it during
 Clone all submodules:
 
 ```sh
-git clone --recursive <repository-url>
-cd osh-oakridge-buildnode
+git clone --recursive https://github.com/ORNL/oscar.git
+cd oscar
 ```
 
 The canonical connected-release builds are:
@@ -47,7 +59,7 @@ build/distributions/oscar-<version>.zip
 
 Hardware-dependent tests remain outside these packaging scripts and must be run in an appropriately equipped test environment.
 The Unix build also runs `tools/test-storage-scripts.sh`, which exercises the portable Bash and
-PowerShell storage-administration safety guards. That harness does not replace the native Windows
+PowerShell storage-administration safety guards. Continuous integration and tagged release builds additionally run `tools/test-live-deployment-regression.sh`, which validates [`ORNL/oscar-regression-suite`](https://github.com/ORNL/oscar-regression-suite) (including its canonical 50-lane fixture `fixtures/oscar-50-lane-config.csv`), initializes the packaged Docker Compose deployment, exercises TLS gateway routing, ConSys API authentication, headless Chromium Viewer/Admin navigation, and verifies live archive and single-snapshot backup integrity. That harness does not replace the native Windows
 PowerShell 5.1 gate: the release workflow runs `tools/test-storage-powershell.ps1` with
 `powershell.exe` on Windows.
 

@@ -82,7 +82,7 @@ expected_text=(
     "διαχείρισης και λειτουργίας"
 )
 
-raw_image_prefix="https://raw.githubusercontent.com/Botts-Innovative-Research/osh-oakridge-modules/main/docs/oscar-operator-manual/images/"
+raw_image_prefix="https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/"
 
 for index in "${!locales[@]}"; do
     locale=${locales[$index]}
@@ -162,7 +162,7 @@ PY
         --metadata="title:${titles[$index]}" \
         --metadata="subtitle:OSCAR $version - ${language_names[$index]}" \
         --metadata="toc-title:${toc_titles[$index]}" \
-        --metadata="author:Botts Innovative Research" \
+        --metadata="author:Oak Ridge National Laboratory" \
         --metadata="lang:$locale" \
         --variable="mainfont:Noto Sans" \
         --variable="sansfont:Noto Sans" \

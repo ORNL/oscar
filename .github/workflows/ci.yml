@@ -51,7 +51,7 @@ jobs:
   connected-release:
     name: Connected release build and unit tests
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -87,6 +87,9 @@ jobs:
           version=$(sed -n 's/^[[:space:]]*version = "\([^"]*\)"/\1/p' build.gradle | head -n1)
           test -n "$version"
           node tools/validate-packaged-release.js --expected-version="$version"
+
+      - name: Boot packaged deployment and run Playwright + ConSys + backup regression checks
+        run: ./tools/test-live-deployment-regression.sh
 
   tiered-storage-postgres:
     name: Complete tiered-storage PostgreSQL integration
