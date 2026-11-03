@@ -94,3 +94,13 @@ Choose one of two explicit rollout options depending on site requirements:
 | **Storage architecture, Parquet lifecycle, media & daily files** | [Storage Architecture](STORAGE_ARCHITECTURE.md), [Data Lifecycle](DATA_LIFECYCLE.md) | [Archive Format](ARCHIVE_FORMAT.md), [Daily-File Journal](../include/osh-oakridge-modules/docs/daily-file-journal-v1.md), [Retained Media](../include/osh-oakridge-modules/docs/retained-media-v1.md) |
 | **Backups, disaster recovery, legal holds & cold-archive purge** | [Backup, Restore, and Recovery](BACKUP_RESTORE.md) | [Storage Operations](STORAGE_OPERATIONS.md) |
 | **Developers, contributors & localization (`i18n`)** | [Translation System Guide](TRANSLATION_SYSTEM.md) | [`ORNL/oscar` Repository & `CONTRIBUTING.md`](https://github.com/ORNL/oscar/blob/main/CONTRIBUTING.md), [`ORNL/oscar-regression`](https://github.com/ORNL/oscar-regression) |
+
+---
+
+## 4. Contributors Across Repository and Submodules (Since `v3.10.0`)
+
+- **Alex Almanza** ([`@earocorn`](https://github.com/earocorn)) — `ORNL/oscar`, `ORNL/osh-oakridge-modules`
+- **Kalyn Stallings** ([`@kalynstricklin`](https://github.com/kalynstricklin)) — `ORNL/oscar-viewer`
+- **Kyle Fitzpatrick** ([`@kyle-fitzp`](https://github.com/kyle-fitzp)) — `ORNL/osh-oakridge-modules`
+- **Tyrone Harris** ([`@tyronechrisharris`](https://github.com/tyronechrisharris)) — `ORNL/oscar`, `ORNL/oscar-viewer`, `ORNL/osh-addons`, `ORNL/osh-core`, `ORNL/osh-js`, `ORNL/osh-oakridge-modules`
+

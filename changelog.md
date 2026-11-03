@@ -168,6 +168,21 @@ OSCAR 3.11.0 is the first official release published under Oak Ridge National La
 - Normalize `/opt/oscar` permissions in a dedicated Docker build stage to eliminate duplicate copy-up layers in `oscar:3.11.0` and offline Windows image bundles
 - Add end-to-end live Docker Compose, `ConSys` API, headless Chromium Playwright UI/Admin, and single-snapshot backup regression verification (`tools/test-live-deployment-regression.sh` against [`ORNL/oscar-regression`](https://github.com/ORNL/oscar-regression)) to both continuous integration and tagged release builds, and publish SHA-256 manifests for all release ZIPs and localized PDF manuals
 
+### Contributors
+Thanks to everyone who contributed across `ORNL/oscar` and its submodules since `v3.10.0`:
+- **Alex Almanza** (@earocorn) — `ORNL/oscar`, `ORNL/osh-oakridge-modules`
+- **Kalyn Stallings** (@kalynstricklin) — `ORNL/oscar-viewer`
+- **Kyle Fitzpatrick** (@kyle-fitzp) — `ORNL/osh-oakridge-modules`
+- **Tyrone Harris** (@tyronechrisharris) — `ORNL/oscar`, `ORNL/oscar-viewer`, `ORNL/osh-addons`, `ORNL/osh-core`, `ORNL/osh-js`, `ORNL/osh-oakridge-modules`
+
+### Full changelog across repository and submodules
+- **`ORNL/oscar`**: [`v3.10.0...v3.11.0`](https://github.com/ORNL/oscar/compare/v3.10.0...v3.11.0)
+- **`ORNL/oscar-viewer`**: [`a2dabf0e...363e0a1e`](https://github.com/ORNL/oscar-viewer/compare/a2dabf0e038a6a48acadf8c6fcdb71d916f9adb5...363e0a1e97d62bb4b472e5510a0854462630400a)
+- **`ORNL/osh-addons`**: [`3708dcaa...bf78cac1`](https://github.com/ORNL/osh-addons/compare/3708dcaa1d2189aaa75ad0b11af8483cc1468310...bf78cac1fae85175f821b68bb474eaa23dea8059)
+- **`ORNL/osh-core`**: [`651fee4d...0b43abd6`](https://github.com/ORNL/osh-core/compare/651fee4d0ae694810c7c02f6cb8fd58c739a6068...0b43abd6cb795dec122a5e2edca6f27f53ed9211)
+- **`ORNL/osh-js`**: [`73dacad5...0d3716dc`](https://github.com/ORNL/osh-js/compare/73dacad5c7338722763263ef0ff5928fbd19de5b...0d3716dc5f5ce8c310757fd5e1e939231e22fe93)
+- **`ORNL/osh-oakridge-modules`**: [`4f20ab45...929726c3`](https://github.com/ORNL/osh-oakridge-modules/compare/4f20ab458f177ee0e492a8698227fd0a12fb0514...929726c3064e6e701bb73e474f1640ac54e3f7bd)
+
 ## 3.10.0 2026-10-25
 ## Changes
 - Add custom disposition codes configurable in admin page
