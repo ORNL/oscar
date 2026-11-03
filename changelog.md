@@ -1,7 +1,44 @@
-# OSCAR Build Node Change Log
+# OSCAR Change Log
 All notable changes to this project will be documented in this file. 
 
-## 3.11.0 2026-10-29
+## 3.11.0 2026-11-02
+
+### Release overview
+OSCAR 3.11.0 is the first official release published under Oak Ridge National Laboratory's [`github.com/ORNL`](https://github.com/ORNL) organization ([`ORNL/oscar`](https://github.com/ORNL/oscar)), re-architected for multi-year, 24/7 operation across up to 50 concurrent radiation portal monitor (RPM) and RTSP camera lanes on **Ubuntu Server 24.04 x86-64** and **Windows 11 x86-64** (with Docker Desktop and WSL 2).
+
+### Release artifacts — which file to download
+
+| Release Asset | Target Audience & Use Case |
+| :--- | :--- |
+| `oscar-3.11.0.zip` (+ `.sha256`) | **Connected Ubuntu Server 24.04 or Windows 11 installations and upgrades.** Includes Docker Compose definitions, Linux/Windows administration CLIs (`oscar.sh` / `oscar.bat`), `configure-windows-host.ps1`, application build context, all Markdown documentation, and all four localized PDF operator manuals. |
+| `oscar-3.11.0-windows-x86_64-offline-full.zip` (+ `.sha256`) | **Air-gapped / offline Windows 11 installations where Docker Desktop or WSL 2 is not yet installed.** Bundles pinned Docker Desktop `4.87.0` and WSL `2.7.3` installers, pre-built container images (`oscar:3.11.0`, `oscar-postgis:3.11.0`, `nginxinc/nginx-unprivileged:1.28.1-alpine`), administration scripts, and all Markdown/PDF documentation. |
+| `oscar-3.11.0-windows-x86_64-offline-images.zip` (+ `.sha256`) | **Air-gapped / offline Windows 11 installations or upgrades where compatible Docker Desktop and WSL 2 are already running.** Contains the pre-built container image archive, administration scripts, and documentation without the Windows prerequisite installers. |
+| `OSCAR-3.11.0-Administrator-Operator-Manual-{en,es,fr,el}.pdf` | **Standalone localized Administrator and Operator Manuals** in English (`en`), Español (`es`), Français (`fr`), and Ελληνικά (`el`). |
+| `oscar-v3.11.0-source.zip` (+ `.sha256`) | **Complete tracked source archive including all submodules** (`osh-core`, `osh-addons`, `osh-oakridge-modules`, and `oscar-viewer`; GitHub's auto-generated source archive omits submodules). |
+| `OSCAR-3.11.0-SHA256SUMS.txt` | **Master SHA-256 checksum manifest** covering all release ZIPs and localized PDF manuals. |
+
+### Start here — documentation for new and current users
+
+- **New Users (Fresh Installation):**
+  1. Read the [Release Overview, Architectural Rationale, and User Guide](https://github.com/ORNL/oscar/blob/v3.11.0/docs/RELEASE_NOTES_AND_UPGRADE_GUIDE.md).
+  2. Follow the [Quick Start Guide](https://github.com/ORNL/oscar/blob/v3.11.0/dist/release/QUICKSTART.md) (`.\oscar.bat prepare-host` + `.\oscar.bat init` on Windows 11; `sudo bash oscar.sh init` on Ubuntu 24.04).
+  3. Consult the [Administrator Guide](https://github.com/ORNL/oscar/blob/v3.11.0/dist/release/DEPLOYMENT.md) for LAN/Tailscale TLS trust, firewall scoping, and optional `single`-snapshot backup setup, plus the localized Operator Manuals ([English](https://github.com/ORNL/osh-oakridge-modules/blob/main/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README.md), [Español](https://github.com/ORNL/osh-oakridge-modules/blob/main/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README_es.md), [Français](https://github.com/ORNL/osh-oakridge-modules/blob/main/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README_fr.md), [Ελληνικά](https://github.com/ORNL/osh-oakridge-modules/blob/main/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README_el.md)).
+- **Current Users Upgrading from `pre-3.11.0` (`3.10.0`, `3.9.x`, `3.8.x`):**
+  - `oscar upgrade` intentionally preserves an existing `config.json` and PostgreSQL volume and **never** silently converts a `pre-3.11.0` database. For full 3.11.0 `PARQUET_PRIMARY` storage and checksummed PostgreSQL, preserve the old deployment read-only after backup/export and initialize a fresh 3.11.0 deployment. If deliberately retaining a legacy volume set in-place, follow the explicit one-time volume/root adoption workflow in the [Release Overview and Upgrade Guide](https://github.com/ORNL/oscar/blob/v3.11.0/docs/RELEASE_NOTES_AND_UPGRADE_GUIDE.md), [Administrator Guide](https://github.com/ORNL/oscar/blob/v3.11.0/dist/release/DEPLOYMENT.md), and [Storage Operations Runbook](https://github.com/ORNL/oscar/blob/v3.11.0/docs/STORAGE_OPERATIONS.md).
+- **Current Users Upgrading Same-Profile `3.11.0+` Deployments & Managing Storage:**
+  - Extract into a clean sibling directory, copy `.env`, `secrets/`, and `tls/`, and run `oscar upgrade`. See [Storage Architecture](https://github.com/ORNL/oscar/blob/v3.11.0/docs/STORAGE_ARCHITECTURE.md), [Data Lifecycle Policy](https://github.com/ORNL/oscar/blob/v3.11.0/docs/DATA_LIFECYCLE.md), [Cold Archive Format](https://github.com/ORNL/oscar/blob/v3.11.0/docs/ARCHIVE_FORMAT.md), [Backup and Restore](https://github.com/ORNL/oscar/blob/v3.11.0/docs/BACKUP_RESTORE.md), and [Storage Operations](https://github.com/ORNL/oscar/blob/v3.11.0/docs/STORAGE_OPERATIONS.md).
+- **Feature & Developer Guides:**
+  - [Operational Views](https://github.com/ORNL/oscar/blob/v3.11.0/docs/OPERATIONAL_VIEWS.md) · [Status of Health](https://github.com/ORNL/oscar/blob/v3.11.0/docs/STATUS_OF_HEALTH.md) · [Live Video & Recording](https://github.com/ORNL/oscar/blob/v3.11.0/docs/LIVE_VIDEO.md) · [Translation System (`i18n`)](https://github.com/ORNL/oscar/blob/v3.11.0/docs/TRANSLATION_SYSTEM.md) · [Contributing Guide](https://github.com/ORNL/oscar/blob/v3.11.0/CONTRIBUTING.md) · [50-Lane Regression Suite (`ORNL/oscar-regression`)](https://github.com/ORNL/oscar-regression).
+
+### Why the major architectural changes in 3.11.0 were implemented
+
+- **Why `PARQUET_PRIMARY` Tiered Storage Replaced Single-Table PostgreSQL Detector Retention:** At a 50-lane site emitting 1 Hz gamma/neutron telemetry, single-table PostgreSQL JSONB retention generated millions of rows per day and severe MVCC dead-tuple bloat, autovacuum I/O contention, WAL amplification, and multi-gigabyte B-tree/GIN index fragmentation during row-by-row retention deletes. Staging immutable detector streams into 30-minute `LOGGED` PostgreSQL partitions (`osg_*`), sealing parity-verified windows into Zstandard-compressed Apache Parquet files (~10–15x smaller on disk), retiring whole stage partitions via `O(1)` `NO INHERIT` + `DROP TABLE`, and federating hot + cold reads through embedded DuckDB eliminates `DELETE` bloat, keeps PostgreSQL compact (~9–12 GiB), speeds up multi-day historical CQL/report scans ~19x, and preserves 100% OpenSensorHub `IObsSystemDatabase` / `ConSys` / CQL2 compatibility.
+- **Why Five-Frame JPEG Media Replaced Long-Term Raw MP4 Storage:** Retaining full H.264 MP4 clips across 50 cameras consumes terabytes rapidly, while video re-encoding was CPU-heavy and brittle on 1-second occupancies. Asynchronous extraction of five deterministic baseline sRGB JPEGs (`FIRST`, `QUARTER`, `MIDDLE`, `THREE_QUARTERS`, `LAST`) with a 24-hour MP4 rollback grace and 30-day secondary-frame pruning (keeping `MIDDLE` / `frame-03.jpg` long-term) preserves visual evidence at a small fraction of MP4 disk usage.
+- **Why Direct Pre-Parse Daily-File Journaling Was Added:** Reconstructing vendor daily CSVs from parsed database rows risked losing raw messages across restarts or parser errors and caused startup spikes on 50-lane systems. `DailyFileJournalService` records `CRC32C`-framed vendor messages on disk before parsing and decouples historical day rendering from live ingestion.
+- **Why Schema-v2 Single-Snapshot Backup (`archive_mode=off`) Replaced Continuous External WAL Archiving:** Continuous external WAL archiving risked silent disk exhaustion on unattended servers if backup storage disconnected, while multiple local cold-tier copies multiplied storage cost. Opt-in `single` mode uses streamed `pg_basebackup`, `pg_verifybackup`, HMAC-SHA-256 inventory verification, and an atomic `CURRENT` pointer for self-contained same-host or cross-host recovery.
+- **Why Operational Views, Batched Status of Health, Event UUID/QR & Serialized Statistics Were Built:** Multi-gate sites needed URL-scoped workstation views (`/view/<slug>`) so gate consoles subscribe only to assigned lanes; bounded 30-second health batching and keyframe-gated HLS recovery so 50-lane dashboards and cameras never stall browsers; single-code QR export/import for air-gapped alarm handoff; and serialized National Statistics refreshes so archive scans cannot overlap.
+- **Why Windows 11 Modern Standby (`S0 Low Power Idle`) & Pre-Login Docker Hardening Were Added:** Endurance testing on Windows 11 Modern Standby hardware proved that AC display blanking (`VIDEOIDLE > 0`) triggers `Kernel-Power 506` idle suspension even when `STANDBYIDLE = 0`, and that Docker Desktop does not start after an unattended power-loss reboot until interactive login. `configure-windows-host.ps1` (`prepare-host` / `host-check`) now enforces `VIDEOIDLE = 0` on Modern Standby systems, registers `OSCAR-DockerDesktop-BootStart` (`LogonType=S4U`) for pre-login container startup, caps WSL 2 memory via `.wslconfig`, verifies NIC IPv4 stability, and enables bugcheck auto-reboot across 20 automated checks.
+
 ### Storage-profile changes and rollout
 - Introduce the `OscarTieredObsSystemDatabase` storage profile with sequential observation IDs, batched writes, compact short-lived stage ownership, and a versioned PostgreSQL archive catalog
 - Initialize new PostgreSQL clusters with data checksums, WAL compression, I/O timing, and `pg_stat_statements`, while explicitly keeping `archive_mode=off` and omitting any external WAL bind; an existing cluster is not recreated by `upgrade`
@@ -122,6 +159,14 @@ All notable changes to this project will be documented in this file.
 - Modify daily file UI to show latest 15 messages on live view
 - Add individual detector charting to historical events
 - Fix Rapiscan neutron chart not showing first point in occupancy
+
+### Windows 11 unattended server readiness, ORNL upstream transition, and release CI
+- Transition official upstream repositories, submodule pins, `osh-js` dependency lock, localized manual asset links, and governance files (`CODEOWNERS`, `CONTRIBUTING.md`, `SECURITY.md`) to Oak Ridge National Laboratory ([`github.com/ORNL`](https://github.com/ORNL))
+- Add `configure-windows-host.ps1` (`.\oscar.bat prepare-host` and `.\oscar.bat host-check`) with 20 automated checks covering AC power/hibernate/USB/NIC power-saving policy, `S0 Low Power Idle` (Modern Standby) detection (`powrprof.dll!GetPwrCapabilities`) with `VIDEOIDLE = 0` (`Never`) enforcement, pre-login Docker Desktop startup (`OSCAR-DockerDesktop-BootStart` `AtStartup` `+10s`, `LogonType=S4U` with ACL-locked `%ProgramData%\OSCAR\start-docker-prelogin.ps1`), bounded `.wslconfig` memory/swap caps (`wsl2-resource-cap`), static vs. DHCP IPv4 stability (`network-address-stability` / `-AllowDhcpAddress`), bugcheck auto-reboot (`AutoReboot=1`, `CrashDumpEnabled=7`), Win32 long paths, W32Time sync, and optional LAN HTTPS `443` firewall rules
+- Stage `Confirm-DailyJournalBackup` inside an isolated native Linux ext4 Docker named volume instead of NTFS over WSL 2 9P, and use Win32 `\\?\` long-path cleanup (`Remove-DirectoryTreeLongPath`) on Windows
+- Set `absolute_redirect off;` in `dist/release/docker/gateway/default.conf` so `/view/<name>` workstation redirects preserve the external HTTPS host and port instead of exposing internal container port `:8443`
+- Normalize `/opt/oscar` permissions in a dedicated Docker build stage to eliminate duplicate copy-up layers in `oscar:3.11.0` and offline Windows image bundles
+- Add end-to-end live Docker Compose, `ConSys` API, headless Chromium Playwright UI/Admin, and single-snapshot backup regression verification (`tools/test-live-deployment-regression.sh` against [`ORNL/oscar-regression`](https://github.com/ORNL/oscar-regression)) to both continuous integration and tagged release builds, and publish SHA-256 manifests for all release ZIPs and localized PDF manuals
 
 ## 3.10.0 2026-10-25
 ## Changes

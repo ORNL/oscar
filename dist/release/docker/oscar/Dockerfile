@@ -1,3 +1,9 @@
+FROM eclipse-temurin:21.0.10_7-jre-noble@sha256:420374e45e8e9dce3057e768c87a3e8ba58e815049511d8df95ca88a041ec82b AS app-tree
+
+COPY --chown=root:root osh-node-oscar/ /opt/oscar/
+RUN find /opt/oscar -type d -exec chmod 0555 {} \; \
+    && find /opt/oscar -type f -exec chmod 0444 {} \;
+
 FROM eclipse-temurin:21.0.10_7-jre-noble@sha256:420374e45e8e9dce3057e768c87a3e8ba58e815049511d8df95ca88a041ec82b
 
 ARG OSCAR_VERSION=local
@@ -21,13 +27,11 @@ RUN apt-get update \
     && groupadd --gid "${OSCAR_GID}" oscar \
     && useradd --uid "${OSCAR_UID}" --gid "${OSCAR_GID}" --home-dir /var/lib/oscar --shell /usr/sbin/nologin oscar
 
-COPY --chown=root:root osh-node-oscar/ /opt/oscar/
+COPY --from=app-tree --chown=root:root /opt/oscar/ /opt/oscar/
 COPY --chown=root:root docker/oscar/entrypoint.sh /usr/local/bin/oscar-entrypoint
 COPY --chown=root:root docker/oscar/archive-object-helper.sh /usr/local/bin/oscar-archive-object
 
 RUN chmod 0555 /usr/local/bin/oscar-entrypoint /usr/local/bin/oscar-archive-object \
-    && find /opt/oscar -type d -exec chmod 0555 {} \; \
-    && find /opt/oscar -type f -exec chmod 0444 {} \; \
     && install --directory --owner=oscar --group=oscar --mode=0700 \
         /var/lib/oscar /run/oscar-native
 

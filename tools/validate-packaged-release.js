@@ -86,6 +86,7 @@ const expected = [
     'docker/oscar/Dockerfile', 'docker/oscar/entrypoint.sh',
     'docker/oscar/archive-object-helper.sh',
     'docker/oscar/atomic-publish.c',
+    'documentation/RELEASE_NOTES_AND_UPGRADE_GUIDE.md',
     'documentation/QUICKSTART.md', 'documentation/DEPLOYMENT.md',
     'documentation/LIVE_VIDEO.md', 'documentation/OPERATIONAL_VIEWS.md',
     'documentation/STATUS_OF_HEALTH.md', 'documentation/TRANSLATION_SYSTEM.md',
@@ -191,7 +192,11 @@ if (Object.prototype.hasOwnProperty.call(env, 'OSCAR_WAL_ARCHIVE_DIR')) {
 }
 
 const standardConfigPath = path.join(root, 'osh-node-oscar', 'config.json');
-if (!fs.existsSync(standardConfigPath)) {
+if (offline) {
+    if (fs.existsSync(path.join(root, 'osh-node-oscar'))) {
+        fail('offline bundle must not retain osh-node-oscar');
+    }
+} else if (!fs.existsSync(standardConfigPath)) {
     fail('missing osh-node-oscar/config.json');
 } else {
     let standardConfig;

@@ -16,9 +16,12 @@ The configured HTTPS port and a port 80 HTTPS redirect are published. PostgreSQL
 | [`ORNL/osh-js`](https://github.com/ORNL/osh-js) | OpenSensorHub JavaScript ConSys/MQTT client (`add-consys` branch) |
 | [`ORNL/oscar-regression`](https://github.com/ORNL/oscar-regression) | End-to-end Playwright, ConSys API, emulator fault-injection, and 50-lane regression suite |
 
-## Installation
+## Installation and user guides
 
-See the release [Quick Start](dist/release/QUICKSTART.md) for the shortest supported installation path. The [Administrator Guide](dist/release/DEPLOYMENT.md) covers certificates, offline Windows installation, lifecycle commands, storage administration, security verification, and upgrades.
+- **What's New, Architectural Rationale & Upgrade Guide:** Start with the [OSCAR 3.11.0 Release Overview and User Guide](docs/RELEASE_NOTES_AND_UPGRADE_GUIDE.md) for a complete walkthrough of all new capabilities, why each architectural change was made, and step-by-step instructions for **new installations**, **`pre-3.11.0` upgrades/migrations**, and **`3.11.0+` clean-directory upgrades**.
+- **New Installations:** Download the latest release from [GitHub Releases](https://github.com/ORNL/oscar/releases) and follow the [Quick Start](dist/release/QUICKSTART.md) for the shortest supported installation path on Ubuntu Server 24.04 or Windows 11 (connected or offline).
+- **Site & Storage Administration:** The [Administrator Guide](dist/release/DEPLOYMENT.md) covers Windows 11 unattended host readiness (`prepare-host` / `host-check`), LAN/Tailscale TLS certificates, offline Windows installation, lifecycle commands, storage administration, security verification, and upgrades.
+- **Localized Operator Manuals (`en`, `es`, `fr`, `el`):** Complete administrator and console-operator manuals are included in [English](include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README.md), [Español](include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README_es.md), [Français](include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README_fr.md), and [Ελληνικά](include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README_el.md), and published as standalone PDFs on each GitHub Release.
 
 Supported deployment and operation hosts:
 
