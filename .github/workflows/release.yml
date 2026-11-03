@@ -203,10 +203,20 @@ jobs:
     name: Build Release
     needs: platform-acceptance
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 90
     permissions:
       contents: write
     steps:
+      - name: Free runner disk space for offline and Docker release builds
+        run: |
+          df -h
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc \
+            /opt/hostedtoolcache/CodeQL
+          df -h
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -306,6 +316,7 @@ jobs:
           unzip -Z1 "$archive" > "$listing"
 
           for expected in \
+            documentation/RELEASE_NOTES_AND_UPGRADE_GUIDE.md \
             documentation/QUICKSTART.md \
             documentation/DEPLOYMENT.md \
             documentation/LIVE_VIDEO.md \
@@ -438,6 +449,7 @@ jobs:
               validate-storage-archive.sh
               verify-bundle.ps1
               verify-bundle.sh
+              documentation/RELEASE_NOTES_AND_UPGRADE_GUIDE.md
               documentation/QUICKSTART.md
               documentation/DEPLOYMENT.md
               documentation/LIVE_VIDEO.md
@@ -499,6 +511,7 @@ jobs:
                 QUICKSTART.md \
                 SHA256SUMS \
                 compose.yaml \
+                configure-windows-host.ps1 \
                 docker \
                 documentation \
                 offline-images.tar \
@@ -596,11 +609,29 @@ jobs:
             rm -rf "$expanded"
           done
 
+          rm -rf \
+            build/offline/.cache \
+            build/offline/oscar-*-windows-x86_64-offline-full \
+            build/offline/oscar-*-windows-x86_64-offline-images
+
       - name: Boot packaged deployment and run Playwright + ConSys + backup regression checks
         run: ./tools/test-live-deployment-regression.sh "${GITHUB_REF_NAME#v}" "${DIST_DIR}/oscar-${GITHUB_REF_NAME#v}.zip"
 
-      - name: Stage source archive
-        run: cp "${{ steps.source.outputs.archive }}" "${DIST_DIR}/"
+      - name: Stage source archive and generate release checksums
+        run: |
+          cp "${{ steps.source.outputs.archive }}" "${DIST_DIR}/"
+          (
+            cd "${DIST_DIR}"
+            for archive in oscar-*.zip; do
+              sha256sum --binary "$archive" > "${archive}.sha256"
+            done
+          )
+          {
+            (cd "${DIST_DIR}" && sha256sum --binary oscar-*.zip)
+            (cd "${DOCS_DIR}" && sha256sum --binary OSCAR-*-Administrator-Operator-Manual-*.pdf)
+            (cd build/offline && sha256sum --binary oscar-*-windows-x86_64-offline-*.zip)
+          } > "${DIST_DIR}/OSCAR-${RELEASE_VERSION}-SHA256SUMS.txt"
+          cat "${DIST_DIR}/OSCAR-${RELEASE_VERSION}-SHA256SUMS.txt"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -611,7 +642,8 @@ jobs:
           generate_release_notes: true
           files: |
             ${{ env.DIST_DIR }}/oscar-*.zip
-            ${{ env.DIST_DIR }}/*-source.zip
+            ${{ env.DIST_DIR }}/oscar-*.zip.sha256
+            ${{ env.DIST_DIR }}/OSCAR-*-SHA256SUMS.txt
             ${{ env.DOCS_DIR }}/OSCAR-*-Administrator-Operator-Manual-*.pdf
             build/offline/oscar-*-windows-x86_64-offline-*.zip
             build/offline/oscar-*-windows-x86_64-offline-*.zip.sha256

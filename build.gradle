@@ -91,6 +91,7 @@ distributions{
                     include 'DEPLOYMENT.md'
                 }
                 from('docs') {
+                    include 'RELEASE_NOTES_AND_UPGRADE_GUIDE.md'
                     include 'LIVE_VIDEO.md'
                     include 'OPERATIONAL_VIEWS.md'
                     include 'STATUS_OF_HEALTH.md'
@@ -102,6 +103,13 @@ distributions{
                     include 'STORAGE_OPERATIONS.md'
                     filesMatching('STORAGE_ARCHITECTURE.md') {
                         filter { line -> line.replace('../include/osh-oakridge-modules/docs/', '') }
+                    }
+                    filesMatching('RELEASE_NOTES_AND_UPGRADE_GUIDE.md') {
+                        filter { line ->
+                            line.replace('../dist/release/', '')
+                                .replace('../include/osh-oakridge-modules/docs/', '')
+                                .replace('../include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/', 'operator-manual/')
+                        }
                     }
                 }
                 from('include/osh-oakridge-modules/docs') {
@@ -129,6 +137,7 @@ distributions{
                     include 'DEPLOYMENT.md'
                 }
                 from('docs') {
+                    include 'RELEASE_NOTES_AND_UPGRADE_GUIDE.md'
                     include 'LIVE_VIDEO.md'
                     include 'OPERATIONAL_VIEWS.md'
                     include 'STATUS_OF_HEALTH.md'
@@ -140,6 +149,13 @@ distributions{
                     include 'STORAGE_OPERATIONS.md'
                     filesMatching('STORAGE_ARCHITECTURE.md') {
                         filter { line -> line.replace('../include/osh-oakridge-modules/docs/', '') }
+                    }
+                    filesMatching('RELEASE_NOTES_AND_UPGRADE_GUIDE.md') {
+                        filter { line ->
+                            line.replace('../dist/release/', '')
+                                .replace('../include/osh-oakridge-modules/docs/', '')
+                                .replace('../include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/', 'operator-manual/')
+                        }
                     }
                 }
                 from('include/osh-oakridge-modules/docs') {
@@ -170,7 +186,12 @@ distributions{
                 from 'README.md'
                 from 'changelog.md'
                 filesMatching('README.md') {
-                    filter { line -> line.replace('(dist/release/', '(documentation/').replace('(docs/', '(documentation/') }
+                    filter { line ->
+                        line.replace('(dist/release/', '(documentation/')
+                            .replace('(docs/', '(documentation/')
+                            .replace('(include/osh-oakridge-modules/docs/', '(documentation/')
+                            .replace('(include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/', '(documentation/operator-manual/')
+                    }
                 }
             }
             into("osh-node-oscar/lib") {
