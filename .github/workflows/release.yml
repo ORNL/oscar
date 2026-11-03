@@ -240,6 +240,10 @@ jobs:
             exit 1
           fi
 
+          GH_TOKEN="${{ github.token }}" node tools/collect-release-contributors.js \
+            --tag="${GITHUB_REF_NAME}" \
+            --ensure-in="$notes_file"
+
           echo "Release notes for $version:"
           cat "$notes_file"
 
@@ -639,7 +643,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
           body_path: ${{ runner.temp }}/release-notes.md
-          generate_release_notes: true
+          generate_release_notes: false
           files: |
             ${{ env.DIST_DIR }}/oscar-*.zip
             ${{ env.DIST_DIR }}/oscar-*.zip.sha256

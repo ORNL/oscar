@@ -10,7 +10,7 @@ command -v node >/dev/null 2>&1 || { printf 'ERROR: Node.js is required to build
 command -v npm >/dev/null 2>&1 || { printf 'ERROR: npm is required to build OSCAR.\n' >&2; exit 1; }
 
 node tools/validate-release-metadata.js
-node --test tools/update-version.test.js
+node --test tools/update-version.test.js tools/collect-release-contributors.test.js
 
 (
     cd web/oscar-viewer
