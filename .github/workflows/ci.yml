@@ -160,4 +160,7 @@ jobs:
             --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.nonArchivedDataStreamQueriesAndHotLatestQueriesPruneColdGenerations \
             --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.boundedResultTimeQueriesPruneOlderColdGenerationsAndBackfillLegacyNullMaxResultTime \
             --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.parquetPrimaryRoutesRawRowsToLoggedDroppablePartitions \
-            --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.parquetPrimaryHotMetadataScanDeduplicatesStageOverlapInSingleTableScan
+            --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.parquetPrimaryHotMetadataScanDeduplicatesStageOverlapInSingleTableScan \
+            --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.tombstonedOverlayIsExcludedFromSelectGetAndCount \
+            --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.directTieredCountMatchesSelectEntriesAcrossOverlapOverlaysTombstonesAndCql \
+            --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.parquetPrimaryMutableStreamCountsStayExactAndAccelerateBoundedQueries
