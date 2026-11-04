@@ -163,4 +163,6 @@ jobs:
             --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.parquetPrimaryHotMetadataScanDeduplicatesStageOverlapInSingleTableScan \
             --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.tombstonedOverlayIsExcludedFromSelectGetAndCount \
             --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.directTieredCountMatchesSelectEntriesAcrossOverlapOverlaysTombstonesAndCql \
-            --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.parquetPrimaryMutableStreamCountsStayExactAndAccelerateBoundedQueries
+            --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.parquetPrimaryMutableStreamCountsStayExactAndAccelerateBoundedQueries \
+            --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.parquetPrimaryConcurrentOutOfOrderMutableTransactionsNeverDeadlockAndCompactCleanly \
+            --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.nonAlarmKeysetAndUnadjudicatedAlarmPartialIndexesSupportGenericPreparedPlans
