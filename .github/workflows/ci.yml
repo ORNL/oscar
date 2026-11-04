@@ -156,4 +156,6 @@ jobs:
             --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.sparseByteHeavyHourDoesNotSelectAnEmptyPrefix \
             --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.staleJobRetryReplacesItsDeterministicCrashObjects \
             --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.archivePublicationRejectsSymlinkedPartitionPath \
-            --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.archiveCatalogNamespacesIndependentObservationStores
+            --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.archiveCatalogNamespacesIndependentObservationStores \
+            --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.nonArchivedDataStreamQueriesAndHotLatestQueriesPruneColdGenerations \
+            --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.boundedResultTimeQueriesPruneOlderColdGenerationsAndBackfillLegacyNullMaxResultTime
