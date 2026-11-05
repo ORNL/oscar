@@ -1,3 +1,5 @@
+FROM bluenviron/mediamtx:1.12.2@sha256:691bd1d4cef49226d1d3c86db2e9abe1fe8c7f98547cdc77d1c464637adadb6e AS mediamtx-bin
+
 FROM eclipse-temurin:21.0.10_7-jre-noble@sha256:420374e45e8e9dce3057e768c87a3e8ba58e815049511d8df95ca88a041ec82b AS app-tree
 
 COPY --chown=root:root osh-node-oscar/ /opt/oscar/
@@ -28,10 +30,11 @@ RUN apt-get update \
     && useradd --uid "${OSCAR_UID}" --gid "${OSCAR_GID}" --home-dir /var/lib/oscar --shell /usr/sbin/nologin oscar
 
 COPY --from=app-tree --chown=root:root /opt/oscar/ /opt/oscar/
+COPY --from=mediamtx-bin --chown=root:root /mediamtx /usr/local/bin/mediamtx
 COPY --chown=root:root docker/oscar/entrypoint.sh /usr/local/bin/oscar-entrypoint
 COPY --chown=root:root docker/oscar/archive-object-helper.sh /usr/local/bin/oscar-archive-object
 
-RUN chmod 0555 /usr/local/bin/oscar-entrypoint /usr/local/bin/oscar-archive-object \
+RUN chmod 0555 /usr/local/bin/mediamtx /usr/local/bin/oscar-entrypoint /usr/local/bin/oscar-archive-object \
     && install --directory --owner=oscar --group=oscar --mode=0700 \
         /var/lib/oscar /run/oscar-native
 
