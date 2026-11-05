@@ -99,6 +99,8 @@ done
 for path in lib web rules documentation trusted_certificates config logback.xml; do
     if [ -e "/opt/oscar/${path}" ] && [ ! -e "${STATE_DIR}/${path}" ]; then
         ln -s "/opt/oscar/${path}" "${STATE_DIR}/${path}"
+    elif [ -L "${STATE_DIR}/${path}" ] && [ ! -e "/opt/oscar/${path}" ]; then
+        rm -f "${STATE_DIR}/${path}"
     fi
 done
 

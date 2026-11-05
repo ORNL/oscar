@@ -73,9 +73,6 @@ distributions{
                 from 'dist/config/standard'
                 exclude 'osh-keystore.p12'
             }
-            into ("osh-node-oscar/config") {
-                from 'dist/config/eml'
-            }
             into("osh-node-oscar/trusted_certificates") {
                 from 'scripts/trusted_certificates'
             }
@@ -92,6 +89,7 @@ distributions{
                 }
                 from('docs') {
                     include 'RELEASE_NOTES_AND_UPGRADE_GUIDE.md'
+                    include 'EML_INTEGRATION.md'
                     include 'LIVE_VIDEO.md'
                     include 'OPERATIONAL_VIEWS.md'
                     include 'STATUS_OF_HEALTH.md'
@@ -104,7 +102,7 @@ distributions{
                     filesMatching('STORAGE_ARCHITECTURE.md') {
                         filter { line -> line.replace('../include/osh-oakridge-modules/docs/', '') }
                     }
-                    filesMatching('RELEASE_NOTES_AND_UPGRADE_GUIDE.md') {
+                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md']) {
                         filter { line ->
                             line.replace('../dist/release/', '')
                                 .replace('../include/osh-oakridge-modules/docs/', '')
@@ -138,6 +136,7 @@ distributions{
                 }
                 from('docs') {
                     include 'RELEASE_NOTES_AND_UPGRADE_GUIDE.md'
+                    include 'EML_INTEGRATION.md'
                     include 'LIVE_VIDEO.md'
                     include 'OPERATIONAL_VIEWS.md'
                     include 'STATUS_OF_HEALTH.md'
@@ -150,7 +149,7 @@ distributions{
                     filesMatching('STORAGE_ARCHITECTURE.md') {
                         filter { line -> line.replace('../include/osh-oakridge-modules/docs/', '') }
                     }
-                    filesMatching('RELEASE_NOTES_AND_UPGRADE_GUIDE.md') {
+                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md']) {
                         filter { line ->
                             line.replace('../dist/release/', '')
                                 .replace('../include/osh-oakridge-modules/docs/', '')

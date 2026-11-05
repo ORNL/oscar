@@ -87,6 +87,7 @@ const expected = [
     'docker/oscar/archive-object-helper.sh',
     'docker/oscar/atomic-publish.c',
     'documentation/RELEASE_NOTES_AND_UPGRADE_GUIDE.md',
+    'documentation/EML_INTEGRATION.md',
     'documentation/QUICKSTART.md', 'documentation/DEPLOYMENT.md',
     'documentation/LIVE_VIDEO.md', 'documentation/OPERATIONAL_VIEWS.md',
     'documentation/STATUS_OF_HEALTH.md', 'documentation/TRANSLATION_SYSTEM.md',
@@ -305,6 +306,13 @@ const forbidden = [
     /(^|\/)\.oscar-storage\.lock$/,
     /(^|\/)offline-images\.tar$/,
     /(^|\/)SHA256SUMS(?:\.hmac)?$/,
+    /(^|\/)(?:EML-VM250|eml-vm250)[^/]*$/i,
+    /(^|\/)[^/]*eml[^/]*\.(?:jar|tar\.gz|tgz|zip)$/i,
+    /(^|\/)gov\.llnl\.(?:ernie|math|utility)[^/]*\.jar$/i,
+    /(^|\/)edu\.cmu\.cs\.auton[^/]*\.jar$/i,
+    /(^|\/)(?:CMU_metric\.csv|featureBuilderVM250\.xml|vm250Transform\.xml|vm250LaneConfigurations\.csv|vm250LaneDatabase\.xml|vm250Queries\.bak|vm250RecordDatabase\.xml|vm250RecordManipulator\.xml|vm250StandardFeatureExtractor\.xml|vm250VehicleClassifier\.xml\.gz|vm250Analysis\.xml|(?:multi_site|uber_SSL_model)_(?:un)?collimated\.txt)$/i,
+    /(^|\/)osh-node-oscar\/config(?:\/|$)/,
+    /(^|\/)eml-plugin(?:\/|$)/,
 ];
 const allowedOfflineFiles = new Set(['offline-images.tar', 'SHA256SUMS']);
 for (const relative of files) {

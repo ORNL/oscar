@@ -42,3 +42,10 @@ dist/release/installers/**/*.exe
 dist/release/installers/**/*.msi
 dist/release/installers/**/*.dmg
 dist/release/installers/**/*.deb
+
+# Non-redistributable external EML plugin archives and models
+*eml*.jar
+*EML*.jar
+EML-VM250*
+eml-vm250*
+eml-plugin/
