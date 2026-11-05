@@ -336,6 +336,10 @@ explicit removal of every retained data location.
 
 WebID is disabled by default. Failure to reach an optional configured WebID endpoint must not prevent OSCAR from starting.
 
+### External EML runtime plugin upload & per-lane enablement
+
+OSCAR does not bundle or redistribute external Energy-Based Machine Learning (EML) VM-250 JARs, models, or XML configuration files. Sites licensed to run EML upload their EML plugin `.jar` (or `.tar.gz`/`.tgz`/`.zip` bundle) once in SensorHub Admin under **Services -> OSCAR Service -> EML Plugin Path** (`emlPluginPath`), click **Apply Changes** and **Save Configuration**, and enable **Enable EML** (`emlEnabled`), **Lane Collimated** (`isCollimated`), and **Lane Width** (`laneWidth`) on each Rapiscan VM-250 lane (or via the `EMLEnabled`, `EMLCollimated`, and `LaneWidth` CSV columns). The uploaded archive is stored privately in `/var/lib/oscar/eml-plugin/` (`0700`/`0600`) inside `oscar_oscar_state` (preserved across restarts, upgrades, and schema-v2 backups and never exposed over HTTP `/sensorhub/buckets`), extracted at runtime onto `/tmp/oscar-eml-runtime` (`oscar.data.tmpdir`), and loaded in an isolated `URLClassLoader`. When EML classifies an alarm occupancy as non-threat (`RELEASE`, `fallback=false`), OSCAR suppresses it from the Dashboard alarm queue and browser notifications and automatically adjudicates it as **EML Non-Threat** (disposition code `9999`) with structured `EML_METADATA` JSON queryable in the **Events** page (`Adjudicated = EML Non-Threat`) and inspectable in **Event Details**. Full packaging, upload, lane configuration, and query instructions are in [`../../docs/EML_INTEGRATION.md`](../../docs/EML_INTEGRATION.md).
+
 The OSCAR container health check is an application-readiness check, not merely an HTTP liveness
 probe. It becomes healthy only after the web service and every top-level auto-start module are
 `STARTED`, and after each nested RPM/camera member has completed its startup attempt. A device that

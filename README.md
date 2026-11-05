@@ -90,6 +90,8 @@ The [Status of Health guide](docs/STATUS_OF_HEALTH.md) documents lane-level RPM 
 
 The [live-video guide](docs/LIVE_VIDEO.md) documents keyframe requirements, the Viewer's preparing and recovery states, emulator expectations, troubleshooting, and end-to-end playback acceptance tests.
 
+The [EML integration guide](docs/EML_INTEGRATION.md) documents how administrators package and upload a separately licensed EML VM-250 `.jar` plugin in **Services -> OSCAR Service**, enable EML per Rapiscan lane, and query or review automated **EML Non-Threat** (`Code 9999`) adjudications and `EML_METADATA` in the Viewer and ConSys API.
+
 The [storage architecture](docs/STORAGE_ARCHITECTURE.md) explains the 3.11.0 PostgreSQL hot store, Parquet cold tier, durable daily journal, and exact-five JPEG retained-media design for each successfully converted camera clip. The companion [data-lifecycle policy](docs/DATA_LIFECYCLE.md), [archive-format contract](docs/ARCHIVE_FORMAT.md), [backup/restore runbook](docs/BACKUP_RESTORE.md), and [storage-operations runbook](docs/STORAGE_OPERATIONS.md) cover retention, portability, deletion, recovery, monitoring, and rollout.
 
 ## Build Windows offline media
