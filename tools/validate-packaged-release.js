@@ -164,6 +164,9 @@ const oscarDockerfile = fs.readFileSync(path.join(root, 'docker/oscar/Dockerfile
 if (!/install --directory --owner=oscar --group=oscar --mode=0700[\s\\]*\n\s*\/var\/lib\/oscar \/run\/oscar-native/.test(oscarDockerfile)) {
     fail('the OSCAR image must provide a private native-tmpfs mount point');
 }
+if (!oscarDockerfile.includes('/usr/local/bin/mediamtx')) {
+    fail('the OSCAR image must embed /usr/local/bin/mediamtx for transparent loopback RTSP proxying');
+}
 
 const oscarEntrypoint = fs.readFileSync(path.join(root, 'docker/oscar/entrypoint.sh'), 'utf8');
 const javaOptions = oscarEntrypoint.indexOf('exec java ${JAVA_OPTS:-}');

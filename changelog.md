@@ -167,6 +167,9 @@ OSCAR 3.11.0 is the first official release published under Oak Ridge National La
 - Set `absolute_redirect off;` in `dist/release/docker/gateway/default.conf` so `/view/<name>` workstation redirects preserve the external HTTPS host and port instead of exposing internal container port `:8443`
 - Normalize `/opt/oscar` permissions in a dedicated Docker build stage to eliminate duplicate copy-up layers in `oscar:3.11.0` and offline Windows image bundles
 - Add end-to-end live Docker Compose, `ConSys` API, headless Chromium Playwright UI/Admin, and single-snapshot backup regression verification (`tools/test-live-deployment-regression.sh` against [`ORNL/oscar-regression`](https://github.com/ORNL/oscar-regression)) to both continuous integration and tagged release builds, and publish SHA-256 manifests for all release ZIPs and localized PDF manuals
+- Push down exact `PARQUET_PRIMARY` stream/CQL counts without `DataBlock` decoding, prune cold archive generations by bounded `resultTime`, eliminate `obs` self-joins in `scanHotMetadata`, replace in-place mutable stream counter updates with lock-free append-only delta compaction (`oscar_mutable_stream_counts_delta`), add generic-plan-compatible covering partial event indexes (`obs_non_alarm_ptime_desc_idx`, `obs_unadjudicated_alarm_idx`), and coalesce WSL 2 9P Parquet SHA-256 verification with `16 KiB` buffers
+- Deduplicate initial Viewer lane-discovery snapshots, cancel superseded `EventTable` count/page requests via `AbortController`, deprioritize background pagination count sweeps (`priority: 'low'`), resolve cold-tier `gammaThreshold` lookups, and eliminate `BroadcastChannel` wallboard listener leaks
+- Embed and automatically supervise a digest-pinned loopback `mediamtx` (`1.12.2`) RTSP/RTSPS proxy inside `oscar:3.11.0` (`MediaMtxSidecarManager`, `127.0.0.1` only, keeping real camera URLs unchanged across `config.json`, Admin UI, and CSV imports/exports), deduplicate identical camera streams to one upstream TCP socket per node with immediate `TEARDOWN` on stop/edit, collapse accidental leading `//` RTSP paths, unthrottle `>24 fps` live network cameras, normalize packet DTS/PTS discontinuities, reconnect dropped streams in place without restarting the SensorHub module, and coordinate per-viewer live HLS leases so multiple operators can watch the same lane concurrently
 
 ### Contributors
 Thanks to everyone who contributed across `ORNL/oscar` and its submodules since `v3.10.0`:
@@ -177,11 +180,11 @@ Thanks to everyone who contributed across `ORNL/oscar` and its submodules since 
 
 ### Full changelog across repository and submodules
 - **`ORNL/oscar`**: [`v3.10.0...v3.11.0`](https://github.com/ORNL/oscar/compare/v3.10.0...v3.11.0)
-- **`ORNL/oscar-viewer`**: [`a2dabf0e...363e0a1e`](https://github.com/ORNL/oscar-viewer/compare/a2dabf0e038a6a48acadf8c6fcdb71d916f9adb5...363e0a1e97d62bb4b472e5510a0854462630400a)
-- **`ORNL/osh-addons`**: [`3708dcaa...bf78cac1`](https://github.com/ORNL/osh-addons/compare/3708dcaa1d2189aaa75ad0b11af8483cc1468310...bf78cac1fae85175f821b68bb474eaa23dea8059)
+- **`ORNL/oscar-viewer`**: [`a2dabf0e...23a4a178`](https://github.com/ORNL/oscar-viewer/compare/a2dabf0e038a6a48acadf8c6fcdb71d916f9adb5...23a4a178ae6dc089d45e6595a0447a682403945a)
+- **`ORNL/osh-addons`**: [`3708dcaa...434594ce`](https://github.com/ORNL/osh-addons/compare/3708dcaa1d2189aaa75ad0b11af8483cc1468310...434594ce60a06161a9a6168eca2a4d747cfdbda3)
 - **`ORNL/osh-core`**: [`651fee4d...0b43abd6`](https://github.com/ORNL/osh-core/compare/651fee4d0ae694810c7c02f6cb8fd58c739a6068...0b43abd6cb795dec122a5e2edca6f27f53ed9211)
 - **`ORNL/osh-js`**: [`73dacad5...0d3716dc`](https://github.com/ORNL/osh-js/compare/73dacad5c7338722763263ef0ff5928fbd19de5b...0d3716dc5f5ce8c310757fd5e1e939231e22fe93)
-- **`ORNL/osh-oakridge-modules`**: [`4f20ab45...929726c3`](https://github.com/ORNL/osh-oakridge-modules/compare/4f20ab458f177ee0e492a8698227fd0a12fb0514...929726c3064e6e701bb73e474f1640ac54e3f7bd)
+- **`ORNL/osh-oakridge-modules`**: [`4f20ab45...06a0b6c4`](https://github.com/ORNL/osh-oakridge-modules/compare/4f20ab458f177ee0e492a8698227fd0a12fb0514...06a0b6c49a1990888999b9774faba8bb2be1fd17)
 
 ## 3.10.0 2026-10-25
 ## Changes

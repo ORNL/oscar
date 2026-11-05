@@ -9,6 +9,14 @@ OSCAR 3.11.0 starts Lane Details video only after the HLS stream has received a 
 - Configure a closed GOP with a keyframe interval of one to two seconds. At 15 frames per second, a one-second interval is `15` frames.
 - Do not depend on a keyframe interval longer than the desired live-video startup time. OSCAR discards packets received before the first keyframe so that the first HLS segment can be decoded independently.
 
+### Built-in loopback RTSP proxy
+
+OSCAR embeds `mediamtx` inside the `oscar` container image (`/usr/local/bin/mediamtx`) and supervises it automatically on container loopback (`127.0.0.1`) whenever `rtsp://` or `rtsps://` camera streams are configured. Operators continue to configure and edit real camera hostnames, ports, credentials, and stream paths in SensorHub Admin UI, `config.json`, and CSV imports/exports; internal loopback proxy URLs are never persisted or exported.
+
+- **Single upstream socket per unique camera URL per node**: If multiple lanes or sensors on the same node reference the same normalized RTSP URL, OSCAR shares one upstream camera connection through `mediamtx` using lease-based reference counting.
+- **Automatic RTSP URL normalization and clean `TEARDOWN`**: Accidental multiple leading slashes in RTSP paths (for example `//h264Preview_01_sub`) are collapsed to a single leading `/` before connecting, and stopping or editing a camera removes the unused proxy path so `mediamtx` sends an RTSP `TEARDOWN` immediately.
+- **Truthful connection status and in-place recovery**: OSCAR verifies upstream stream readiness before marking a camera `Online`, reconnects the FFmpeg stream processor in place without restarting the parent SensorHub module, and respawns `mediamtx` automatically if the child process ever exits unexpectedly.
+
 The OSCAR camera emulator prepares its source assets with a one-second closed GOP and then republishes them with stream copy. This keeps the Raspberry Pi workload low while giving every emulated camera a predictable startup bound. The implementation is maintained in [tyronechrisharris/Camera-emulator](https://github.com/tyronechrisharris/Camera-emulator) and introduced by [Camera-emulator PR #2](https://github.com/tyronechrisharris/Camera-emulator/pull/2).
 
 ### Prepare and apply emulator assets
@@ -36,7 +44,7 @@ The live-video panel has three explicit states:
 | Playing | The browser loaded the playlist and is advancing decoded video. |
 | Live video could not be played | Preparation or playback exhausted its bounded recovery attempts. Select **Retry** after checking the camera and network. |
 
-The Viewer retries transient playlist and media failures without repeatedly issuing start commands. After a terminal failure, selecting **Retry** waits for the old start attempt to settle, sends one stop command, and then issues one fresh start command. Leaving Lane Details, changing lanes, or unmounting the player still sends the normal stop command and clears retry timers. Stopping while OSCAR is still waiting for the first keyframe is treated as a successful cancellation: native resources are finalized, incomplete HLS artifacts are removed, and queued packets cannot leak into a later restart. Actual packet-write or cleanup failures are still reported.
+The Viewer retries transient playlist and media failures without repeatedly issuing start commands. After a terminal failure, selecting **Retry** waits for the old start attempt to settle, sends one stop command, and then issues one fresh start command. Leaving Lane Details, changing lanes, or unmounting the player releases that viewer's lease and sends the normal stop command; when another operator is actively watching the same lane, OSCAR keeps the shared HLS muxer running until the last active viewer leaves or times out. Stopping while OSCAR is still waiting for the first keyframe is treated as a successful cancellation: native resources are finalized, incomplete HLS artifacts are removed, and queued packets cannot leak into a later restart. Actual packet-write or cleanup failures are still reported.
 
 ## Occupancy recording integrity
 
