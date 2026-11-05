@@ -170,6 +170,7 @@ OSCAR 3.11.0 is the first official release published under Oak Ridge National La
 - Push down exact `PARQUET_PRIMARY` stream/CQL counts without `DataBlock` decoding, prune cold archive generations by bounded `resultTime`, eliminate `obs` self-joins in `scanHotMetadata`, replace in-place mutable stream counter updates with lock-free append-only delta compaction (`oscar_mutable_stream_counts_delta`), add generic-plan-compatible covering partial event indexes (`obs_non_alarm_ptime_desc_idx`, `obs_unadjudicated_alarm_idx`), and coalesce WSL 2 9P Parquet SHA-256 verification with `16 KiB` buffers
 - Deduplicate initial Viewer lane-discovery snapshots, cancel superseded `EventTable` count/page requests via `AbortController`, deprioritize background pagination count sweeps (`priority: 'low'`), resolve cold-tier `gammaThreshold` lookups, and eliminate `BroadcastChannel` wallboard listener leaks
 - Embed and automatically supervise a digest-pinned loopback `mediamtx` (`1.12.2`) RTSP/RTSPS proxy inside `oscar:3.11.0` (`MediaMtxSidecarManager`, `127.0.0.1` only, keeping real camera URLs unchanged across `config.json`, Admin UI, and CSV imports/exports), deduplicate identical camera streams to one upstream TCP socket per node with immediate `TEARDOWN` on stop/edit, collapse accidental leading `//` RTSP paths, unthrottle `>24 fps` live network cameras, normalize packet DTS/PTS discontinuities, reconnect dropped streams in place without restarting the SensorHub module, and coordinate per-viewer live HLS leases so multiple operators can watch the same lane concurrently
+- Complete English (`en`), Spanish (`es`), French (`fr`), and Greek (`el`) localization and container-fit alignment across the React Viewer, Vaadin SensorHub Admin UI, `/login` session authentication page, and operator manuals: correct RPM domain terminology (including Greek `Ανιχνευτής`, `διέλευση`, and `αξιολόγηση`, French `Adjugé`, and Spanish `fallos`), localize live/historical occupancy alarm statuses and custom disposition codes, shorten verbose column/input/toolbar captions (such as compact `Λωρίδα`, `Διέλευση`, `Απομακρυσμένος κόμβος`, and `Τερματισμός`) and widen constrained DataGrid headers, open navigation drawer, and Admin split-pane widths so translated labels fit without horizontal clipping, localize `/login` via `osh-language` cookie, `?lang=`, and `Accept-Language` without inline scripts, and add 4-locale `ConfigMessages` bundles for core, PostGIS/Parquet, MQTT, FileServer, Bucket, DailyFileJournal, occupancy-process, and session-security modules
 
 ### Contributors
 Thanks to everyone who contributed across `ORNL/oscar` and its submodules since `v3.10.0`:
@@ -180,11 +181,11 @@ Thanks to everyone who contributed across `ORNL/oscar` and its submodules since 
 
 ### Full changelog across repository and submodules
 - **`ORNL/oscar`**: [`v3.10.0...v3.11.0`](https://github.com/ORNL/oscar/compare/v3.10.0...v3.11.0)
-- **`ORNL/oscar-viewer`**: [`a2dabf0e...23a4a178`](https://github.com/ORNL/oscar-viewer/compare/a2dabf0e038a6a48acadf8c6fcdb71d916f9adb5...23a4a178ae6dc089d45e6595a0447a682403945a)
-- **`ORNL/osh-addons`**: [`3708dcaa...434594ce`](https://github.com/ORNL/osh-addons/compare/3708dcaa1d2189aaa75ad0b11af8483cc1468310...434594ce60a06161a9a6168eca2a4d747cfdbda3)
-- **`ORNL/osh-core`**: [`651fee4d...0b43abd6`](https://github.com/ORNL/osh-core/compare/651fee4d0ae694810c7c02f6cb8fd58c739a6068...0b43abd6cb795dec122a5e2edca6f27f53ed9211)
+- **`ORNL/oscar-viewer`**: [`a2dabf0e...8c3cd95f`](https://github.com/ORNL/oscar-viewer/compare/a2dabf0e038a6a48acadf8c6fcdb71d916f9adb5...8c3cd95fab640085e1132fb1522f37aa225ed88d)
+- **`ORNL/osh-addons`**: [`3708dcaa...5ba4e6ad`](https://github.com/ORNL/osh-addons/compare/3708dcaa1d2189aaa75ad0b11af8483cc1468310...5ba4e6ad2e0c55b3a29ed24b6a7bcadaac4bc14b)
+- **`ORNL/osh-core`**: [`651fee4d...f4012447`](https://github.com/ORNL/osh-core/compare/651fee4d0ae694810c7c02f6cb8fd58c739a6068...f401244782ee0b0af69c09583afbd36065baac95)
 - **`ORNL/osh-js`**: [`73dacad5...0d3716dc`](https://github.com/ORNL/osh-js/compare/73dacad5c7338722763263ef0ff5928fbd19de5b...0d3716dc5f5ce8c310757fd5e1e939231e22fe93)
-- **`ORNL/osh-oakridge-modules`**: [`4f20ab45...06a0b6c4`](https://github.com/ORNL/osh-oakridge-modules/compare/4f20ab458f177ee0e492a8698227fd0a12fb0514...06a0b6c49a1990888999b9774faba8bb2be1fd17)
+- **`ORNL/osh-oakridge-modules`**: [`4f20ab45...c67b19aa`](https://github.com/ORNL/osh-oakridge-modules/compare/4f20ab458f177ee0e492a8698227fd0a12fb0514...c67b19aa9aafd0e6245b9865f099085192b08e98)
 
 ## 3.10.0 2026-10-25
 ## Changes
