@@ -36,8 +36,9 @@ The upstream build checkout is a Git superproject. Translation source is owned b
 
 | Checkout path | Owning repository responsibility |
 | --- | --- |
-| `include/osh-core` | Admin locale state, generic Vaadin controls, configuration-bundle lookup, localized help selection, global admin messages, and core tests |
-| `include/osh-oakridge-modules` | Oak Ridge sensor/Lane bundles and READMEs, custom OSCAR forms, module inventories, and module tests |
+| `include/osh-core` | Admin locale state, generic Vaadin controls, configuration-bundle lookup, localized help selection, global admin messages, core service/database/security bundles, and core tests |
+| `include/osh-addons` | PostGIS/Parquet tiered datastore, MQTT broker, Connected Systems MQTT, and FileServer configuration bundles and tests |
+| `include/osh-oakridge-modules` | Oak Ridge sensor/Lane/service/process bundles and READMEs, `/login` session authentication localization, custom OSCAR forms, module inventories, and module tests |
 | `web/oscar-viewer` | React locale registration, selector behavior, viewer JSON catalogs, and viewer tests/build |
 | repository root | Integration documentation, release build, and the pinned submodule commit IDs |
 
@@ -153,12 +154,12 @@ The viewer currently does **not** derive its initial language from `navigator.la
 
 The `LanguageProvider` is mounted in `web/oscar-viewer/src/app/providers.tsx`, so `useLanguage()` is available throughout the application tree below it.
 
-### 3.5 Cross-interface behavior
+### 3.5 Cross-interface and `/login` behavior
 
 Because the two runtimes cannot update each other's already-rendered component trees, language synchronization occurs on selection plus navigation/reload:
 
-- Choosing a language in the React viewer immediately rerenders components that use the context and leaves a cookie for the admin interface.
-- Opening or reloading the admin interface then reads that cookie.
+- Choosing a language in the React viewer immediately rerenders components that use the context and leaves a cookie for the admin interface and `/login`.
+- Opening or reloading the admin interface or `/login` then reads that `osh-language` cookie (falling back to `Accept-Language` and then `en` on `/login`, or accepting an explicit `/login?lang=en|es|fr|el` link that persists `osh-language` without client JavaScript so the strict `default-src 'none'` CSP remains intact).
 - Choosing a language in the admin interface writes both the cookie and React local storage, then reloads the admin page.
 - Returning to or reloading the viewer uses the same language.
 
@@ -537,17 +538,51 @@ include/osh-core/sensorhub-webui-core/src/main/resources/
   org/sensorhub/ui/i18n/AdminMessages.properties
 ```
 
-### 7.2 Core configuration catalogs
+### 7.2 Core and addons configuration catalogs
 
-All paths below are under `include/osh-core/sensorhub-core/src/main/resources/`:
+Under `include/osh-core`:
 
 ```text
-org/sensorhub/api/comm/i18n/ConfigMessages.properties
-org/sensorhub/api/module/i18n/ConfigMessages.properties
-org/sensorhub/api/sensor/i18n/ConfigMessages.properties
-org/sensorhub/impl/comm/i18n/ConfigMessages.properties
-org/sensorhub/impl/module/i18n/ConfigMessages.properties
-org/sensorhub/impl/sensor/i18n/ConfigMessages.properties
+sensorhub-core/src/main/resources/
+  org/sensorhub/api/comm/i18n/ConfigMessages.properties
+  org/sensorhub/api/database/i18n/ConfigMessages.properties
+  org/sensorhub/api/module/i18n/ConfigMessages.properties
+  org/sensorhub/api/security/i18n/ConfigMessages.properties
+  org/sensorhub/api/sensor/i18n/ConfigMessages.properties
+  org/sensorhub/api/service/i18n/ConfigMessages.properties
+  org/sensorhub/impl/comm/i18n/ConfigMessages.properties
+  org/sensorhub/impl/database/system/i18n/ConfigMessages.properties
+  org/sensorhub/impl/datastore/view/i18n/ConfigMessages.properties
+  org/sensorhub/impl/module/i18n/ConfigMessages.properties
+  org/sensorhub/impl/security/i18n/ConfigMessages.properties
+  org/sensorhub/impl/sensor/i18n/ConfigMessages.properties
+  org/sensorhub/impl/service/i18n/ConfigMessages.properties
+  org/sensorhub/impl/service/ogc/i18n/ConfigMessages.properties
+  org/sensorhub/impl/system/i18n/ConfigMessages.properties
+
+sensorhub-service-consys/src/main/resources/
+  org/sensorhub/impl/service/consys/i18n/ConfigMessages.properties
+
+sensorhub-webui-core/src/main/resources/
+  org/sensorhub/ui/i18n/ConfigMessages.properties
+```
+
+Under `include/osh-addons`:
+
+```text
+persistence/sensorhub-datastore-postgis/src/main/resources/
+  org/sensorhub/impl/datastore/postgis/i18n/ConfigMessages.properties
+  org/sensorhub/impl/datastore/postgis/database/i18n/ConfigMessages.properties
+  org/sensorhub/impl/datastore/postgis/archive/i18n/ConfigMessages.properties
+
+services/sensorhub-service-consys-mqtt/src/main/resources/
+  org/sensorhub/impl/service/consys/mqtt/i18n/ConfigMessages.properties
+
+services/sensorhub-service-fileserver/src/main/resources/
+  com/botts/impl/service/fileserver/i18n/ConfigMessages.properties
+
+services/sensorhub-service-mqtt-hivemq/src/main/resources/
+  org/sensorhub/impl/service/hivemq/i18n/ConfigMessages.properties
 ```
 
 ### 7.3 Oak Ridge sensor and system catalogs
@@ -598,6 +633,30 @@ include/osh-oakridge-modules/sensors/zwave/sensorhub-driver-zw100-multisensor-6/
 
 include/osh-oakridge-modules/sensors/zwave/sensorhub-zwave-comms/
   src/main/resources/com/botts/sensorhub/impl/zwave/comms/i18n/ConfigMessages.properties
+
+include/osh-oakridge-modules/sensors/sensorhub-utils-rad/
+  src/main/resources/org/sensorhub/impl/utils/rad/dailyfile/i18n/ConfigMessages.properties
+
+include/osh-oakridge-modules/processing/sensorhub-process-occupancy/
+  src/main/resources/com/botts/impl/process/occupancy/i18n/ConfigMessages.properties
+
+include/osh-oakridge-modules/processing/sensorhub-process-rs350-occupancy/
+  src/main/resources/com/botts/impl/process/rs350/occupancy/i18n/ConfigMessages.properties
+
+include/osh-oakridge-modules/security/sensorhub-security-basic-session/
+  src/main/resources/org/sensorhub/impl/security/session/i18n/ConfigMessages.properties
+
+include/osh-oakridge-modules/services/sensorhub-service-bucket/
+  src/main/resources/com/botts/impl/service/bucket/i18n/ConfigMessages.properties
+
+include/osh-oakridge-modules/services/sensorhub-service-dailyfile-journal/
+  src/main/resources/com/botts/impl/service/dailyfile/i18n/ConfigMessages.properties
+
+include/osh-oakridge-modules/services/sensorhub-service-oscar/
+  src/main/resources/com/botts/impl/service/oscar/i18n/ConfigMessages.properties
+  src/main/resources/com/botts/impl/service/oscar/retention/i18n/ConfigMessages.properties
+  src/main/resources/com/botts/impl/service/oscar/siteinfo/i18n/ConfigMessages.properties
+  src/main/resources/com/botts/impl/service/oscar/video/i18n/ConfigMessages.properties
 ```
 
 Each of these sensor/system package directories also currently has `README.md`, `README_es.md`, `README_fr.md`, and `README_el.md` in the same `i18n` directory.
