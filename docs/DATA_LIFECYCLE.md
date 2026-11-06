@@ -399,9 +399,12 @@ migration procedure.
 
 The Viewer requests the authenticated read-only event endpoint under
 `/buckets/videos/media/{eventId}`. A returned media set is shown as five labeled still frames per
-camera. Streaming validation caps the catalog body at 1 MiB, the response at eight cameras, each
-frame at 12 MiB and 20 megapixels, either dimension at 6,000 pixels, and the event at 64 MiB and
-120 megapixels. A frame body is stopped as soon as it exceeds its manifest byte count, even without
+camera. Streaming validation caps the catalog body at 1 MiB, the response at eight cameras
+(`MAX_MEDIA_SETS_PER_EVENT = 8`), each frame at 12 MiB and 20 megapixels, either dimension at
+6,000 pixels, and the aggregate event across all published frames (`cameras × 5` frames prior to
+30-day secondary pruning) at 64 MiB and 120 megapixels — supporting up to `8` cameras per lane at
+`1080p` (`1920×1080`), `4` cameras per lane at `5 MP` (`3072×1728`), or `2` cameras per lane at `4K`
+(`3840×2160`; see [Live Video](LIVE_VIDEO.md#multi-camera-lanes-and-per-lane-camera-limits)). A frame body is stopped as soon as it exceeds its manifest byte count, even without
 a valid `Content-Length`. Only the currently selected
 frame for each camera is fetched, with at most three event-wide frame requests in flight. A `404`
 means no retained-media v1 set exists, so the Viewer uses the unchanged legacy `videoPaths`
