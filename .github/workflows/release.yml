@@ -260,21 +260,95 @@ jobs:
           cache: npm
           cache-dependency-path: ${{ env.OSCAR_DIR }}/package-lock.json
 
-      - name: Install PDF documentation tooling
+      - name: Resolve PDF documentation APT cache key
+        id: pdf-apt-key
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends \
-            fonts-noto-core \
-            fonts-noto-mono \
-            lmodern \
-            pandoc \
-            poppler-utils \
-            texlive-fonts-recommended \
-            texlive-lang-french \
-            texlive-lang-greek \
-            texlive-lang-spanish \
-            texlive-latex-extra \
+          codename="$(. /etc/os-release && echo "${VERSION_CODENAME:-unknown}")"
+          arch="$(dpkg --print-architecture)"
+          echo "codename=${codename}" >> "$GITHUB_OUTPUT"
+          echo "arch=${arch}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache PDF documentation APT packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/pdf-apt-debs
+          key: pdf-apt-debs-v1-${{ steps.pdf-apt-key.outputs.codename }}-${{ steps.pdf-apt-key.outputs.arch }}-${{ hashFiles('.github/workflows/release.yml', 'tools/documentation/build-operator-manual-pdfs.sh') }}
+          restore-keys: |
+            pdf-apt-debs-v1-${{ steps.pdf-apt-key.outputs.codename }}-${{ steps.pdf-apt-key.outputs.arch }}-
+
+      - name: Install PDF documentation tooling
+        timeout-minutes: 10
+        run: |
+          set -Eeuo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+
+          deb_cache="${RUNNER_TEMP}/pdf-apt-debs"
+          mkdir -p "$deb_cache"
+          if compgen -G "${deb_cache}/*.deb" > /dev/null; then
+            echo "Restoring $(ls -1 "${deb_cache}"/*.deb | wc -l) cached .deb packages into /var/cache/apt/archives..."
+            sudo cp -f "${deb_cache}"/*.deb /var/cache/apt/archives/
+          fi
+
+          sudo systemctl stop apt-daily.timer apt-daily-upgrade.timer apt-daily.service apt-daily-upgrade.service unattended-upgrades.service 2>/dev/null || true
+
+          packages=(
+            fonts-noto-core
+            fonts-noto-mono
+            lmodern
+            pandoc
+            poppler-utils
+            texlive-fonts-recommended
+            texlive-lang-french
+            texlive-lang-greek
+            texlive-lang-spanish
+            texlive-latex-extra
             texlive-xetex
+          )
+          apt_opts=(
+            -o DPkg::Lock::Timeout=120
+            -o Acquire::Retries=3
+            -o Acquire::http::Timeout=20
+            -o Acquire::https::Timeout=20
+          )
+
+          # GitHub's Azure Ubuntu mirror (azure.archive.ubuntu.com) intermittently throttles
+          # large universe TeX/Pandoc packages to ~30 KB/s without closing the socket.
+          # Stage downloads first under a hard per-mirror wall-clock timeout so dpkg is never
+          # interrupted mid-unpack, failing over across official GPG-verified Ubuntu mirrors.
+          downloaded=false
+          for mirror in \
+            "https://mirrors.edge.kernel.org/ubuntu" \
+            "http://archive.ubuntu.com/ubuntu" \
+            "http://us.archive.ubuntu.com/ubuntu"
+          do
+            echo "Staging PDF documentation packages via ${mirror}..."
+            for src in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+              [ -f "$src" ] || continue
+              sudo sed -i -E \
+                "s#https?://(azure\.archive|us\.archive|archive|security)\.ubuntu\.com/ubuntu/?#${mirror}/#g; s#https://mirrors\.edge\.kernel\.org/ubuntu/?#${mirror}/#g" \
+                "$src"
+            done
+
+            if timeout --kill-after=10 180 sudo env DEBIAN_FRONTEND=noninteractive apt-get "${apt_opts[@]}" update && \
+               timeout --kill-after=10 240 sudo env DEBIAN_FRONTEND=noninteractive apt-get "${apt_opts[@]}" install --yes --no-install-recommends --download-only "${packages[@]}"; then
+              downloaded=true
+              break
+            fi
+            echo "::warning::APT download timed out or failed on ${mirror}; failing over to next mirror."
+          done
+
+          if [ "$downloaded" != "true" ]; then
+            echo "::error::Failed to download PDF documentation packages across all configured Ubuntu mirrors."
+            exit 1
+          fi
+
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get "${apt_opts[@]}" install --yes --no-install-recommends "${packages[@]}"
+
+          rm -f "${deb_cache}"/*.deb
+          if compgen -G "/var/cache/apt/archives/*.deb" > /dev/null; then
+            cp -f /var/cache/apt/archives/*.deb "${deb_cache}/"
+          fi
+          sudo apt-get clean
 
       - name: Build and validate localized operator manuals
         run: tools/documentation/build-operator-manual-pdfs.sh "${GITHUB_REF_NAME#v}" "${DOCS_DIR}"
