@@ -1,10 +1,10 @@
 # OSCAR Change Log
 All notable changes to this project will be documented in this file. 
 
-## 3.11.0 2026-11-02
+## 3.11.0 2026-11-06
 
 ### Release overview
-OSCAR 3.11.0 is the first official release published under Oak Ridge National Laboratory's [`github.com/ORNL`](https://github.com/ORNL) organization ([`ORNL/oscar`](https://github.com/ORNL/oscar)), re-architected for multi-year, 24/7 operation across up to 50 concurrent radiation portal monitor (RPM) and RTSP camera lanes on **Ubuntu Server 24.04 x86-64** and **Windows 11 x86-64** (with Docker Desktop and WSL 2).
+OSCAR 3.11.0 is the first official release published under Oak Ridge National Laboratory's [`github.com/ORNL`](https://github.com/ORNL) organization ([`ORNL/oscar`](https://github.com/ORNL/oscar)), re-architected for multi-year, 24/7 operation across up to 50 concurrent radiation portal monitor (RPM) and RTSP camera lanes on **Ubuntu Server 24.04 x86-64** and **Windows 11 x86-64** (with Docker Desktop and WSL 2). Because [`v3.8.0` (2026-09-19)](https://github.com/Botts-Innovative-Research/osh-oakridge-buildnode/releases/tag/v3.8.0) was the last general-public release prior to the interim `3.8.1`–`3.10.0` builds, the **New features since public release `v3.8.0`** section below summarizes every capability added across `3.8.1` through `3.11.0` in one place.
 
 ### Release artifacts — which file to download
 
@@ -28,7 +28,32 @@ OSCAR 3.11.0 is the first official release published under Oak Ridge National La
 - **Current Users Upgrading Same-Profile `3.11.0+` Deployments & Managing Storage:**
   - Extract into a clean sibling directory, copy `.env`, `secrets/`, and `tls/`, and run `oscar upgrade`. See [Storage Architecture](https://github.com/ORNL/oscar/blob/v3.11.0/docs/STORAGE_ARCHITECTURE.md), [Data Lifecycle Policy](https://github.com/ORNL/oscar/blob/v3.11.0/docs/DATA_LIFECYCLE.md), [Cold Archive Format](https://github.com/ORNL/oscar/blob/v3.11.0/docs/ARCHIVE_FORMAT.md), [Backup and Restore](https://github.com/ORNL/oscar/blob/v3.11.0/docs/BACKUP_RESTORE.md), and [Storage Operations](https://github.com/ORNL/oscar/blob/v3.11.0/docs/STORAGE_OPERATIONS.md).
 - **Feature & Developer Guides:**
-  - [Operational Views](https://github.com/ORNL/oscar/blob/v3.11.0/docs/OPERATIONAL_VIEWS.md) · [Status of Health](https://github.com/ORNL/oscar/blob/v3.11.0/docs/STATUS_OF_HEALTH.md) · [Live Video & Recording](https://github.com/ORNL/oscar/blob/v3.11.0/docs/LIVE_VIDEO.md) · [EML Integration](https://github.com/ORNL/oscar/blob/v3.11.0/docs/EML_INTEGRATION.md) · [Translation System (`i18n`)](https://github.com/ORNL/oscar/blob/v3.11.0/docs/TRANSLATION_SYSTEM.md) · [Contributing Guide](https://github.com/ORNL/oscar/blob/v3.11.0/CONTRIBUTING.md) · [50-Lane Regression Suite (`ORNL/oscar-regression`)](https://github.com/ORNL/oscar-regression).
+  - [Operational Views](https://github.com/ORNL/oscar/blob/v3.11.0/docs/OPERATIONAL_VIEWS.md) · [Status of Health](https://github.com/ORNL/oscar/blob/v3.11.0/docs/STATUS_OF_HEALTH.md) · [Live Video & Recording](https://github.com/ORNL/oscar/blob/v3.11.0/docs/LIVE_VIDEO.md) · [EML Integration](https://github.com/ORNL/oscar/blob/v3.11.0/docs/EML_INTEGRATION.md) · [Translation System (`i18n`)](https://github.com/ORNL/oscar/blob/v3.11.0/docs/TRANSLATION_SYSTEM.md) · [Contributing Guide](https://github.com/ORNL/oscar/blob/v3.11.0/CONTRIBUTING.md) · [50-Lane Regression Suite (`ORNL/oscar-regression`)](https://github.com/ORNL/oscar-regression) · [50-Camera RTSP Emulator (`ORNL/Camera-emulator`)](https://github.com/ORNL/Camera-emulator).
+
+### New features since public release `v3.8.0` (`v3.8.0` → `v3.11.0`)
+
+For users upgrading or evaluating OSCAR from [`v3.8.0` (2026-09-19)](https://github.com/Botts-Innovative-Research/osh-oakridge-buildnode/releases/tag/v3.8.0), the following user-facing and operational capabilities were introduced across `3.8.1`, `3.8.2`, `3.9.0`, `3.9.1`, `3.10.0`, and `3.11.0`:
+
+- **Alarm Adjudication, EML Non-Threat Automation & Event Log Filtering:**
+  - **Admin-Uploaded EML Runtime & Automated `Code 9999: EML Non-Threat` Disposition (`3.11.0`):** Hot-loadable external EML runtime plugin upload (`Services -> OSCAR Service -> EML Plugin Path`, stored privately in `/var/lib/oscar/eml-plugin/` with zero third-party EML artifacts redistributed in public repositories or release bundles). Automatically evaluates Rapiscan VM-250 `GX` spectra prior to publication, suppresses benign `RELEASE` (`!fallback`) NORM alarms from the Dashboard and browser notifications at `t = 0` while keeping `INVESTIGATE` alarms prominent, persists durable `Code 9999: EML Non-Threat` adjudications with `EML_METADATA` JSON, and renders localized **EML Automated Analysis** cards in Event Details. Fresh installs without an uploaded EML JAR require no extra files and run with full core portal monitoring capabilities.
+  - **Custom Disposition Codes (`3.10.0`) & Full-Database `Adjudication Code` Filtering (`3.11.0`):** Configure site-specific custom disposition codes in SensorHub Admin, display an optional **Adjudication Code** column on the Events page, and filter the full hot PostgreSQL + cold Parquet history by **Adjudication Code** (`equals`, `does not equal`, `is any of`, `is empty`, `is not empty`) across built-in Codes `1–11`, `Code 9999: EML Non-Threat`, and custom codes (backed by indexed `"code:<n>"` markers and an asynchronous zero-blocking startup backfill for upgraded systems).
+  - **Priority Alarm Ordering (`3.10.0`), Nested `AND`/`OR` Filters & Bulk Adjudication (`3.9.0`, `3.9.1`):** Automatic alarm priority sorting (`Gamma-Neutron` > `Neutron` > `Gamma`), full-database server-side nested `AND`/`OR` filter groups (with inclusive numeric `Occupancy ID`, `Max Gamma`, and `Max Neutron` comparisons), cross-page and all-filtered selection with bounded-concurrency **Bulk Adjudication**, direct vehicle ID entry during Dashboard adjudication (`3.9.0`), and deduplicated live + historical adjudication logs (`3.11.0`).
+  - **Event UUID Deep Links & Air-Gapped QR / File Alarm Transfer (`3.9.1`, `3.10.0`):** Exact Event UUID lookup from the Events page, shareable node-qualified Event Details URLs (`Share Occupancy`), visible occupancy observation IDs in Event Details and PDF exports, single-code compressed Base45 + SHA-256 **QR code** and portable alarm package export (preserving chart endpoints, extrema, and threshold crossings), and an offline **Alarm Transfer** page with live camera QR scanning and file import.
+- **Multi-Gate Operations, Status of Health, Individual Detector Charts & Map Resilience:**
+  - **URL-Scoped Operational Views (`3.9.1`, `3.11.0`):** Workstation-specific URLs (`/view/<slug>`) driven by backward-compatible lane CSV keywords (`OperationalViews`) scope lane discovery, Dashboard queues, maps, Event Log queries, National Statistics, reports, Status of Health, and browser alarm notifications to assigned portal groups, with fail-closed access checks on out-of-scope events.
+  - **Status of Health Page & Compact Dashboard Fault Indicators (`3.8.2`, `3.9.1`, `3.11.0`):** Dedicated localized Status of Health page and compact per-lane Dashboard badges tracking independent RPM and camera connectivity plus `Gamma High`, `Gamma Low`, `Neutron High`, `Tamper` (with deterministic Clear baseline on connect), and configurable **Extended Occupancy** faults across Rapiscan, Aspect, and RS350 lanes using bounded 30-second ConSys lateral/DuckDB health batches and independent fault-isolated lane loading (`3.8.2`).
+  - **Individual Detector Charting, Live/Historical Daily File Views & Site Diagram Fixes (`3.8.1`, `3.10.0`, `3.11.0`):** Switch between summed and individual gamma/neutron detector traces in both live Lane View and historical Event Details (including first-point Rapiscan neutron capture), inspect raw RPM Daily File messages on historical events and the latest 15 live messages in Lane View, and reliably render OpenStreetMap + uploaded site-diagram bounds (`3.8.1`).
+- **Multi-Camera Live RTSP/HLS Video & Five-Frame Retained Alarm Media:**
+  - **Loopback `MediaMTX` RTSP Fan-Out, Multi-Camera Lanes & Multi-Viewer HLS Leases (`3.9.1`, `3.10.0`, `3.11.0`):** Embedded loopback `mediamtx` (`1.12.2`) deduplicates identical camera streams to strictly **one** upstream `:554` TCP socket per camera per OSCAR server, pairs with infinite (`-1`) camera reconnects (`3.10.0`), dedicated bounded video executor pools, keyframe-gated HLS startup with localized retry controls, multi-camera lane feed switching, and per-viewer HLS session leases (`X-OSCAR-HLS-Viewer`) so multiple operators can watch the same camera concurrently.
+  - **Five-Frame JPEG Evidence Gallery with 24-Hour MP4 Grace (`3.9.1`, `3.11.0`):** Generation-safe keyframe-verified MP4 alarm recording followed by asynchronous extraction of five deterministic sRGB JPEG frames (`FIRST`, `QUARTER`, `MIDDLE`, `THREE_QUARTERS`, `LAST`) per camera, an authenticated Viewer five-frame evidence gallery (with legacy MP4 playback fallback), a 24-hour MP4 rollback grace window, and 30-day secondary-frame pruning retaining `frame-03.jpg` (`MIDDLE`) long-term.
+- **Multi-Year 50-Lane Storage (`PARQUET_PRIMARY`), Daily-File Journaling, Backup & Legal Holds:**
+  - **`PARQUET_PRIMARY` Tiered Storage Engine (`3.11.0`):** Stages immutable high-volume 1 Hz detector streams (`gammaCounts`, `gammaThreshold`, `neutronCounts`, `setupGamma`, `setupNeutron`) into 30-minute `LOGGED` PostgreSQL partitions (`osg_*`), seals parity-verified windows into Zstandard Apache Parquet files (~10–15x smaller on disk), retires stage partitions via `O(1)` `NO INHERIT` + `DROP TABLE`, and federates hot PostgreSQL + cold Parquet queries transparently through embedded DuckDB with CQL2 `!=` and JSONB array pushdown.
+  - **Pre-Parse Daily-File Journal & Dual UTC/Local Timestamps (`3.10.0`, `3.11.0`):** `DailyFileJournalService` captures `CRC32C`-framed raw Rapiscan, RS350, and Aspect messages on disk before parsing, publishes immutable legacy-compatible daily CSVs with UTC and wizard-configured local timestamps plus SHA-256 manifests, and bounds sealed journals after 30 days.
+  - **Opt-In Single-Snapshot Backup, Restore, Legal Holds & Serialized Statistics (`3.11.0`):** Defaults to `OSCAR_BACKUP_MODE=disabled` (`archive_mode=off` to prevent unattended WAL disk exhaustion) with opt-in `single` mode (`pg_basebackup`, `pg_verifybackup`, OSCAR state, cold Parquet archive, AES-256-CBC encrypted credentials, and HMAC-SHA-256 `CURRENT` verification), transactional observation/generation legal holds (`oscar_retention_hold`), audited two-step cold deletion, portable Parquet export packages, and serialized National Statistics refreshes.
+- **Complete 4-Language Localization (`en`, `es`, `fr`, `el`) & Published PDF Manuals (`3.9.0`–`3.11.0`):**
+  - Extends `v3.8.0`'s initial i18n foundation across all `530` Viewer UI keys, `/login` authentication, OpenSensorHub Vaadin Admin `ConfigMessages`, live/historical alarm statuses, custom disposition codes, and **four screenshot-complete localized Administrator & Operator Manual PDFs** published with every GitHub Release (`0 px` horizontal overflow at `1920x1080` and `1280x800`).
+- **Ubuntu 24.04 & Unattended Windows 11 Deployment, Air-Gapped Bundles & Security Hardening (`3.9.0`–`3.11.0`):**
+  - Connected (`oscar-3.11.0.zip`) and air-gapped Windows 11 (`offline-full` and `offline-images`) bundles, `configure-windows-host.ps1` (`prepare-host` / `host-check` across `20` automated checks including Modern Standby `VIDEOIDLE = 0`, pre-login `S4U` Docker Desktop boot startup, `.wslconfig` memory caps, and bugcheck auto-reboot), LAN/Tailscale SAN TLS auto-generation, Sentry.io removal (`3.9.0`), Next.js 16 + React 19 upgrade with zero npm audit advisories (`3.9.1`), browser autoplay resilience (`3.9.0`), and automated 50-lane + 6-physical-camera end-to-end certification.
 
 ### Why the major architectural changes in 3.11.0 were implemented
 
@@ -178,31 +203,40 @@ OSCAR 3.11.0 is the first official release published under Oak Ridge National La
 - Add indexed full-database **Adjudication Code** filtering (`equals`, `does not equal`, `is any of`, `is empty`, `is not empty`) and an optional **Adjudication Code** column on the **Events** page across built-in Codes `1–11`, automated `Code 9999: EML Non-Threat`, and site-configured custom disposition codes (`"code:<n>"` synthetic markers on `occupancy.adjudicatedIds`), backed by an asynchronous, idempotent startup backfill (`AdjudicationCodeMarkerBackfill`) for historical adjudications on upgraded deployments
 
 ### Contributors
-Thanks to everyone who contributed across `ORNL/oscar` and its submodules since `v3.10.0`:
-- **Alex Almanza** (@earocorn) — `ORNL/oscar`, `ORNL/osh-oakridge-modules`
-- **Kalyn Stallings** (@kalynstricklin) — `ORNL/oscar-viewer`
+Thanks to everyone who contributed across `ORNL/oscar` and its submodules since public release `v3.8.0`:
+- **Alex Almanza** (@earocorn) — `ORNL/oscar`, `ORNL/oscar-viewer`, `ORNL/osh-oakridge-modules`
+- **Drew Botts** (@drewbotts) — `ORNL/osh-oakridge-modules`
+- **Kalyn Stallings** (@kalynstricklin) — `ORNL/oscar`, `ORNL/oscar-viewer`, `ORNL/osh-oakridge-modules`
 - **Kyle Fitzpatrick** (@kyle-fitzp) — `ORNL/osh-oakridge-modules`
 - **Tyrone Harris** (@tyronechrisharris) — `ORNL/oscar`, `ORNL/oscar-viewer`, `ORNL/osh-addons`, `ORNL/osh-core`, `ORNL/osh-js`, `ORNL/osh-oakridge-modules`
 
 ### Full changelog across repository and submodules
-- **`ORNL/oscar`**: [`v3.10.0...v3.11.0`](https://github.com/ORNL/oscar/compare/v3.10.0...v3.11.0)
-- **`ORNL/oscar-viewer`**: [`a2dabf0e...2440ae0f`](https://github.com/ORNL/oscar-viewer/compare/a2dabf0e038a6a48acadf8c6fcdb71d916f9adb5...2440ae0f0ec9bf0f0e57c1eb7c2118f50fa632a9)
-- **`ORNL/osh-addons`**: [`3708dcaa...7e756b49`](https://github.com/ORNL/osh-addons/compare/3708dcaa1d2189aaa75ad0b11af8483cc1468310...7e756b49397149a7565d0b2ebbc264fc062d97c2)
-- **`ORNL/osh-core`**: [`651fee4d...13c9c97f`](https://github.com/ORNL/osh-core/compare/651fee4d0ae694810c7c02f6cb8fd58c739a6068...13c9c97f7d8681315f28c130b104f1d6031f9adc)
-- **`ORNL/osh-js`**: [`73dacad5...0d3716dc`](https://github.com/ORNL/osh-js/compare/73dacad5c7338722763263ef0ff5928fbd19de5b...0d3716dc5f5ce8c310757fd5e1e939231e22fe93)
-- **`ORNL/osh-oakridge-modules`**: [`4f20ab45...6fe349b2`](https://github.com/ORNL/osh-oakridge-modules/compare/4f20ab458f177ee0e492a8698227fd0a12fb0514...6fe349b2c6f7ff237bae36b519c02c14ef6c7c42)
+- **Since public release `v3.8.0` (`v3.8.0` → `v3.11.0`):**
+  - **`ORNL/oscar`**: [`v3.8.0...v3.11.0`](https://github.com/ORNL/oscar/compare/v3.8.0...v3.11.0)
+  - **`ORNL/oscar-viewer`**: [`2a67af88...2440ae0f`](https://github.com/ORNL/oscar-viewer/compare/2a67af881a7119f6d527e01746526ae4a4e0d57e...2440ae0f0ec9bf0f0e57c1eb7c2118f50fa632a9)
+  - **`ORNL/osh-addons`**: [`3708dcaa...7e756b49`](https://github.com/ORNL/osh-addons/compare/3708dcaa1d2189aaa75ad0b11af8483cc1468310...7e756b49397149a7565d0b2ebbc264fc062d97c2)
+  - **`ORNL/osh-core`**: [`651fee4d...13c9c97f`](https://github.com/ORNL/osh-core/compare/651fee4d0ae694810c7c02f6cb8fd58c739a6068...13c9c97f7d8681315f28c130b104f1d6031f9adc)
+  - **`ORNL/osh-js`**: [`73dacad5...0d3716dc`](https://github.com/ORNL/osh-js/compare/73dacad5c7338722763263ef0ff5928fbd19de5b...0d3716dc5f5ce8c310757fd5e1e939231e22fe93)
+  - **`ORNL/osh-oakridge-modules`**: [`38952169...6fe349b2`](https://github.com/ORNL/osh-oakridge-modules/compare/38952169099eee66f47c3c30beee4e5de774cea3...6fe349b2c6f7ff237bae36b519c02c14ef6c7c42)
+- **Since `v3.10.0` (`v3.10.0` → `v3.11.0`):**
+  - **`ORNL/oscar`**: [`v3.10.0...v3.11.0`](https://github.com/ORNL/oscar/compare/v3.10.0...v3.11.0)
+  - **`ORNL/oscar-viewer`**: [`a2dabf0e...2440ae0f`](https://github.com/ORNL/oscar-viewer/compare/a2dabf0e038a6a48acadf8c6fcdb71d916f9adb5...2440ae0f0ec9bf0f0e57c1eb7c2118f50fa632a9)
+  - **`ORNL/osh-addons`**: [`3708dcaa...7e756b49`](https://github.com/ORNL/osh-addons/compare/3708dcaa1d2189aaa75ad0b11af8483cc1468310...7e756b49397149a7565d0b2ebbc264fc062d97c2)
+  - **`ORNL/osh-core`**: [`651fee4d...13c9c97f`](https://github.com/ORNL/osh-core/compare/651fee4d0ae694810c7c02f6cb8fd58c739a6068...13c9c97f7d8681315f28c130b104f1d6031f9adc)
+  - **`ORNL/osh-js`**: [`73dacad5...0d3716dc`](https://github.com/ORNL/osh-js/compare/73dacad5c7338722763263ef0ff5928fbd19de5b...0d3716dc5f5ce8c310757fd5e1e939231e22fe93)
+  - **`ORNL/osh-oakridge-modules`**: [`4f20ab45...6fe349b2`](https://github.com/ORNL/osh-oakridge-modules/compare/4f20ab458f177ee0e492a8698227fd0a12fb0514...6fe349b2c6f7ff237bae36b519c02c14ef6c7c42)
 
-## 3.10.0 2026-10-25
-## Changes
+## 3.10.0 2026-10-26
+### Changes
 - Add custom disposition codes configurable in admin page
 - Sort alarms by priority: Gamma-Neutron > Neutron > Gamma
-- Update daily file format to use expected format with UTC and local timestamps
+- Add setup-wizard timezone configuration and update daily file format with UTC and local timestamps
 - Set camera reconnect attempts to infinite (-1 in config)
 - Add ability to share links to specific occupancies, referencing the occupancy's observation ID
 - Add daily file output to historical occupancies and live lane view
 - Add ability to chart individual detectors instead of the sum in live lane view
 
-## 3.9.1
+## 3.9.1 2026-10-16
 ### Upgrade notes
 - This release changes operator-facing navigation and adds operational-view URL scoping; train operators and validate workstation URLs before production rollout
 - Build or import the versioned `oscar:3.9.1` image and run `oscar upgrade`; `oscar restart` alone continues to use the previously installed image
@@ -256,15 +290,13 @@ Thanks to everyone who contributed across `ORNL/oscar` and its submodules since 
 - Allow vehicle ID entry during dashboard alarm adjudication
 - Add complete English, Spanish, French, and Greek administrator/operator manuals
 - Publish validated, screenshot-complete PDF manuals with each GitHub release
-## TODO
-- Set default reconnect attempts to infinity
 
 ## 3.8.2 2026-09-21
-## Changes
+### Changes
 - Load lanes independently on viewer. Fixes issue that caused failure across all lanes when one lane was unreachable/unhealthy
 
 ## 3.8.1 2026-09-20
-## Changes
+### Changes
 - Fix OSM + site diagram layers
 - Fix lane marker location discovery
 - Fix camera stream resilience in backend & viewer
