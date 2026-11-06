@@ -9,6 +9,26 @@ OSCAR 3.11.0 starts Lane Details video only after the HLS stream has received a 
 - Configure a closed GOP with a keyframe interval of one to two seconds. At 15 frames per second, a one-second interval is `15` frames.
 - Do not depend on a keyframe interval longer than the desired live-video startup time. OSCAR discards packets received before the first keyframe so that the first HLS segment can be decoded independently.
 
+### Multi-camera lanes and per-lane camera limits
+
+OSCAR supports multiple cameras on a single lane out of the box across CSV import/export, SensorHub Admin configuration, live HLS viewing, Status of Health, and occupancy recording, subject to explicit per-event safety bounds in the five-frame retained-media gallery:
+
+- **CSV import/export & Admin configuration (`0..N` sequential groups):** Lane CSVs accept any sequential number of six-column camera groups (`CameraType0..Password0`, `CameraType1..Password1`, `CameraType2..Password2`, …), and SensorHub Admin stores cameras as an ordered `ffmpegConfig` list on each `LaneSystem`.
+- **Live HLS, occupancy recording & health monitoring:** During an occupancy, `CameraRecordingCoordinator` triggers and collects MP4 recordings across all configured lane cameras in parallel (backed by a 64-thread `FileControl` pool and 16-thread `HLSControl` pool). In the Viewer, Live Lane Details (`VideoMedia`) streams one selected camera page at a time (`<` / `>` controls cleanly stop the prior stream and release its viewer lease before starting the next), while Dashboard and Status of Health render an independent connectivity indicator per camera.
+- **Five-frame retained-media per-event limits:** Both the backend `/buckets/videos/media/{eventId}` endpoint (`MediaResourceHandler`) and the Viewer (`RetainedMedia.ts`) enforce three hard per-occupancy safety caps across all `5` published JPEG frames per camera (`1 MiB` JSON catalog max; `12 MiB`, `20 MP`, and `6,000 px` max per frame):
+  1. **Maximum `8` cameras per event** (`MAX_MEDIA_SETS_PER_EVENT = 8`).
+  2. **Maximum `120,000,000` total pixels per event** (`cameras × 5 frames × width × height ≤ 120,000,000` prior to 30-day secondary-frame pruning), which determines the resolution-dependent camera ceiling per lane:
+
+| Camera Stream Resolution | Pixels per Camera (`×5` JPEGs) | Supported Cameras per Lane (Five-Frame Gallery) |
+| --- | --- | --- |
+| `1080p` (`1920×1080`) or lower | `10.4 MP` | **Up to `8` cameras** (`82.9 MP` total; bounded by the 8-camera cap) |
+| `5 MP` (`3072×1728`) | `26.5 MP` | **Up to `4` cameras** (`106.2 MP` total; a 5th camera reaches `132.7 MP > 120 MP`) |
+| `4K` (`3840×2160`) | `41.5 MP` | **Up to `2` cameras** (`82.9 MP` total; a 3rd camera reaches `124.4 MP > 120 MP`) |
+
+  3. **Maximum `64 MiB` total JPEG bytes per event** across all published frames.
+- **Fallback behavior if exceeded:** If a lane's published media sets exceed `8` cameras, `120 MP`, or `64 MiB` for an event, `/buckets/videos/media/{eventId}` rejects the response (`HTTP 400`) and Event Details falls back to legacy MP4 playback (`videoPaths`), which remains available only during the 24-hour MP4 rollback grace window. Keep multi-camera lanes within the resolution table above so long-term five-frame evidence remains viewable after source MP4 pruning.
+- **Site-wide host & UI sizing:** Each configured camera module maintains an active packet-copy (`-c copy`) RTSP reader, so site-wide network ingress (~`3–6 Mbps` per H.264 stream), FFmpeg worker threads, and asynchronous JPEG extraction scale with total cameras across all lanes. On narrow (`1280×800`) displays, Dashboard lane rows fit `3–4` camera status pills inline comfortably before wrapping onto a second line.
+
 ### Built-in loopback RTSP proxy
 
 OSCAR embeds `mediamtx` inside the `oscar` container image (`/usr/local/bin/mediamtx`) and supervises it automatically on container loopback (`127.0.0.1`) whenever `rtsp://` or `rtsps://` camera streams are configured. Operators continue to configure and edit real camera hostnames, ports, credentials, and stream paths in SensorHub Admin UI, `config.json`, and CSV imports/exports; internal loopback proxy URLs are never persisted or exported.
@@ -17,7 +37,7 @@ OSCAR embeds `mediamtx` inside the `oscar` container image (`/usr/local/bin/medi
 - **Automatic RTSP URL normalization and clean `TEARDOWN`**: Accidental multiple leading slashes in RTSP paths (for example `//h264Preview_01_sub`) are collapsed to a single leading `/` before connecting, and stopping or editing a camera removes the unused proxy path so `mediamtx` sends an RTSP `TEARDOWN` immediately.
 - **Truthful connection status and in-place recovery**: OSCAR verifies upstream stream readiness before marking a camera `Online`, reconnects the FFmpeg stream processor in place without restarting the parent SensorHub module, and respawns `mediamtx` automatically if the child process ever exits unexpectedly.
 
-The OSCAR camera emulator prepares its source assets with a one-second closed GOP and then republishes them with stream copy. This keeps the Raspberry Pi workload low while giving every emulated camera a predictable startup bound. The implementation is maintained in [tyronechrisharris/Camera-emulator](https://github.com/tyronechrisharris/Camera-emulator) and introduced by [Camera-emulator PR #2](https://github.com/tyronechrisharris/Camera-emulator/pull/2).
+The OSCAR camera emulator prepares its source assets with a one-second closed GOP and then republishes them with stream copy. This keeps the Raspberry Pi workload low while giving every emulated camera a predictable startup bound. The implementation is maintained in [ORNL/Camera-emulator](https://github.com/ORNL/Camera-emulator).
 
 ### Prepare and apply emulator assets
 
