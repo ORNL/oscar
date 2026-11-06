@@ -277,7 +277,7 @@ jobs:
             pdf-apt-debs-v1-${{ steps.pdf-apt-key.outputs.codename }}-${{ steps.pdf-apt-key.outputs.arch }}-
 
       - name: Install PDF documentation tooling
-        timeout-minutes: 10
+        timeout-minutes: 15
         run: |
           set -Eeuo pipefail
           export DEBIAN_FRONTEND=noninteractive
@@ -311,8 +311,9 @@ jobs:
             -o Acquire::https::Timeout=20
           )
 
-          # GitHub's Azure Ubuntu mirror (azure.archive.ubuntu.com) intermittently throttles
-          # large universe TeX/Pandoc packages to ~30 KB/s without closing the socket.
+          # GitHub's Azure Ubuntu mirror (azure.archive.ubuntu.com, configured via
+          # mirror+file:/etc/apt/apt-mirrors.txt on Ubuntu 24.04/26.04 runners) intermittently
+          # throttles large universe TeX/Pandoc packages to ~30 KB/s without closing the socket.
           # Stage downloads first under a hard per-mirror wall-clock timeout so dpkg is never
           # interrupted mid-unpack, failing over across official GPG-verified Ubuntu mirrors.
           downloaded=false
@@ -322,10 +323,13 @@ jobs:
             "http://us.archive.ubuntu.com/ubuntu"
           do
             echo "Staging PDF documentation packages via ${mirror}..."
+            if [ -f /etc/apt/apt-mirrors.txt ]; then
+              printf '%s/\n' "${mirror}" | sudo tee /etc/apt/apt-mirrors.txt > /dev/null
+            fi
             for src in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
               [ -f "$src" ] || continue
               sudo sed -i -E \
-                "s#https?://(azure\.archive|us\.archive|archive|security)\.ubuntu\.com/ubuntu/?#${mirror}/#g; s#https://mirrors\.edge\.kernel\.org/ubuntu/?#${mirror}/#g" \
+                "s#mirror\+file:/etc/apt/apt-mirrors\.txt#${mirror}/#g; s#https?://(azure\.archive|us\.archive|archive|security)\.ubuntu\.com/ubuntu/?#${mirror}/#g; s#https://mirrors\.edge\.kernel\.org/ubuntu/?#${mirror}/#g" \
                 "$src"
             done
 
