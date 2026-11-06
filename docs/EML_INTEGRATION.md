@@ -101,7 +101,8 @@ All EML-suppressed alarms remain 100% auditable, queryable, and reviewable by op
    - Open **Events -> Filters**, select field **Adjudicated**, and choose value **EML Non-Threat**:
      - `Adjudicated equals EML Non-Threat` compiles to `adjudicatedIdsCount>0 AND adjudicatedIds='eml-non-threat'`, leveraging indexed PostgreSQL GIN (`jsonb_path_exists`) and DuckDB Parquet `adjudicated_ids_count` row-group pushdown.
      - `Adjudicated equals Yes` returns both human-adjudicated and automated `EML Non-Threat` alarms; combine `Adjudicated equals Yes` **AND** `Adjudicated does not equal EML Non-Threat` to inspect only human-adjudicated alarms.
-   - In the Event Log table, the **Adjudicated** column displays the localized **EML Non-Threat** label (`Sin amenaza EML`, `Sans menace EML`, `Μη απειλή EML`).
+   - Or select field **Adjudication Code** (`equals`, `does not equal`, `is any of`, `is empty`, `is not empty`) to filter by exact latest disposition code across built-in Codes `1–11`, automated **`9999: EML Non-Threat`** (`adjudicatedIdsCount>0 AND adjudicatedIds='code:9999'`), and any site-configured **Custom Disposition Codes**. Existing historical adjudications on upgraded deployments are automatically backfilled in the background (`AdjudicationCodeMarkerBackfill`) without impacting startup latency.
+   - In the Event Log table, the **Adjudicated** column displays the localized **EML Non-Threat** label (`Sin amenaza EML`, `Sans menace EML`, `Μη απειλή EML`), and operators can toggle the optional **Adjudication Code** column from the DataGrid **Columns** menu.
 2. **Event Details Inspection (`EmlAnalysisCard` & `AdjudicationLog`):**
    - Opening any EML-evaluated occupancy in **Event Details** renders the **EML Automated Analysis** card displaying:
      - Localized verdict chip (**EML Non-Threat** vs. **Investigate**),
@@ -111,9 +112,10 @@ All EML-suppressed alarms remain 100% auditable, queryable, and reviewable by op
    - The **Adjudication Log** table shows the automated disposition (`9999: EML Non-Threat`, secondary inspection `NONE`, clean human-readable summary inline, and pretty-printed `EML_METADATA` JSON in the **Read More** dialog). An operator can still submit a subsequent manual adjudication on the same event if site review requires overriding or annotating the automated disposition.
 3. **Adjudication Reports & ConSys API Queries:**
    - PDF/HTML **Adjudication Reports** format code `9999` as `9999 - EML Non-Threat`.
-   - External ConSys API / CQL2 clients can query EML auto-adjudicated occupancies directly via:
+   - External ConSys API / CQL2 clients can query EML auto-adjudicated occupancies or specific disposition codes directly via:
      ```text
      /sensorhub/api/observations?dataStream=<occupancy-ds-id>&filter=adjudicatedIdsCount>0%20AND%20adjudicatedIds='eml-non-threat'
+     /sensorhub/api/observations?dataStream=<occupancy-ds-id>&filter=adjudicatedIdsCount>0%20AND%20adjudicatedIds='code:9999'
      ```
 
 ### `EML_METADATA` JSON Schema (Embedded in Automated Adjudication `feedback`)
