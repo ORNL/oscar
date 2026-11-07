@@ -281,6 +281,14 @@ cannot suppress this retry.
 Setting `delegateObservationLifecycleToDatabase=true` delegates high-volume detector retention to
 the tiered database; it does not disable daily-file or connection-status maintenance.
 
+For operator inspection in Event Details, `DailyFileTable` queries the hot ConSys `dailyFile`
+stream first and falls back on demand to the authenticated, read-only
+`GET /buckets/dailyfiles/dailyfile-slice` endpoint whenever completed-day compatibility rows have
+already been purged or an occupancy straddles midnight across a purged prior day and the current
+unsealed day. The slice handler binary-searches the immutable manifest-verified daily CSV (capped
+at a 24-hour window, 1,000 items, 512 KiB UTF-8 JSON, and eight concurrent slice permits), resolves
+timestamps exclusively from server-receipt trailing columns paired with the manifest's `[startInclusive, endExclusive)` window and `zoneId`, and applies a `±5 ms` boundary guard for IEEE-754 epoch-second rounding.
+
 ### Sealed-segment deletion gate
 
 A published CSV is not by itself permission to remove the private sealed journal that produced it.
