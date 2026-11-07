@@ -2,6 +2,8 @@
 
 The OSCAR 3.11.0 Status of Health page gives operators one current-status row for every lane visible in the current Viewer scope. Open it with the heart-monitor icon in the left navigation.
 
+> **Companion Video Guide:** Watch [Module 15 — Monitor Status of Health & Georeferenced Site Map (`15-status-of-health-and-site-map.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/15-status-of-health-and-site-map.mp4) ([WebVTT captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/15-status-of-health-and-site-map.vtt)) in [VIDEO_GUIDES.md](VIDEO_GUIDES.md#15-status-of-health-and-site-map).
+
 ## Lane scope
 
 - `/health/` lists every lane discovered from the configured nodes.

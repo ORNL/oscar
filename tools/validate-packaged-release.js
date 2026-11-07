@@ -87,6 +87,7 @@ const expected = [
     'docker/oscar/archive-object-helper.sh',
     'docker/oscar/atomic-publish.c',
     'documentation/RELEASE_NOTES_AND_UPGRADE_GUIDE.md',
+    'documentation/VIDEO_GUIDES.md',
     'documentation/EML_INTEGRATION.md',
     'documentation/QUICKSTART.md', 'documentation/DEPLOYMENT.md',
     'documentation/LIVE_VIDEO.md', 'documentation/OPERATIONAL_VIEWS.md',

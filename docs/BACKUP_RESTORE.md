@@ -13,6 +13,8 @@ out a restore drill on an isolated test host before relying on a deployment for 
 Run it only on supported Ubuntu Server 24.04 x86-64 or Windows 11 x86-64 Docker Desktop/WSL 2
 hosts; macOS deployment and storage operations fail closed.
 
+> **Companion Video Guide:** Watch [Module 03 — Verify Parquet Cold Archive & Single-Snapshot Backup (`03-archive-and-snapshot-backup.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/03-archive-and-snapshot-backup.mp4) ([WebVTT captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/03-archive-and-snapshot-backup.vtt)) in [VIDEO_GUIDES.md](VIDEO_GUIDES.md#03-archive-and-snapshot-backup).
+
 ## What a coordinated backup contains
 
 The current snapshot is stored under `${OSCAR_BACKUP_DIR}/<backup-id>`, where the ID has the form

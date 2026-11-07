@@ -7,6 +7,8 @@ procedures in [Storage operations](STORAGE_OPERATIONS.md).
 This policy applies to the supported Ubuntu Server 24.04 x86-64 and Windows 11 x86-64 deployment
 hosts. macOS deployment and storage operations fail closed; it is not a supported storage host.
 
+> **Companion Video Guides:** Watch [Module 03 — Verify Parquet Cold Archive & Single-Snapshot Backup (`03-archive-and-snapshot-backup.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/03-archive-and-snapshot-backup.mp4) and [Module 04 — Configure OSCAR Service, Retention & Custom Disposition Codes (`04-admin-oscar-service-and-custom-codes.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/04-admin-oscar-service-and-custom-codes.mp4) in [VIDEO_GUIDES.md](VIDEO_GUIDES.md).
+
 ## Policy summary
 
 | Data class | Default transition | Removal gate | Removed automatically? |

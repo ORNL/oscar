@@ -14,3 +14,6 @@
 	path = web/oscar-viewer
 	url = https://github.com/ORNL/oscar-viewer.git
 	branch = main
+[submodule "docs/video-guides"]
+	path = docs/video-guides
+	url = https://github.com/ORNL/oscar-video-guides.git

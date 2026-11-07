@@ -2,6 +2,8 @@
 
 OSCAR 3.11.0 starts Lane Details video only after the HLS stream has received a decodable H.264 keyframe. Until that point, the Viewer shows **Preparing live video** instead of presenting an empty player. If preparation or playback cannot recover within the bounded retry period, the Viewer shows a localized error and a **Retry** action.
 
+> **Companion Video Guides:** Watch [Module 11 — Inspect Live Lane Camera Stream & Gamma/Neutron Waveforms (`11-live-lane-video-and-charts.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/11-live-lane-video-and-charts.mp4) and [Module 13 — Adjudicate Event with 5-Frame Media, Daily File & Report (`13-event-details-adjudication-and-daily-file.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/13-event-details-adjudication-and-daily-file.mp4) in [VIDEO_GUIDES.md](VIDEO_GUIDES.md#11-live-lane-video-and-charts).
+
 ## Camera requirements
 
 - The configured camera endpoint must be reachable by the OSCAR container and provide an H.264 video stream.

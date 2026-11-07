@@ -2,7 +2,7 @@
 
 OSCAR runs as three Docker Compose services: an HTTPS gateway, the non-root OSCAR application, and PostgreSQL/PostGIS. The selected HTTPS port is published to the host, and port 80 redirects requests to HTTPS. PostgreSQL has no host port.
 
-Start with [QUICKSTART.md](QUICKSTART.md) for installation. This guide documents deployment choices and routine administration.
+Start with [QUICKSTART.md](QUICKSTART.md) for installation, and see [VIDEO_GUIDES.md](../../docs/VIDEO_GUIDES.md) for concise 1080p captioned screen recordings covering initialization ([Module 01](https://github.com/ORNL/oscar-video-guides/blob/main/videos/01-deployment-init-and-credentials.mp4)), clean-directory upgrades ([Module 02](https://github.com/ORNL/oscar-video-guides/blob/main/videos/02-clean-directory-upgrade.mp4)), archive/backup verification ([Module 03](https://github.com/ORNL/oscar-video-guides/blob/main/videos/03-archive-and-snapshot-backup.mp4)), and SensorHub Admin configuration ([Modules 04–07](../../docs/VIDEO_GUIDES.md#04-admin-oscar-service-and-custom-codes)). This guide documents deployment choices and routine administration.
 
 ## Supported deployment and operation hosts
 

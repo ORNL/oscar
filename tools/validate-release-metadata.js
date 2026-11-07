@@ -349,6 +349,7 @@ for (const relativePath of [
     'dist/release/DEPLOYMENT.md',
     'dist/release/QUICKSTART.md',
     'docs/RELEASE_NOTES_AND_UPGRADE_GUIDE.md',
+    'docs/VIDEO_GUIDES.md',
     'docs/EML_INTEGRATION.md',
     'docs/ARCHIVE_FORMAT.md',
     'docs/BACKUP_RESTORE.md',

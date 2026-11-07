@@ -20,6 +20,7 @@ This guide summarizes what changed, **why** each major architectural and operati
    - Review the [Administrator Guide](../dist/release/DEPLOYMENT.md) for static/reserved LAN IPv4 assignment, TLS certificate trust across operator workstations, Tailscale SANs, and optional `single`-snapshot backup configuration.
 3. **Configure lanes, views, and operators:**
    - Open the [Operator and Administrator Manual (English)](../include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README.md) — or the [Español](../include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README_es.md), [Français](../include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README_fr.md), or [Ελληνικά](../include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README_el.md) editions (also published as standalone PDFs on each GitHub Release) — to configure lanes, thresholds, users, adjudication workflows, and reports.
+   - Follow the 16 single-task (< 2 min) captioned screen recordings and 3-to-4-step reference blocks in [How-To Video Guides](VIDEO_GUIDES.md) (`ORNL/oscar-video-guides`).
 
 ### Path B — Current Users Running `pre-3.11.0` (`3.10.0`, `3.9.x`, `3.8.x`, or Earlier)
 

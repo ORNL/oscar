@@ -2,6 +2,8 @@
 
 Operational views let multiple workstations use one OSCAR deployment while each viewer loads only its assigned lanes. They do not create new users, roles, lane copies, or databases, and they do not change lane unique identifiers or historical data.
 
+> **Companion Video Guides:** Watch [Module 05 — Sync Multi-Lane Spreadsheet Configuration (`05-admin-lane-spreadsheet-sync.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/05-admin-lane-spreadsheet-sync.mp4) and [Module 10 — Scope Workstation Lanes with Fail-Closed Operational Views (`10-operational-views-scoping.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/10-operational-views-scoping.mp4) in [VIDEO_GUIDES.md](VIDEO_GUIDES.md#10-operational-views-scoping).
+
 ## Configure lanes
 
 In the Lane System configuration, add one or more **Operational View Keys**. Keys must contain 1–63 lowercase letters, numbers, or hyphens and cannot begin or end with a hyphen. A lane can belong to more than one view.
