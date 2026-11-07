@@ -4,6 +4,8 @@ OSCAR 3.11.0 supports optional runtime integration with the external **Energy-Ba
 
 Because EML is separately licensed and maintained outside Oak Ridge National Laboratory's open-source OSCAR repositories, **OSCAR never bundles, commits, or distributes EML JARs, models, or XML configuration files** in source repositories, Docker images, or GitHub Release assets. Instead, site administrators obtain an authorized EML distribution separately, upload the EML plugin archive once in SensorHub Admin (**Services -> OSCAR Service**), and enable EML per Rapiscan lane.
 
+> **Companion Video Guide:** Watch [Module 07 — Upload External EML VM-250 Plugin & Enable Per-Lane EML (`07-admin-eml-plugin-setup.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/07-admin-eml-plugin-setup.mp4) ([WebVTT captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/07-admin-eml-plugin-setup.vtt)) in [VIDEO_GUIDES.md](VIDEO_GUIDES.md#07-admin-eml-plugin-setup).
+
 ---
 
 ## 1. Distribution & Security Boundaries

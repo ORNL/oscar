@@ -89,6 +89,7 @@ distributions{
                 }
                 from('docs') {
                     include 'RELEASE_NOTES_AND_UPGRADE_GUIDE.md'
+                    include 'VIDEO_GUIDES.md'
                     include 'EML_INTEGRATION.md'
                     include 'LIVE_VIDEO.md'
                     include 'OPERATIONAL_VIEWS.md'
@@ -136,6 +137,7 @@ distributions{
                 }
                 from('docs') {
                     include 'RELEASE_NOTES_AND_UPGRADE_GUIDE.md'
+                    include 'VIDEO_GUIDES.md'
                     include 'EML_INTEGRATION.md'
                     include 'LIVE_VIDEO.md'
                     include 'OPERATIONAL_VIEWS.md'

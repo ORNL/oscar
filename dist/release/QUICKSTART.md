@@ -5,6 +5,8 @@ Desktop/WSL 2 and Ubuntu Server 24.04 x86-64 with Docker Engine/Compose. macOS i
 inspection and non-deployment development; initialization, start, restart, upgrade, and storage
 operations fail closed there.
 
+> **Companion Video Guide:** Watch [Module 01 — Initialize OSCAR Deployment, Admin Credentials & TLS (`01-deployment-init-and-credentials.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/01-deployment-init-and-credentials.mp4) ([WebVTT captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/01-deployment-init-and-credentials.vtt)), or browse all 16 captioned workflow guides in [`docs/VIDEO_GUIDES.md`](https://github.com/ORNL/oscar/blob/main/docs/VIDEO_GUIDES.md).
+
 ## Windows 11
 
 1. Choose `offline-full` when Docker Desktop or WSL may need installation. Choose `offline-images` when compatible Docker Desktop, WSL 2, and Docker Compose are already installed and running.
