@@ -35,7 +35,7 @@ Every module starts immediately at `00:00` with the workflow action, runs under 
 | 13 | [Review Retained 5-Frame Media, Daily File Output & Adjudicate](#13-event-details-adjudication-and-daily-file) | Track C | 19.5s | 1461.1 KiB | [MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/13-event-details-adjudication-and-daily-file.mp4) · [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/13-event-details-adjudication-and-daily-file.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/13-event-details-adjudication-and-daily-file.srt) |
 | 14 | [Export Signed Alarm QR & Verify Offline on Air-Gapped Transfer](#14-airgapped-alarm-qr-transfer) | Track C | 25.2s | 1723.7 KiB | [MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/14-airgapped-alarm-qr-transfer.mp4) · [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/14-airgapped-alarm-qr-transfer.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/14-airgapped-alarm-qr-transfer.srt) |
 | 15 | [Monitor RPM/Camera Status of Health & Georeferenced Site Map](#15-status-of-health-and-site-map) | Track C | 10.2s | 727.8 KiB | [MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/15-status-of-health-and-site-map.mp4) · [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/15-status-of-health-and-site-map.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/15-status-of-health-and-site-map.srt) |
-| 16 | [Analyze National View Statistics & Generate PDF Reports](#16-national-statistics-and-reports) | Track C | 18.2s | 432.8 KiB | [MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/16-national-statistics-and-reports.mp4) · [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/16-national-statistics-and-reports.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/16-national-statistics-and-reports.srt) |
+| 16 | [Analyze National View Statistics & Generate Multi-Format Reports](#16-national-statistics-and-reports) | Track C | 17.1s | 544.2 KiB | [MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/16-national-statistics-and-reports.mp4) · [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/16-national-statistics-and-reports.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/16-national-statistics-and-reports.srt) |
 
 ## Track A — CLI Deployment, Upgrades & Storage Lifecycle
 
@@ -218,12 +218,12 @@ Track RPM connectivity, camera stream health, detector/tamper faults, and extend
 3. Open **Map** (`/map`) to view georeferenced lane markers and real-time alarm/health status overlaid on the facility map.
 
 <a id="16-national-statistics-and-reports"></a>
-### 16. Analyze National View Statistics & Generate PDF Reports
+### 16. Analyze National View Statistics & Generate Multi-Format Reports
 
-Review aggregated occupancy and alarm trends on National View, then configure and generate downloadable PDF Event, Lane, Adjudication, or RDS Site reports.
+Review aggregated occupancy and alarm trends on National View, then configure and generate RDS Site, Lane, Event, Adjudication (starting with summed All Selected Lanes totals), or Adjudication Details Extract reports in PDF, CSV, JSON, or Excel (.xlsx) format.
 
-- **Screen Recording:** [`16-national-statistics-and-reports.mp4` (18.2s, 432.8 KiB)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/16-national-statistics-and-reports.mp4) · [WebVTT Captions (`.vtt`)](https://github.com/ORNL/oscar-video-guides/blob/main/captions/16-national-statistics-and-reports.vtt) · [SubRip Captions (`.srt`)](https://github.com/ORNL/oscar-video-guides/blob/main/captions/16-national-statistics-and-reports.srt)
+- **Screen Recording:** [`16-national-statistics-and-reports.mp4` (17.1s, 544.2 KiB)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/16-national-statistics-and-reports.mp4) · [WebVTT Captions (`.vtt`)](https://github.com/ORNL/oscar-video-guides/blob/main/captions/16-national-statistics-and-reports.vtt) · [SubRip Captions (`.srt`)](https://github.com/ORNL/oscar-video-guides/blob/main/captions/16-national-statistics-and-reports.srt)
 
 1. Open **National View** (`/national-view`) to inspect aggregated occupancy totals, gamma/neutron alarm counts, and multi-lane trends.
-2. Navigate to **Report Generator** (`/report`) and choose **Node Selector**, **Report Type** (`RDS_SITE`, `EVENT`, `LANE`, or `ADJUDICATION`), and **Time Range**.
-3. Click **Generate Report** and review or download the rendered PDF report from the inline preview.
+2. Navigate to **Report Generator** (`/report`) and choose **Node Selector**, **Report Scope** (`Entire Node`, `Operational View`, or `Specific Lanes`), **Report Type** (`RDS_SITE`, `LANE`, `EVENT`, `ADJUDICATION`, or `ADJUDICATION_DETAILS`), **Output Format** (`PDF`, `CSV`, `JSON`, or `Excel (.xlsx)`), and **Time Range**.
+3. Click **Generate Report** and review the rendered PDF or inline tabular preview (`CSV`, `JSON`, `XLSX`) and download the generated report.
