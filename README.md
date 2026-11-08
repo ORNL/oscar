@@ -1,10 +1,10 @@
 # OSCAR
 
-OSCAR (Open Source Central Alarm Monitoring) is an Oak Ridge National Laboratory (ORNL) open-source radiation portal monitoring and central alarm station platform ([`ORNL/oscar`](https://github.com/ORNL/oscar)), developed in collaboration with Botts Innovative Research on OpenSensorHub. It combines OpenSensorHub modules, the OSCAR viewer, PostgreSQL/PostGIS, and a TLS gateway into a hardened Docker Compose deployment.
+OSCAR (Open Source Central Alarm Monitoring) is a radiation portal monitoring and central alarm station platform ([`ORNL/oscar`](https://github.com/ORNL/oscar)), developed on OpenSensorHub. It combines OpenSensorHub modules, the OSCAR viewer, PostgreSQL/PostGIS, and a TLS gateway into a hardened Docker Compose deployment.
 
 The configured HTTPS port and a port 80 HTTPS redirect are published. PostgreSQL and the OSCAR application port remain on private Compose networks. Java 21.0.10 is included in the OSCAR container image and is not required on deployment hosts.
 
-## Official ORNL repositories
+## Official repositories
 
 | Repository | Role |
 | --- | --- |
