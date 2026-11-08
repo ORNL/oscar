@@ -101,13 +101,18 @@ distributions{
                     include 'BACKUP_RESTORE.md'
                     include 'STORAGE_OPERATIONS.md'
                     filesMatching('STORAGE_ARCHITECTURE.md') {
-                        filter { line -> line.replace('../include/osh-oakridge-modules/docs/', '') }
+                        filter { line ->
+                            line.replace('../include/osh-oakridge-modules/docs/', '')
+                                .replace('https://github.com/ORNL/osh-oakridge-modules/blob/main/docs/', '')
+                        }
                     }
                     filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md']) {
                         filter { line ->
                             line.replace('../dist/release/', '')
                                 .replace('../include/osh-oakridge-modules/docs/', '')
+                                .replace('https://github.com/ORNL/osh-oakridge-modules/blob/main/docs/', '')
                                 .replace('../include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/', 'operator-manual/')
+                                .replace('https://github.com/ORNL/osh-oakridge-modules/blob/main/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/', 'operator-manual/')
                         }
                     }
                 }
@@ -149,13 +154,18 @@ distributions{
                     include 'BACKUP_RESTORE.md'
                     include 'STORAGE_OPERATIONS.md'
                     filesMatching('STORAGE_ARCHITECTURE.md') {
-                        filter { line -> line.replace('../include/osh-oakridge-modules/docs/', '') }
+                        filter { line ->
+                            line.replace('../include/osh-oakridge-modules/docs/', '')
+                                .replace('https://github.com/ORNL/osh-oakridge-modules/blob/main/docs/', '')
+                        }
                     }
                     filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md']) {
                         filter { line ->
                             line.replace('../dist/release/', '')
                                 .replace('../include/osh-oakridge-modules/docs/', '')
+                                .replace('https://github.com/ORNL/osh-oakridge-modules/blob/main/docs/', '')
                                 .replace('../include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/', 'operator-manual/')
+                                .replace('https://github.com/ORNL/osh-oakridge-modules/blob/main/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/', 'operator-manual/')
                         }
                     }
                 }
@@ -191,7 +201,9 @@ distributions{
                         line.replace('(dist/release/', '(documentation/')
                             .replace('(docs/', '(documentation/')
                             .replace('(include/osh-oakridge-modules/docs/', '(documentation/')
+                            .replace('(https://github.com/ORNL/osh-oakridge-modules/blob/main/docs/', '(documentation/')
                             .replace('(include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/', '(documentation/operator-manual/')
+                            .replace('(https://github.com/ORNL/osh-oakridge-modules/blob/main/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/', '(documentation/operator-manual/')
                     }
                 }
             }

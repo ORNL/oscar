@@ -293,7 +293,7 @@ lane published just after midnight is retried without waiting another day. Curre
 rows are never compacted merely to retain a latest value.
 
 The full journal contract is maintained in the modules repository at
-[`include/osh-oakridge-modules/docs/daily-file-journal-v1.md`](../include/osh-oakridge-modules/docs/daily-file-journal-v1.md).
+[`include/osh-oakridge-modules/docs/daily-file-journal-v1.md`](https://github.com/ORNL/osh-oakridge-modules/blob/main/docs/daily-file-journal-v1.md).
 
 ### Five-frame retained media
 
@@ -326,7 +326,7 @@ then fetches only each camera's selected frame and admits at most three frame re
 so an event with several cameras does not create an eager memory or network burst.
 
 The complete media contract is maintained at
-[`include/osh-oakridge-modules/docs/retained-media-v1.md`](../include/osh-oakridge-modules/docs/retained-media-v1.md).
+[`include/osh-oakridge-modules/docs/retained-media-v1.md`](https://github.com/ORNL/osh-oakridge-modules/blob/main/docs/retained-media-v1.md).
 
 ## Integrity and failure boundaries
 
