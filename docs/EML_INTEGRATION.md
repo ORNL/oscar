@@ -74,7 +74,7 @@ You can enable EML per lane either through the **SensorHub Admin UI** or via **L
     - `EMLEnabled`: `true`
     - `EMLCollimated`: `true` or `false`
     - `LaneWidth`: positive lane width in meters (for example `5.0`)
-  - See [Administrator Guide](../dist/release/DEPLOYMENT.md) and [Operator Manual (English)](../include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README.md) for full CSV import rules.
+  - See [Administrator Guide](../dist/release/DEPLOYMENT.md) and [Operator Manual (English)](https://github.com/ORNL/osh-oakridge-modules/blob/main/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README.md) for full CSV import rules.
 
 ---
 
@@ -153,4 +153,4 @@ Each automated `Code 9999` adjudication writes a human-readable summary line fol
 - [Administrator Guide](../dist/release/DEPLOYMENT.md) — server setup, upgrades, TLS, and storage CLI
 - [Backup, Restore, and Recovery](BACKUP_RESTORE.md) — `oscar_state` backup coverage (including `/var/lib/oscar/eml-plugin`)
 - [Storage Architecture](STORAGE_ARCHITECTURE.md) — `PARQUET_PRIMARY` hot/cold observation storage and CQL pushdown
-- [Operator Manual (English)](../include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README.md) ([Español](../include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README_es.md), [Français](../include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README_fr.md), [Ελληνικά](../include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README_el.md))
+- [Operator Manual (English)](https://github.com/ORNL/osh-oakridge-modules/blob/main/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README.md) ([Español](https://github.com/ORNL/osh-oakridge-modules/blob/main/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README_es.md), [Français](https://github.com/ORNL/osh-oakridge-modules/blob/main/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README_fr.md), [Ελληνικά](https://github.com/ORNL/osh-oakridge-modules/blob/main/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README_el.md))
