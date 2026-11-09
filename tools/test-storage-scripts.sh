@@ -80,7 +80,11 @@ const database = config.find(item => item.dbConfig?.objClass ===
 const archive = database?.archive;
 const dailyJournal = config.find(item =>
     item.objClass === 'com.botts.impl.service.dailyfile.DailyFileJournalServiceConfig');
-const outputs = ['gammaCounts', 'gammaThreshold', 'neutronCounts', 'setupGamma', 'setupNeutron'];
+const outputs = [
+    'gammaCounts', 'gammaThreshold', 'neutronCounts', 'setupGamma', 'setupNeutron',
+    'speed', 'backgroundReport', 'foregroundReport', 'status',
+    'emlContextual', 'emlScanContextual', 'emlAnalysis',
+];
 const expectedVideoRetention = {
     timeToRetention: 0,
     videoQueryPeriod: 1,
@@ -119,7 +123,7 @@ if (Object.entries(expectedVideoRetention).some(([field, expected]) =>
     dailyJournal?.sealedJournalRetentionDays !== 30 ||
     dailyJournal?.requireBackupBeforeSealedJournalDeletion !== false ||
     JSON.stringify(archive?.outputNames) !== JSON.stringify(outputs)) {
-    throw new Error('standard lifecycle defaults no longer encode the production media cadence/grace, 30-minute Parquet-primary staging, 5-minute delay/skew, 1-minute worker, 8-partition retirement bound, inactive HOT_RETENTION compatibility values, 30-day exact-replay journal retention, and five-output allowlist');
+    throw new Error('standard lifecycle defaults no longer encode the production media cadence/grace, 30-minute Parquet-primary staging, 5-minute delay/skew, 1-minute worker, 8-partition retirement bound, inactive HOT_RETENTION compatibility values, 30-day exact-replay journal retention, and twelve-output allowlist');
 }
 NODE
 

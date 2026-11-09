@@ -176,9 +176,19 @@ racing a successful hold without loading every generation hold in the store.
 
 Parquet is OSCAR's primary cold observation tier, not a backup. It depends on the PostgreSQL catalog,
 overlays, tombstones, and application state and therefore must be captured with those components in
-a coordinated snapshot. Only the five immutable output names allowlisted in the standard
-configuration are cold-tiered; this is not a generic every-table or every-observation export, and
-mutable events remain in PostgreSQL.
+a coordinated snapshot. Only the 12 immutable high-volume detector, status, report, and EML output
+names allowlisted in the standard configuration (`gammaCounts`, `gammaThreshold`, `neutronCounts`,
+`setupGamma`, `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`, `status`,
+`emlContextual`, `emlScanContextual`, `emlAnalysis`) are cold-tiered; this is not a generic
+every-table or every-observation export, and mutable events remain in PostgreSQL `ONLY oscar.obs`
+(where permanent evidentiary `occupancy`, append-only `adjudication`, `report`, and `nationalSummary`
+rows are retained, while transient `connectionStatus` and routine `Clear` `occupancyStatus` rows
+older than 1 hour and transient operational `cmd_commands`/`cmd_status` rows older than 24 hours are
+pruned hourly via parent-only `obs_mutable_datastream_phenomenon_idx` scans). On startup, OSCAR
+reconciles existing `oscar_obs_storage_route` entries for all 12 allowlisted outputs to
+`immutable=true`, reclaims empty expired or retired `osg_*` stage partitions, and retroactively
+exports any legacy unarchived parent-table rows for newly-promoted immutable streams into verified
+Parquet generations before removing the migrated rows from `ONLY oscar.obs`.
 
 An asynchronous single-worker cycle starts immediately when the database module starts, then runs
 every minute. In `PARQUET_PRIMARY`, allowlisted observations route to UTC-aligned, LOGGED 30-minute

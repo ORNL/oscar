@@ -264,7 +264,14 @@
           "gammaThreshold",
           "neutronCounts",
           "setupGamma",
-          "setupNeutron"
+          "setupNeutron",
+          "speed",
+          "backgroundReport",
+          "foregroundReport",
+          "status",
+          "emlContextual",
+          "emlScanContextual",
+          "emlAnalysis"
         ]
       },
       "id": "bfbd6d58-1a4a-40b4-999d-381a1489cbb5",

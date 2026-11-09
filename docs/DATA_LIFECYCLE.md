@@ -13,8 +13,10 @@ hosts. macOS deployment and storage operations fail closed; it is not a supporte
 
 | Data class | Default transition | Removal gate | Removed automatically? |
 | --- | --- | --- | --- |
-| Selected immutable high-volume detector observations | Commit first to a LOGGED UTC-aligned 30-minute PostgreSQL staging child; make the closed window Parquet-eligible after five minutes and run the worker every minute | Valid Parquet/schema/manifest objects, active catalog generation, object checksum, and exact row/UUID parity | Yes; detach and drop the complete child transactionally, at most eight per cycle. The normal staging budget is at most one hour, but failure or backlog can extend it |
-| Other PostgreSQL observations and transactional records | Remain hot | Existing application policy | Not by the cold-tier scheduler |
+| Selected immutable high-volume detector, status, report & EML observations (12 outputs) | Commit first to a LOGGED UTC-aligned 30-minute PostgreSQL staging child (`osg_*`); make the closed window Parquet-eligible after five minutes and run the worker every minute (plus startup route reconciliation and retroactive migration of any unarchived parent-table rows) | Valid Parquet/schema/manifest objects, active catalog generation, object checksum, and exact row/UUID parity | Yes; detach and drop the complete child transactionally (`NO INHERIT` + `DROP TABLE`), at most eight per cycle (and delete sealed retroactively migrated parent-table rows). The normal staging budget is at most one hour, but failure or backlog can extend it |
+| Permanent evidentiary & audit observations (`occupancy`, `adjudication`, `report`, `nationalSummary`) | Remain hot in the parent `ONLY oscar.obs` table (`immutable=false`); adjudications are strictly append-only | Existing application policy and active `oscar_retention_hold` checks | No; never moved to stage partitions or auto-purged by the cold-tier or hourly maintenance schedulers |
+| Transient operational health & compatibility observations (`connectionStatus`, routine `Clear` `occupancyStatus`, `dailyFile`) | Remain in `ONLY oscar.obs` indexed by `obs_mutable_datastream_phenomenon_idx` | `connectionStatus`: > 1h old keeping latest per stream; `occupancyStatus`: routine `Clear` rows > 1h old keeping latest per stream and all fault/alarm rows; `dailyFile`: completed prior UTC day with verified daily CSV + SHA-256 manifest | Yes; purged hourly via `parentTableOnly` (`DELETE FROM ONLY obs`) without scanning child partitions |
+| Transient operational vs. audit commands (`cmd_commands` & `cmd_status`) | Stored in PostgreSQL command tables | Transient operational commands (`streamControl`, `videoControl`, `ptzControl`, `hlsControl`, `oscarServiceControl`) > 24h old; `%adjudicate%` streams excluded | Yes for transient operational commands > 24h old (cascading `cmd_status` delete); No for `%adjudicate%` audit commands (retained permanently) |
 | Raw RPM daily-file source | Append immediately; publish prior day after rollover | Valid immutable CSV, v1 manifest, `PUBLISHED` ledger, 30 days after the later of day close or actual publication, and exact sealed-journal replay parity; sites may additionally require verified backup confirmation | Yes for eligible private sealed segments; published daily files are not pressure-cleanup candidates |
 | Alarm source MP4 | Immediately eligible for an asynchronous attempt to publish exactly five JPEGs | Exactly five verified JPEGs and manifest, then 24-hour rollback grace and no hold | Yes, on a later successful retention pass |
 | Secondary retained JPEGs (`FIRST`, `QUARTER`, `THREE_QUARTERS`, `LAST`) | Pruned to the `MIDDLE` (`frame-03.jpg`) representative frame after `secondaryFrameRetentionDays` (30 by default) | Source MP4 already deleted (`SOURCE_DELETED`), no active manifest hold, and `frame-03.jpg` re-verified against its SHA-256 and byte count | Yes, on a later media-maintenance pass (`secondaryFrameRetentionDays > 0`) |
@@ -50,6 +52,13 @@ gammaThreshold
 neutronCounts
 setupGamma
 setupNeutron
+speed
+backgroundReport
+foregroundReport
+status
+emlContextual
+emlScanContextual
+emlAnalysis
 ```
 
 Occupancy/event records and the `dailyFile` compatibility stream are intentionally absent. OSCAR
@@ -214,6 +223,20 @@ storage-array lifecycle rule; that creates integrity failures instead of an audi
 `archive export` instead makes an independent portable copy of selected `ACTIVE` or `SEALED`
 generations. Its catalog, explicit object list, checksums, and bundled DuckDB query make that package
 queryable outside OSCAR, but the export is not live OSCAR storage and is not a coordinated backup.
+
+### 6. Startup route reconciliation, retroactive parent-table migration, and mutable operational pruning
+
+When `OscarTieredObsSystemDatabase` starts in `PARQUET_PRIMARY` mode:
+
+- **Route reconciliation (`reconcileRoutes`):** Existing `oscar_obs_storage_route` rows whose output name belongs to the 12 allowlisted `archive.outputNames` are automatically upgraded to `immutable=true` and the in-memory route cache is invalidated so subsequent writes route into 30-minute `osg_*` staging partitions.
+- **Empty and retired stage cleanup (`reclaimEmptyOrRetiredStages`):** Empty expired `ATTACHED` stage partitions and any leftover `DETACHED` stage partitions are dropped cleanly on startup and during lifecycle maintenance.
+- **Retroactive parent-table migration (`ArchiveLifecycleManager`):** If an upgraded or reconciled deployment contains historical unarchived rows (`archivegenerationid IS NULL`) in the parent `ONLY oscar.obs` table for datastreams now marked `immutable=true`, the archive exporter selects those windows, publishes verified ZSTD Parquet generations, stamps `archivegenerationid` on the migrated parent rows, and removes the sealed rows from `ONLY oscar.obs` after parity verification.
+
+For streams that remain in the parent `ONLY oscar.obs` table (`immutable=false`) and for command streams (`cmd_commands` / `cmd_status`), OSCAR separates permanent evidentiary records from transient operational telemetry:
+
+- **Permanent evidentiary records (`occupancy`, `adjudication`, `report`, `nationalSummary`):** Retained indefinitely in `ONLY oscar.obs`. Every adjudication submission (`AdjudicationControl`) is strictly **append-only**: it inserts a new `adjudication` observation and appends both its encoded observation ID and `"code:<n>"` disposition tag onto the parent `occupancy` observation's `adjudicatedIds` JSONB array without deleting or overwriting prior adjudications. CQL2 queries on `adjudicatedIds` use PostgreSQL JSONB array containment (`@> to_jsonb($1::text)`), and the Viewer's `AdjudicationLog` discovers all adjudication datastreams on a lane and merges records matched by `adjudicatedIds` or `occupancyObsId`.
+- **Hourly `connectionStatus` and routine `Clear` `occupancyStatus` pruning (`DatabasePurger`):** `EMLContextualOutput` and driver connection outputs deduplicate identical `connectionStatus` values so only state transitions are emitted. Every hour, `DatabasePurger` purges `connectionStatus` rows older than `connectionStatusRetentionHours` (`1` hour by default) while always keeping the newest row per datastream, and purges routine `Clear` `occupancyStatus` rows older than `1` hour while keeping the newest row per datastream and all non-`Clear` fault/alarm transitions. Backed by the partial index `obs_mutable_datastream_phenomenon_idx ON ONLY oscar.obs (datastreamid, phenomenontime ASC, id ASC) WHERE archivegenerationid IS NULL` (`15` total indexes on `oscar.obs`), mutable-stream purges use `parentTableOnly` selection and `DELETE FROM ONLY obs WHERE id=ANY ($1::bigint[]) AND archivegenerationid IS NULL RETURNING id` so PostgreSQL never scans `osg_*` child partitions or spills temporary files during hourly maintenance.
+- **Hourly 24-hour transient command pruning (`DatabasePurger.purgeOldCommands`):** Every hour, `DatabasePurger` deletes transient operational commands (`streamControl`, `videoControl`, `ptzControl`, `hlsControl`, `oscarServiceControl`) older than **24 hours** along with their cascading `cmd_status` rows (`PostgisCommandStoreImpl` + `PostgisCommandStatusStore`), while permanently preserving all `%adjudicate%` and audit command streams.
 
 ## Daily-file lifecycle
 

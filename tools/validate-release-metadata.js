@@ -147,9 +147,11 @@ for (const [field, [actual, expected]] of Object.entries(expectedStorageDefaults
 }
 const expectedArchiveOutputs = [
     'gammaCounts', 'gammaThreshold', 'neutronCounts', 'setupGamma', 'setupNeutron',
+    'speed', 'backgroundReport', 'foregroundReport', 'status',
+    'emlContextual', 'emlScanContextual', 'emlAnalysis',
 ];
 if (JSON.stringify(archive?.outputNames) !== JSON.stringify(expectedArchiveOutputs)) {
-    throw new Error('dist/config/standard/config.json: expected the approved five-output immutable archive allowlist.');
+    throw new Error('dist/config/standard/config.json: expected the approved twelve-output immutable archive allowlist.');
 }
 requireMatch('dist/release/.env.example', /^OSCAR_VERSION=(.+)$/m, version, 'OSCAR_VERSION');
 requireMatch(
