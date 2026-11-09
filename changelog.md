@@ -1,10 +1,10 @@
 # OSCAR Change Log
 All notable changes to this project will be documented in this file. 
 
-## 3.11.0 2026-11-09
+## 3.11.0 (Amber) 2026-11-09
 
 ### Release overview
-OSCAR 3.11.0 is re-architected for multi-year, 24/7 operation across up to 50 concurrent radiation portal monitor (RPM) and RTSP camera lanes on **Ubuntu Server 24.04 x86-64** and **Windows 11 x86-64** (with Docker Desktop and WSL 2). Because [`v3.8.0` (2026-09-19)](https://github.com/Botts-Innovative-Research/osh-oakridge-buildnode/releases/tag/v3.8.0) was the last general-public release prior to the interim `3.8.1`–`3.10.0` builds, the **New features since public release `v3.8.0`** section below summarizes every capability added across `3.8.1` through `3.11.0` in one place.
+OSCAR 3.11.0 (Amber) is re-architected for multi-year, 24/7 operation across up to 50 concurrent radiation portal monitor (RPM) and RTSP camera lanes on **Ubuntu Server 24.04 x86-64** and **Windows 11 x86-64** (with Docker Desktop and WSL 2). Because [`v3.8.0` (2026-09-19)](https://github.com/Botts-Innovative-Research/osh-oakridge-buildnode/releases/tag/v3.8.0) was the last general-public release prior to the interim `3.8.1`–`3.10.0` builds, the **New features since public release `v3.8.0`** section below summarizes every capability added across `3.8.1` through `3.11.0` in one place.
 
 ### Release artifacts — which file to download
 
