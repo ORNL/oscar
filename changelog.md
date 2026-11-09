@@ -226,6 +226,7 @@ For users upgrading or evaluating OSCAR from [`v3.8.0` (2026-09-19)](https://git
 - Retain historical occupancy daily-file records across midnight rollover via a bounded cold-slice fallback API (`DailyFileSlice`), and integrate [`ORNL/oscar-video-guides`](https://github.com/ORNL/oscar-video-guides) across operator documentation (`docs/VIDEO_GUIDES.md`)
 - Replace legacy report rendering with pure-vector Apache PDFBox 3 + JFreeChart PDFs, split itemized adjudication records into a dedicated **`Adjudication Details`** report (`PDF`, `CSV`, `JSON`, and native streaming `SXSSFWorkbook` `.xlsx` with inline Viewer previews and zero-count isotope omission in `Adjudication Report`), prepend a summed **All Selected Lanes** (`ALL_LANES`) disposition and isotope summary section to the start of the **`Adjudication Report`** before per-lane tables, count `eml-non-threat` markers on `occupancy` observations in `RDS Site` and `Event` reports, add separate `Open` and `?download=1` (`Content-Disposition: attachment`) `Download` controls plus `2.5 s` + `visibilitychange` HTTP command-status polling, accelerate 50-lane / 30-day `Lane Report` execution ~5.4x via index-backed `countMatchingEntries`, narrow CQL `alarmCategory != 'None'` queries, shared-prefix `JsonCqlEvaluator` prefiltering, and `ParquetArchiveReader` 64-row CQL batches, serve `Cache-Control: no-cache` on gateway HTML shell routes, and add credentialed `<link rel="manifest" crossOrigin="use-credentials" />` + separated `192x192`/`512x512` `"any"`/`"maskable"` icons for Android Chrome PWA installation behind session authentication
 - Add an in-UI **Operator Help & Glossary** dialog (`?` icon in the Viewer top navigation bar) across `en`, `es`, `fr`, and `el`, add localized in-UI `README` tabs across all 24 SensorHub Admin configuration modules with plain-language term explanations, and automatically fit the Dashboard, Map, and Operational View maps tightly to the active lane extent (`zoomSnap: 0`, `padding: [14, 14]`, immediate `laneSystem` coordinate seeding, and `(0, 0)` Null Island exclusion)
+- Automatically synchronize Rapiscan RPM daily setup parameters (`SG1`–`SG3` for all 16 gamma setup parameters and `SN1`–`SN2` for all 10 neutron setup parameters, including fractional `nsigma`) from the daily file feed into `RapiscanConfig` (`setupGammaConfig` and `setupNeutronConfig`), update live `GammaThresholdOutput` and `EMLService` calibration parameters in memory at `O(1)` cost, and persist changed configurations to `config.json` asynchronously via `RapiscanConfigSaver` (change-detected and coalesced across all 50 lanes on a single background thread with a 2-second debounce window so sensor TCP reader threads never perform disk I/O or lock contention)
 
 ### Contributors
 Thanks to everyone who contributed across `ORNL/oscar` and its submodules since public release `v3.8.0`:
@@ -238,18 +239,18 @@ Thanks to everyone who contributed across `ORNL/oscar` and its submodules since 
 ### Full changelog across repository and submodules
 - **Since public release `v3.8.0` (`v3.8.0` → `v3.11.0`):**
   - **`ORNL/oscar`**: [`v3.8.0...v3.11.0`](https://github.com/ORNL/oscar/compare/v3.8.0...v3.11.0)
-  - **`ORNL/oscar-viewer`**: [`2a67af88...182ff5bd`](https://github.com/ORNL/oscar-viewer/compare/2a67af881a7119f6d527e01746526ae4a4e0d57e...182ff5bd66409a2e91053538c41585c9a43f5215)
-  - **`ORNL/osh-addons`**: [`3708dcaa...13d5e83c`](https://github.com/ORNL/osh-addons/compare/3708dcaa1d2189aaa75ad0b11af8483cc1468310...13d5e83cddda7255937e0e6df080aa136323fa23)
-  - **`ORNL/osh-core`**: [`651fee4d...13c9c97f`](https://github.com/ORNL/osh-core/compare/651fee4d0ae694810c7c02f6cb8fd58c739a6068...13c9c97f7d8681315f28c130b104f1d6031f9adc)
+  - **`ORNL/oscar-viewer`**: [`2a67af88...967a7e0a`](https://github.com/ORNL/oscar-viewer/compare/2a67af881a7119f6d527e01746526ae4a4e0d57e...967a7e0a00656422bb379a96662c536d1d02c3d2)
+  - **`ORNL/osh-addons`**: [`3708dcaa...cae24121`](https://github.com/ORNL/osh-addons/compare/3708dcaa1d2189aaa75ad0b11af8483cc1468310...cae24121ab49f17c8be4e10d6cb5b77c2ed96bc1)
+  - **`ORNL/osh-core`**: [`651fee4d...a882eb76`](https://github.com/ORNL/osh-core/compare/651fee4d0ae694810c7c02f6cb8fd58c739a6068...a882eb76f65054f34789293150e2929785966a1d)
   - **`ORNL/osh-js`**: [`73dacad5...0d3716dc`](https://github.com/ORNL/osh-js/compare/73dacad5c7338722763263ef0ff5928fbd19de5b...0d3716dc5f5ce8c310757fd5e1e939231e22fe93)
-  - **`ORNL/osh-oakridge-modules`**: [`38952169...b3760914`](https://github.com/ORNL/osh-oakridge-modules/compare/38952169099eee66f47c3c30beee4e5de774cea3...b3760914c54287e11352e90fe5e0c5513ec64ccb)
+  - **`ORNL/osh-oakridge-modules`**: [`38952169...607af136`](https://github.com/ORNL/osh-oakridge-modules/compare/38952169099eee66f47c3c30beee4e5de774cea3...607af136ee91971e6fbec6764ffa43e24e263963)
 - **Since `v3.10.0` (`v3.10.0` → `v3.11.0`):**
   - **`ORNL/oscar`**: [`v3.10.0...v3.11.0`](https://github.com/ORNL/oscar/compare/v3.10.0...v3.11.0)
-  - **`ORNL/oscar-viewer`**: [`a2dabf0e...182ff5bd`](https://github.com/ORNL/oscar-viewer/compare/a2dabf0e038a6a48acadf8c6fcdb71d916f9adb5...182ff5bd66409a2e91053538c41585c9a43f5215)
-  - **`ORNL/osh-addons`**: [`3708dcaa...13d5e83c`](https://github.com/ORNL/osh-addons/compare/3708dcaa1d2189aaa75ad0b11af8483cc1468310...13d5e83cddda7255937e0e6df080aa136323fa23)
-  - **`ORNL/osh-core`**: [`651fee4d...13c9c97f`](https://github.com/ORNL/osh-core/compare/651fee4d0ae694810c7c02f6cb8fd58c739a6068...13c9c97f7d8681315f28c130b104f1d6031f9adc)
+  - **`ORNL/oscar-viewer`**: [`a2dabf0e...967a7e0a`](https://github.com/ORNL/oscar-viewer/compare/a2dabf0e038a6a48acadf8c6fcdb71d916f9adb5...967a7e0a00656422bb379a96662c536d1d02c3d2)
+  - **`ORNL/osh-addons`**: [`3708dcaa...cae24121`](https://github.com/ORNL/osh-addons/compare/3708dcaa1d2189aaa75ad0b11af8483cc1468310...cae24121ab49f17c8be4e10d6cb5b77c2ed96bc1)
+  - **`ORNL/osh-core`**: [`651fee4d...a882eb76`](https://github.com/ORNL/osh-core/compare/651fee4d0ae694810c7c02f6cb8fd58c739a6068...a882eb76f65054f34789293150e2929785966a1d)
   - **`ORNL/osh-js`**: [`73dacad5...0d3716dc`](https://github.com/ORNL/osh-js/compare/73dacad5c7338722763263ef0ff5928fbd19de5b...0d3716dc5f5ce8c310757fd5e1e939231e22fe93)
-  - **`ORNL/osh-oakridge-modules`**: [`4f20ab45...b3760914`](https://github.com/ORNL/osh-oakridge-modules/compare/4f20ab458f177ee0e492a8698227fd0a12fb0514...b3760914c54287e11352e90fe5e0c5513ec64ccb)
+  - **`ORNL/osh-oakridge-modules`**: [`4f20ab45...607af136`](https://github.com/ORNL/osh-oakridge-modules/compare/4f20ab458f177ee0e492a8698227fd0a12fb0514...607af136ee91971e6fbec6764ffa43e24e263963)
 
 ## 3.10.0 2026-10-26
 ### Changes
