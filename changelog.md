@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 ## 3.11.0 2026-11-07
 
 ### Release overview
-OSCAR 3.11.0 is the first official release published under Oak Ridge National Laboratory's [`github.com/ORNL`](https://github.com/ORNL) organization ([`ORNL/oscar`](https://github.com/ORNL/oscar)), re-architected for multi-year, 24/7 operation across up to 50 concurrent radiation portal monitor (RPM) and RTSP camera lanes on **Ubuntu Server 24.04 x86-64** and **Windows 11 x86-64** (with Docker Desktop and WSL 2). Because [`v3.8.0` (2026-09-19)](https://github.com/Botts-Innovative-Research/osh-oakridge-buildnode/releases/tag/v3.8.0) was the last general-public release prior to the interim `3.8.1`–`3.10.0` builds, the **New features since public release `v3.8.0`** section below summarizes every capability added across `3.8.1` through `3.11.0` in one place.
+OSCAR 3.11.0 is re-architected for multi-year, 24/7 operation across up to 50 concurrent radiation portal monitor (RPM) and RTSP camera lanes on **Ubuntu Server 24.04 x86-64** and **Windows 11 x86-64** (with Docker Desktop and WSL 2). Because [`v3.8.0` (2026-09-19)](https://github.com/Botts-Innovative-Research/osh-oakridge-buildnode/releases/tag/v3.8.0) was the last general-public release prior to the interim `3.8.1`–`3.10.0` builds, the **New features since public release `v3.8.0`** section below summarizes every capability added across `3.8.1` through `3.11.0` in one place.
 
 ### Release artifacts — which file to download
 
@@ -190,8 +190,8 @@ For users upgrading or evaluating OSCAR from [`v3.8.0` (2026-09-19)](https://git
 - Add individual detector charting to historical events
 - Fix Rapiscan neutron chart not showing first point in occupancy
 
-### Windows 11 unattended server readiness, ORNL upstream transition, and release CI
-- Transition official upstream repositories, submodule pins, `osh-js` dependency lock, localized manual asset links, and governance files (`CODEOWNERS`, `CONTRIBUTING.md`, `SECURITY.md`) to Oak Ridge National Laboratory ([`github.com/ORNL`](https://github.com/ORNL))
+### Windows 11 unattended server readiness, upstream transition, and release CI
+- Transition official upstream repositories, submodule pins, `osh-js` dependency lock, localized manual asset links, and governance files (`CODEOWNERS`, `CONTRIBUTING.md`, `SECURITY.md`) to [`github.com/ORNL`](https://github.com/ORNL)
 - Add `configure-windows-host.ps1` (`.\oscar.bat prepare-host` and `.\oscar.bat host-check`) with 20 automated checks covering AC power/hibernate/USB/NIC power-saving policy, `S0 Low Power Idle` (Modern Standby) detection (`powrprof.dll!GetPwrCapabilities`) with `VIDEOIDLE = 0` (`Never`) enforcement, pre-login Docker Desktop startup (`OSCAR-DockerDesktop-BootStart` `AtStartup` `+10s`, `LogonType=S4U` with ACL-locked `%ProgramData%\OSCAR\start-docker-prelogin.ps1`), bounded `.wslconfig` memory/swap caps (`wsl2-resource-cap`), static vs. DHCP IPv4 stability (`network-address-stability` / `-AllowDhcpAddress`), bugcheck auto-reboot (`AutoReboot=1`, `CrashDumpEnabled=7`), Win32 long paths, W32Time sync, and optional LAN HTTPS `443` firewall rules
 - Stage `Confirm-DailyJournalBackup` inside an isolated native Linux ext4 Docker named volume instead of NTFS over WSL 2 9P, and use Win32 `\\?\` long-path cleanup (`Remove-DirectoryTreeLongPath`) on Windows
 - Set `absolute_redirect off;` in `dist/release/docker/gateway/default.conf` so `/view/<name>` workstation redirects preserve the external HTTPS host and port instead of exposing internal container port `:8443`

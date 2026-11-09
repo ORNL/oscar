@@ -7,7 +7,7 @@ The rules in this document apply to:
 - the React/Next.js OSCAR viewer;
 - the Vaadin OpenSensorHub administration and landing interfaces;
 - generic and custom module configuration forms;
-- Oak Ridge sensor and Lane System configuration forms;
+- OSCAR sensor and Lane System configuration forms;
 - module names, descriptions, enum captions, validation messages, and custom controls; and
 - context-sensitive Markdown help shown in the administration interface.
 
@@ -38,7 +38,7 @@ The upstream build checkout is a Git superproject. Translation source is owned b
 | --- | --- |
 | `include/osh-core` | Admin locale state, generic Vaadin controls, configuration-bundle lookup, localized help selection, global admin messages, core service/database/security bundles, and core tests |
 | `include/osh-addons` | PostGIS/Parquet tiered datastore, MQTT broker, Connected Systems MQTT, and FileServer configuration bundles and tests |
-| `include/osh-oakridge-modules` | Oak Ridge sensor/Lane/service/process bundles and READMEs, `/login` session authentication localization, custom OSCAR forms, module inventories, and module tests |
+| `include/osh-oakridge-modules` | OSCAR sensor/Lane/service/process bundles and READMEs, `/login` session authentication localization, custom OSCAR forms, module inventories, and module tests |
 | `web/oscar-viewer` | React locale registration, selector behavior, viewer JSON catalogs, and viewer tests/build |
 | repository root | Integration documentation, release build, and the pinned submodule commit IDs |
 
@@ -585,7 +585,7 @@ services/sensorhub-service-mqtt-hivemq/src/main/resources/
   org/sensorhub/impl/service/hivemq/i18n/ConfigMessages.properties
 ```
 
-### 7.3 Oak Ridge sensor and system catalogs
+### 7.3 OSCAR sensor and system catalogs
 
 ```text
 include/osh-oakridge-modules/sensors/sensorhub-driver-aspect/
@@ -881,7 +881,7 @@ Test with a clean browser profile or after clearing both the language cookie and
 4. In the admin panel, right-click under Sensors, choose New System, select Lane System, and complete every field.
 5. Verify the module name/description, all top-level fields, nested RPM/camera forms, type choices, enum choices, tooltips, validation, buttons, errors, and success messages.
 6. Open the Lane help panel and verify `README_it.md`, Markdown layout, links, and code blocks.
-7. Repeat creation/editing for every Oak Ridge sensor and Z-Wave module, including its communication configuration and help.
+7. Repeat creation/editing for every OSCAR sensor and Z-Wave module, including its communication configuration and help.
 8. Change language in admin; verify the page reloads and the viewer later uses the same choice.
 9. Refresh, sign out/in if applicable, open a new tab, and navigate between viewer/admin paths to verify persistence.
 10. Set an unsupported cookie value and verify English fallback without a crash.
@@ -1107,7 +1107,7 @@ A language is supported only when every applicable item below is complete:
 - [ ] Viewer lint, build, locale validation, and Cypress tests pass.
 - [ ] The canonical repository build passes.
 - [ ] The full Lane System creation flow passes in the new language.
-- [ ] Every Oak Ridge sensor/communication form and help panel is manually sampled or tested.
+- [ ] Every OSCAR sensor/communication form and help panel is manually sampled or tested.
 - [ ] Cross-interface selection and persistence work in both directions.
 - [ ] English and unsupported-locale fallbacks still work.
 - [ ] A fluent reviewer and a domain reviewer approve terminology and technical meaning.
