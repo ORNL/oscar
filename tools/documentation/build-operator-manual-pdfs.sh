@@ -162,7 +162,6 @@ PY
         --metadata="title:${titles[$index]}" \
         --metadata="subtitle:OSCAR $version - ${language_names[$index]}" \
         --metadata="toc-title:${toc_titles[$index]}" \
-        --metadata="author:Oak Ridge National Laboratory" \
         --metadata="lang:$locale" \
         --variable="mainfont:Noto Sans" \
         --variable="sansfont:Noto Sans" \

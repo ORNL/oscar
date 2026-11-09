@@ -9,7 +9,7 @@ The configured HTTPS port and a port 80 HTTPS redirect are published. PostgreSQL
 | Repository | Role |
 | --- | --- |
 | [`ORNL/oscar`](https://github.com/ORNL/oscar) | Top-level release packaging, Docker Compose runtime, storage/backup tooling, documentation, and CI/release pipelines |
-| [`ORNL/osh-oakridge-modules`](https://github.com/ORNL/osh-oakridge-modules) | Oak Ridge OpenSensorHub drivers, services, storage/media lifecycle modules, and localized operator manuals |
+| [`ORNL/osh-oakridge-modules`](https://github.com/ORNL/osh-oakridge-modules) | OSCAR OpenSensorHub drivers, services, storage/media lifecycle modules, and localized operator manuals |
 | [`ORNL/oscar-viewer`](https://github.com/ORNL/oscar-viewer) | Next.js / React OSCAR web client (`en`, `es`, `fr`, `el`) |
 | [`ORNL/osh-core`](https://github.com/ORNL/osh-core) | OpenSensorHub core fork (`OSCAR` branch) |
 | [`ORNL/osh-addons`](https://github.com/ORNL/osh-addons) | OpenSensorHub addons & tiered PostGIS/Parquet storage (`OSCAR` branch) |

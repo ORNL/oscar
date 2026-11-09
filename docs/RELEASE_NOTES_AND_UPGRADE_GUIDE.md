@@ -1,6 +1,6 @@
 # OSCAR 3.11.0 Release Overview, Architectural Rationale, and User Guide
 
-OSCAR 3.11.0 is the official Oak Ridge National Laboratory (`ORNL/oscar`) release engineered for continuous 24/7 operation across multi-year retention windows at large radiation portal monitoring (RPM) sites (up to 50 concurrent RPM and RTSP camera lanes per server) on Ubuntu Server 24.04 x86-64 and Windows 11 x86-64.
+OSCAR 3.11.0 is engineered for continuous 24/7 operation across multi-year retention windows at large radiation portal monitoring (RPM) sites (up to 50 concurrent RPM and RTSP camera lanes per server) on Ubuntu Server 24.04 x86-64 and Windows 11 x86-64.
 
 This guide summarizes what changed, **why** each major architectural and operational change was implemented, which release artifact to download, and where **new users** and **existing users** should start.
 

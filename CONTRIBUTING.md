@@ -1,6 +1,6 @@
 # Contributing to OSCAR
 
-Thank you for contributing to **OSCAR (Open Source Central Alarm Monitoring)**, maintained by Oak Ridge National Laboratory at [`https://github.com/ORNL/oscar`](https://github.com/ORNL/oscar).
+Thank you for contributing to **OSCAR (Open Source Central Alarm Monitoring)** at [`https://github.com/ORNL/oscar`](https://github.com/ORNL/oscar).
 
 ## Repository Architecture
 
@@ -9,7 +9,7 @@ OSCAR is composed of coordinated repositories under the `ORNL` GitHub organizati
 | Repository | Default Branch | Purpose |
 | --- | --- | --- |
 | [`ORNL/oscar`](https://github.com/ORNL/oscar) | `main` | Top-level Gradle build root, Docker Compose deployment, storage/backup CLI, release packaging, and documentation |
-| [`ORNL/osh-oakridge-modules`](https://github.com/ORNL/osh-oakridge-modules) | `main` | Submodule (`include/osh-oakridge-modules`): Oak Ridge OpenSensorHub drivers, services, media/journal lifecycle, and localized operator manuals |
+| [`ORNL/osh-oakridge-modules`](https://github.com/ORNL/osh-oakridge-modules) | `main` | Submodule (`include/osh-oakridge-modules`): OSCAR OpenSensorHub drivers, services, media/journal lifecycle, and localized operator manuals |
 | [`ORNL/oscar-viewer`](https://github.com/ORNL/oscar-viewer) | `main` | Submodule (`web/oscar-viewer`): Next.js / TypeScript web interface |
 | [`ORNL/osh-core`](https://github.com/ORNL/osh-core) | `OSCAR` | Submodule (`include/osh-core`): OpenSensorHub core fork |
 | [`ORNL/osh-addons`](https://github.com/ORNL/osh-addons) | `OSCAR` | Submodule (`include/osh-addons`): OpenSensorHub addons & tiered PostGIS/Parquet datastore |
