@@ -32,7 +32,7 @@ deployment and storage commands fail closed there.
 
 | Data | Primary location | Owner | Default lifecycle |
 | --- | --- | --- | --- |
-| Transactional records, OSH metadata, and immutable-output staging | PostgreSQL `postgres_data` volume | Tiered OSH database | Allowlisted immutable detector outputs commit first to short-lived LOGGED 30-minute child relations; after verified Parquet activation and exact parity the whole child is dropped. Mutable occupancy/alarm events, append-only adjudications (including automated `Code 9998: Extended Occupancy Gamma Alarm` and `Code 9999: EML Non-Threat`), reports, small metadata, overlays, tombstones, and all non-allowlisted observations remain PostgreSQL-backed |
+| Transactional records, OSH metadata, and 30-minute observation staging | PostgreSQL `postgres_data` volume | Tiered OSH database | All 21 operational and evidentiary observation streams (`gammaCounts`, `gammaThreshold`, `neutronCounts`, `setupGamma`, `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`, `status`, `emlContextual`, `emlScanContextual`, `emlAnalysis`, `dailyFile`, `connectionStatus`, `occupancyStatus`, `tamper`, `occupancy`, `adjudication`, `report`, `siteStatistics`, `nationalSummary`) commit first to short-lived LOGGED 30-minute child relations (`osg_*`); after verified Parquet activation and exact parity the whole child is dropped, while `oscar_obs_latest`, `oscar_archive_schema` summary counters, `oscar_event_locator`, and `oscar_obs_overlay` (for adjudicated archived occupancies) remain in PostgreSQL alongside static singleton configuration streams (`sensorLocation`, `adjudicationCodes`, `siteInfo`, ~52 rows total in `ONLY oscar.obs`) |
 | Cold detector observations | `${OSCAR_ARCHIVE_DIR}` bind mount | Tiered OSH database and archive catalog | Immutable Parquet generation plus manifest and schema snapshot |
 | Daily-file source journal & Rapiscan daily setup sync | `files/.dailyfile-journal` and `config.json` in `oscar_state` | Daily File Journal service & `RapiscanConfigSaver` | Per-lane framed segments and publication ledger; private sealed segments expire after 30 days only after immutable-publication validation and exact frozen replay, with an optional additional backup gate. Rapiscan daily `SG1`–`SG3` and `SN1`–`SN2` setup records update `RapiscanConfig` in memory and coalesce changes into `config.json` asynchronously |
 | Published daily files | `files/dailyfiles` in `oscar_state` | Daily File Journal service | Immutable legacy CSV plus versioned SHA-256 manifest |
@@ -176,19 +176,26 @@ racing a successful hold without loading every generation hold in the store.
 
 Parquet is OSCAR's primary cold observation tier, not a backup. It depends on the PostgreSQL catalog,
 overlays, tombstones, and application state and therefore must be captured with those components in
-a coordinated snapshot. Only the 12 immutable high-volume detector, status, report, and EML output
-names allowlisted in the standard configuration (`gammaCounts`, `gammaThreshold`, `neutronCounts`,
-`setupGamma`, `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`, `status`,
-`emlContextual`, `emlScanContextual`, `emlAnalysis`) are cold-tiered; this is not a generic
-every-table or every-observation export, and mutable events remain in PostgreSQL `ONLY oscar.obs`
-(where permanent evidentiary `occupancy`, append-only `adjudication`, `report`, and `nationalSummary`
-rows are retained, while transient `connectionStatus` and routine `Clear` `occupancyStatus` rows
-older than 1 hour and transient operational `cmd_commands`/`cmd_status` rows older than 24 hours are
-pruned hourly via parent-only `obs_mutable_datastream_phenomenon_idx` scans). On startup, OSCAR
-reconciles existing `oscar_obs_storage_route` entries for all 12 allowlisted outputs to
-`immutable=true`, reclaims empty expired or retired `osg_*` stage partitions, and retroactively
-exports any legacy unarchived parent-table rows for newly-promoted immutable streams into verified
-Parquet generations before removing the migrated rows from `ONLY oscar.obs`.
+a coordinated snapshot. All 21 operational and evidentiary observation streams allowlisted in the
+standard configuration (`gammaCounts`, `gammaThreshold`, `neutronCounts`, `setupGamma`,
+`setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`, `status`, `emlContextual`,
+`emlScanContextual`, `emlAnalysis`, `dailyFile`, `connectionStatus`, `occupancyStatus`, `tamper`,
+`occupancy`, `adjudication`, `report`, `siteStatistics`, `nationalSummary`) are routed through
+30-minute `osg_*` stage partitions and cold-tiered to ZSTD Parquet, leaving only static singleton
+configuration streams (`sensorLocation`, `adjudicationCodes`, `siteInfo`, ~52 rows total) in
+`ONLY oscar.obs`. When an archived `occupancy` is adjudicated, `AdjudicationControl` appends a new
+`adjudication` observation and updates the archived `occupancy` via `oscar_obs_overlay` +
+`oscar_obs_latest` without rewriting Parquet. Meanwhile, `oscar_obs_latest` serves `< 0.5 ms`
+`resultTime=latest` / `phenomenonTime=latest` queries for sparse streams, `oscar_archive_schema`
+stores 16 per-generation, per-datastream summary counters so `StatisticsOutput` and Dashboard/Event
+Log alarm & fault counts sum interior unmutated generations in SQL in `< 1 ms` and prune zero-match
+generations without opening Parquet files, and `PostgisCommandStoreImpl` prunes completed transient
+(`fileControl` / `hlsControl`, non-`adjudicationControl`) commands older than 24 hours. On startup,
+OSCAR reconciles existing `oscar_obs_storage_route` entries for all 21 allowlisted outputs to
+`immutable=true`, reclaims empty expired or retired `osg_*` stage partitions, retroactively drains
+and compacts (`VACUUM (FULL, ANALYZE) ONLY obs`) any legacy parent-table rows for newly-promoted
+streams into verified Parquet generations, and backfills summary counters and `oscar_obs_latest` for
+any pre-upgrade generations.
 
 An asynchronous single-worker cycle starts immediately when the database module starts, then runs
 every minute. In `PARQUET_PRIMARY`, allowlisted observations route to UTC-aligned, LOGGED 30-minute

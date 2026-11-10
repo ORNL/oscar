@@ -13,10 +13,10 @@ hosts. macOS deployment and storage operations fail closed; it is not a supporte
 
 | Data class | Default transition | Removal gate | Removed automatically? |
 | --- | --- | --- | --- |
-| Selected immutable high-volume detector, status, report & EML observations (12 outputs) | Commit first to a LOGGED UTC-aligned 30-minute PostgreSQL staging child (`osg_*`); make the closed window Parquet-eligible after five minutes and run the worker every minute (plus startup route reconciliation and retroactive migration of any unarchived parent-table rows) | Valid Parquet/schema/manifest objects, active catalog generation, object checksum, and exact row/UUID parity | Yes; detach and drop the complete child transactionally (`NO INHERIT` + `DROP TABLE`), at most eight per cycle (and delete sealed retroactively migrated parent-table rows). The normal staging budget is at most one hour, but failure or backlog can extend it |
-| Permanent evidentiary & audit observations (`occupancy`, `adjudication`, `report`, `nationalSummary`) | Remain hot in the parent `ONLY oscar.obs` table (`immutable=false`); adjudications are strictly append-only (including automated `Code 9998: Extended Occupancy Gamma Alarm` and `Code 9999: EML Non-Threat`) | Existing application policy and active `oscar_retention_hold` checks | No; never moved to stage partitions or auto-purged by the cold-tier or hourly maintenance schedulers |
-| Transient operational health & compatibility observations (`connectionStatus`, routine `Clear` `occupancyStatus`, `dailyFile`) | Remain in `ONLY oscar.obs` indexed by `obs_mutable_datastream_phenomenon_idx` | `connectionStatus`: > 1h old keeping latest per stream; `occupancyStatus`: routine `Clear` rows > 1h old keeping latest per stream and all fault/alarm rows (including `Fault - Extended Occupancy`); `dailyFile`: completed prior UTC day with verified daily CSV + SHA-256 manifest | Yes; purged hourly via `parentTableOnly` (`DELETE FROM ONLY obs`) without scanning child partitions |
-| Transient operational vs. audit commands (`cmd_commands` & `cmd_status`) | Stored in PostgreSQL command tables | Transient operational commands (`streamControl`, `videoControl`, `ptzControl`, `hlsControl`, `oscarServiceControl`) > 24h old; `%adjudicate%` streams excluded | Yes for transient operational commands > 24h old (cascading `cmd_status` delete); No for `%adjudicate%` audit commands (retained permanently) |
+| Operational, evidentiary, status, report & EML observations (21 outputs) | Commit first to a LOGGED UTC-aligned 30-minute PostgreSQL staging child (`osg_*`); make the closed window Parquet-eligible after five minutes and run the worker every minute (plus startup route reconciliation, retroactive migration of unarchived parent-table rows, and `VACUUM (FULL, ANALYZE) ONLY obs` compaction) | Valid Parquet/schema/manifest objects, active catalog generation, object checksum, exact row/UUID parity, and populated `oscar_obs_latest`, `oscar_archive_schema` summary counters, and `oscar_event_locator` | Yes; detach and drop the complete child transactionally (`NO INHERIT` + `DROP TABLE`), at most eight per cycle. Mutations to archived `occupancy` rows (when adjudicated) are recorded in `oscar_obs_overlay` and synchronized with `oscar_obs_latest` |
+| Static singleton configuration observations (`sensorLocation`, `adjudicationCodes`, `siteInfo`) | Remain hot in the parent `ONLY oscar.obs` table (`immutable=false`, ~52 rows total across 50 lanes); prior `adjudicationCodes` rows are deduplicated on startup | Existing application policy and active `oscar_retention_hold` checks | No; never moved to stage partitions |
+| Transient operational health & compatibility observations (`connectionStatus`, `occupancyStatus`, `dailyFile`) | Routed through 30-minute `osg_*` `PARQUET_PRIMARY` stage partitions into ZSTD Parquet with latest state cached in `oscar_obs_latest` (or pruned hourly from `ONLY oscar.obs` when `PARQUET_PRIMARY` is disabled); background camera `connectionStatus` heartbeats coalesced to 15-minute intervals while state transitions publish immediately | In `PARQUET_PRIMARY`: verified Parquet export + whole-partition drop (`DatabasePurger` skips row-wise `DELETE`s so no `oscar_tombstone` rows are created); in non-`PARQUET_PRIMARY`: > 1h old keeping latest per stream / verified daily CSV + SHA-256 manifest | Yes; retired via `O(1)` `NO INHERIT` + `DROP TABLE` in `PARQUET_PRIMARY` |
+| Transient operational vs. audit commands (`cmd` & `commandstatus`) | Stored in PostgreSQL command tables | Completed non-`adjudicationControl` commands (`fileControl`, `hlsControl`, etc.) > 24h old; `adjudicationControl` streams excluded and protected by immutability triggers | Yes for completed non-`adjudicationControl` commands > 24h old (with automatic `VACUUM (FULL, ANALYZE)` reclamation); No for `adjudicationControl` audit commands (retained permanently) |
 | Raw RPM daily-file source & daily setup parameter sync (`SG1`–`SG3`, `SN1`–`SN2`) | Append immediately; publish prior day after rollover; Rapiscan daily setup records (`SG1`–`SG3` and `SN1`–`SN2`) update live `RapiscanConfig` parameters in memory and coalesce changes into `config.json` via `RapiscanConfigSaver` | Valid immutable CSV, v1 manifest, `PUBLISHED` ledger, 30 days after the later of day close or actual publication, and exact sealed-journal replay parity; sites may additionally require verified backup confirmation | Yes for eligible private sealed segments; published daily files and `config.json` are not pressure-cleanup candidates |
 | Alarm source MP4 | Immediately eligible for an asynchronous attempt to publish exactly five JPEGs | Exactly five verified JPEGs and manifest, then 24-hour rollback grace and no hold | Yes, on a later successful retention pass |
 | Secondary retained JPEGs (`FIRST`, `QUARTER`, `THREE_QUARTERS`, `LAST`) | Pruned to the `MIDDLE` (`frame-03.jpg`) representative frame after `secondaryFrameRetentionDays` (30 by default) | Source MP4 already deleted (`SOURCE_DELETED`), no active manifest hold, and `frame-03.jpg` re-verified against its SHA-256 and byte count | Yes, on a later media-maintenance pass (`secondaryFrameRetentionDays > 0`) |
@@ -59,13 +59,18 @@ status
 emlContextual
 emlScanContextual
 emlAnalysis
+dailyFile
+connectionStatus
+occupancyStatus
+tamper
+occupancy
+adjudication
+report
+siteStatistics
+nationalSummary
 ```
 
-Occupancy/event records and the `dailyFile` compatibility stream are intentionally absent. OSCAR
-does not cold-tier every table or every observation stream. After verified stage retirement,
-Parquet and the independently published daily files are the sole durable long-term representations
-of the allowlisted detector data; PostgreSQL retains only the small archive catalog and mutable
-workflow state needed to locate and interpret it.
+Only static singleton configuration streams (`sensorLocation`, `adjudicationCodes`, and `siteInfo`, ~52 rows total across a 50-lane deployment) remain permanently in `ONLY oscar.obs`. After verified stage retirement, Parquet and the independently published daily files are the durable long-term representations of all 21 operational and evidentiary streams, while PostgreSQL retains `oscar_obs_latest` (one row per datastream for `< 0.5 ms` `resultTime=latest` / `phenomenonTime=latest` lookups), `oscar_archive_schema` (16 per-generation, per-datastream summary counters for `< 1 ms` SQL alarm/fault counts and zero-match generation pruning), `oscar_event_locator` (`event_id` index), and `oscar_obs_overlay` (for adjudicated archived occupancies).
 
 ### 2. Non-disruptive archive export
 
