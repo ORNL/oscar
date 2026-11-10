@@ -245,14 +245,14 @@ Thanks to everyone who contributed across `ORNL/oscar` and its submodules since 
   - **`ORNL/osh-addons`**: [`3708dcaa...cae24121`](https://github.com/ORNL/osh-addons/compare/3708dcaa1d2189aaa75ad0b11af8483cc1468310...cae24121ab49f17c8be4e10d6cb5b77c2ed96bc1)
   - **`ORNL/osh-core`**: [`651fee4d...a882eb76`](https://github.com/ORNL/osh-core/compare/651fee4d0ae694810c7c02f6cb8fd58c739a6068...a882eb76f65054f34789293150e2929785966a1d)
   - **`ORNL/osh-js`**: [`73dacad5...0d3716dc`](https://github.com/ORNL/osh-js/compare/73dacad5c7338722763263ef0ff5928fbd19de5b...0d3716dc5f5ce8c310757fd5e1e939231e22fe93)
-  - **`ORNL/osh-oakridge-modules`**: [`38952169...69f93b65`](https://github.com/ORNL/osh-oakridge-modules/compare/38952169099eee66f47c3c30beee4e5de774cea3...69f93b65beca1250a79813d0db08bd9f0528b091)
+  - **`ORNL/osh-oakridge-modules`**: [`38952169...ddb2eb58`](https://github.com/ORNL/osh-oakridge-modules/compare/38952169099eee66f47c3c30beee4e5de774cea3...ddb2eb58db09958d6d4299cb70853bc6ab4ffe63)
 - **Since `v3.10.0` (`v3.10.0` → `v3.11.0`):**
   - **`ORNL/oscar`**: [`v3.10.0...v3.11.0`](https://github.com/ORNL/oscar/compare/v3.10.0...v3.11.0)
   - **`ORNL/oscar-viewer`**: [`a2dabf0e...206932a6`](https://github.com/ORNL/oscar-viewer/compare/a2dabf0e038a6a48acadf8c6fcdb71d916f9adb5...206932a67f9dde5a09ef669bc198709bd57f871b)
   - **`ORNL/osh-addons`**: [`3708dcaa...cae24121`](https://github.com/ORNL/osh-addons/compare/3708dcaa1d2189aaa75ad0b11af8483cc1468310...cae241216e9ecbe194565c7c53d99a7503a497f6)
   - **`ORNL/osh-core`**: [`651fee4d...13c9c97f`](https://github.com/ORNL/osh-core/compare/651fee4d0ae694810c7c02f6cb8fd58c739a6068...13c9c97f7d8681315f28c130b104f1d6031f9adc)
   - **`ORNL/osh-js`**: [`73dacad5...0d3716dc`](https://github.com/ORNL/osh-js/compare/73dacad5c7338722763263ef0ff5928fbd19de5b...0d3716dc5f5ce8c310757fd5e1e939231e22fe93)
-  - **`ORNL/osh-oakridge-modules`**: [`4f20ab45...69f93b65`](https://github.com/ORNL/osh-oakridge-modules/compare/4f20ab458f177ee0e492a8698227fd0a12fb0514...69f93b65beca1250a79813d0db08bd9f0528b091)
+  - **`ORNL/osh-oakridge-modules`**: [`4f20ab45...ddb2eb58`](https://github.com/ORNL/osh-oakridge-modules/compare/4f20ab458f177ee0e492a8698227fd0a12fb0514...ddb2eb58db09958d6d4299cb70853bc6ab4ffe63)
 
 ## 3.10.0 2026-10-26
 ### Changes
