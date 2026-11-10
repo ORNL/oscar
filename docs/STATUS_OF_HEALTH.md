@@ -56,11 +56,14 @@ The FFmpeg driver also republishes each camera's unchanged connection state ever
 
 Connection, fault, and occupancy changes can therefore take up to one 30-second refresh interval to appear. Once an active occupancy has been observed, its elapsed-time display continues to advance between refreshes.
 
-## Extended-occupancy threshold
+## Extended-occupancy threshold and automated `Code 9998` gamma alarm adjudication
 
-The default threshold is one minute. Enter a value from 1 through 1440 minutes in **Extended occupancy threshold**. The Viewer saves the value in that browser, so different authorized workstations can use different operational thresholds without changing server configuration.
+Each lane configures a server-side **Extended Occupancy Threshold** (`extendedOccupancyThresholdMinutes`, `1` through `1440` minutes, default `1` minute) in SensorHub Admin (**Lane Sensor System -> Extended Occupancy Threshold (min)**):
 
-Changing the threshold re-evaluates occupancies already in progress. It does not modify detector observations, adjudications, reports, or server retention.
+1. **Fault behavior (`Fault - Extended Occupancy`):** When a vehicle occupies a Rapiscan, Aspect, or RS350 lane for at least `extendedOccupancyThresholdMinutes`, the lane's `OccupancyStatusOutput` immediately publishes an `occupancyStatus` observation with `extendedOccupancyFault = true` and `alarmState = "Fault - Extended Occupancy"`. This activates the **Extended occupancy** indicator on the Status of Health page and Dashboard lane card and increments the lane's `Ext-Occ` fault count in National Statistics and Lane Reports. When the vehicle exits the lane, `occupancyStatus` returns to `Clear` (`isOccupied = false`, `extendedOccupancyFault = false`).
+2. **Automatic adjudication of extended occupancy gamma alarms (`Code 9998: Extended Occupancy Gamma Alarm`):** When an occupancy that exceeded `extendedOccupancyThresholdMinutes` (or triggered an `Extended Occupancy` fault) completes with a **gamma-only alarm** (`gammaAlarm = true` and `neutronAlarm = false`), OSCAR automatically adjudicates the event prior to publication with disposition **`Code 9998: Extended Occupancy Gamma Alarm`** (`username = "AUTO"`, `secondaryInspectionStatus = "NONE"`, stamping `"extended-occupancy-gamma"` and `"code:9998"` onto `occupancy.adjudicatedIds`). The gamma-only extended occupancy alarm is suppressed from the active Dashboard alarm queue and browser notifications at `t = 0` while remaining fully searchable on the **Events** page (`Adjudication Code = 9998: Extended Occupancy Gamma Alarm`) and visible in **Event Details** and **Adjudication Reports**. Any extended occupancy that includes a **neutron alarm** (`Gamma-Neutron` or `Neutron`) is **never** auto-adjudicated and remains an active alarm requiring operator adjudication.
+
+Operators can also adjust the local display threshold (`1` through `1440` minutes, default `1` minute) in **Extended occupancy threshold** on the Status of Health page for browser-side elapsed-timer highlighting without modifying server configuration, detector observations, adjudications, or reports.
 
 ## Acceptance test
 
