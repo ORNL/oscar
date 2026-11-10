@@ -220,6 +220,8 @@ if (offline) {
             'gammaCounts', 'gammaThreshold', 'neutronCounts', 'setupGamma', 'setupNeutron',
             'speed', 'backgroundReport', 'foregroundReport', 'status',
             'emlContextual', 'emlScanContextual', 'emlAnalysis',
+            'dailyFile', 'connectionStatus', 'occupancyStatus', 'tamper',
+            'occupancy', 'adjudication', 'report', 'siteStatistics', 'nationalSummary',
         ];
         const videoRetentionConfig = oscarServiceConfig?.videoRetentionConfig;
         const dailyJournalConfig = modules.find(module =>
@@ -283,7 +285,7 @@ if (offline) {
             fail('the standard daily journal must retain sealed sources for 30 days and use exact replay without requiring managed backup');
         }
         if (JSON.stringify(archiveConfig?.outputNames) !== JSON.stringify(expectedArchiveOutputs)) {
-            fail('the standard cold tier must remain limited to the twelve approved immutable output names');
+            fail('the standard cold tier must remain limited to the twenty-one approved immutable output names');
         }
     }
 }

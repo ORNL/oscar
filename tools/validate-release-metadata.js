@@ -149,9 +149,11 @@ const expectedArchiveOutputs = [
     'gammaCounts', 'gammaThreshold', 'neutronCounts', 'setupGamma', 'setupNeutron',
     'speed', 'backgroundReport', 'foregroundReport', 'status',
     'emlContextual', 'emlScanContextual', 'emlAnalysis',
+    'dailyFile', 'connectionStatus', 'occupancyStatus', 'tamper',
+    'occupancy', 'adjudication', 'report', 'siteStatistics', 'nationalSummary',
 ];
 if (JSON.stringify(archive?.outputNames) !== JSON.stringify(expectedArchiveOutputs)) {
-    throw new Error('dist/config/standard/config.json: expected the approved twelve-output immutable archive allowlist.');
+    throw new Error('dist/config/standard/config.json: expected the approved twenty-one-output immutable archive allowlist.');
 }
 requireMatch('dist/release/.env.example', /^OSCAR_VERSION=(.+)$/m, version, 'OSCAR_VERSION');
 requireMatch(

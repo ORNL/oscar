@@ -271,7 +271,16 @@
           "status",
           "emlContextual",
           "emlScanContextual",
-          "emlAnalysis"
+          "emlAnalysis",
+          "dailyFile",
+          "connectionStatus",
+          "occupancyStatus",
+          "tamper",
+          "occupancy",
+          "adjudication",
+          "report",
+          "siteStatistics",
+          "nationalSummary"
         ]
       },
       "id": "bfbd6d58-1a4a-40b4-999d-381a1489cbb5",

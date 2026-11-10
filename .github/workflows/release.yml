@@ -151,7 +151,8 @@ jobs:
             --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.sparseByteHeavyHourDoesNotSelectAnEmptyPrefix \
             --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.archivePayloadByteCapFailsBeforePublication \
             --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.staleJobRetryReplacesItsDeterministicCrashObjects \
-            --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.archivePublicationRejectsSymlinkedPartitionPath
+            --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.archivePublicationRejectsSymlinkedPartitionPath \
+            --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.parquetPrimaryFullOperationalStreamsUseLatestCacheSummaryCountersAndScopedOverlays
 
   windows-powershell-5-1:
     name: Windows PowerShell 5.1
