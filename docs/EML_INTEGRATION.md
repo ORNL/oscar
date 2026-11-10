@@ -1,6 +1,6 @@
-# EML (Energy-Based Machine Learning) Runtime Plugin & Automated Adjudication Guide
+# EML (Enhanced Machine Learning) Runtime Plugin & Automated Adjudication Guide
 
-OSCAR 3.11.0 supports optional runtime integration with the external **Energy-Based Machine Learning (EML)** VM-250 analyzer (such as `EML-VM250-v1.0.2`) for Rapiscan radiation portal monitor (RPM) lanes.
+OSCAR 3.11.0 supports optional runtime integration with the external **Enhanced Machine Learning (EML)** VM-250 analyzer (such as `EML-VM250-v1.0.2`) for Rapiscan radiation portal monitor (RPM) lanes.
 
 Because EML is separately licensed and maintained outside the open-source OSCAR repositories, **OSCAR never bundles, commits, or distributes EML JARs, models, or XML configuration files** in source repositories, Docker images, or GitHub Release assets. Instead, site administrators obtain an authorized EML distribution separately, upload the EML plugin archive once in SensorHub Admin (**Services -> OSCAR Service**), and enable EML per Rapiscan lane.
 

@@ -50,8 +50,8 @@ New installations receive these defaults from `dist/config/standard/config.json`
 | Sealed journal lifecycle queue | bounded durable batches | Avoids startup and periodic all-history directory scans while recovery and deletion backlogs converge |
 | Database `idProviderType` | `SEQUENTIAL` | Required for exact, race-free archive ownership |
 | Database batch | 10,000 rows / 1 s | Bounded insert transaction and commit period |
-| Primary stage window / delay / future skew | 30 min / 5 min / 5 min | The 12 allowlisted immutable detector, status, report, and EML outputs (`gammaCounts`, `gammaThreshold`, `neutronCounts`, `setupGamma`, `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`, `status`, `emlContextual`, `emlScanContextual`, `emlAnalysis`) commit to UTC-aligned LOGGED PostgreSQL children first; a closed child becomes Parquet-eligible after the delay, and farther-future detector clocks are rejected |
-| Hourly mutable health & command cleanup | 1 h (`connectionStatus`, routine `Clear` `occupancyStatus`) / 24 h (transient `cmd_commands`) | Purges expired `connectionStatus` and routine `Clear` `occupancyStatus` rows from `ONLY oscar.obs` via `obs_mutable_datastream_phenomenon_idx` (always keeping the latest row per stream and all fault/alarm rows), and prunes transient camera/HLS/statistics commands > 24 h old while preserving `%adjudicate%` commands and append-only `adjudication` observations |
+| Primary stage window / delay / future skew | 30 min / 5 min / 5 min | The 21 allowlisted operational and evidentiary outputs (`gammaCounts`, `gammaThreshold`, `neutronCounts`, `setupGamma`, `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`, `status`, `emlContextual`, `emlScanContextual`, `emlAnalysis`, `dailyFile`, `connectionStatus`, `occupancyStatus`, `tamper`, `occupancy`, `adjudication`, `report`, `siteStatistics`, `nationalSummary`) commit to UTC-aligned LOGGED PostgreSQL children first; a closed child becomes Parquet-eligible after the delay, and farther-future detector clocks are rejected |
+| Hourly mutable health & command cleanup | 1 h (`connectionStatus`, routine `Clear` `occupancyStatus` when `PARQUET_PRIMARY` is disabled) / 24 h (transient `cmd_commands`) | In `PARQUET_PRIMARY`, operational streams retire by dropping verified 30-minute `osg_*` partitions (`DatabasePurger` skips row-wise observation deletes so zero tombstones are created), while `PostgisCommandStoreImpl` prunes completed transient non-`adjudicationControl` commands > 24 h old |
 | Parquet-primary worker interval | 1 min | Background export, parity, and retirement cadence; the at-most-one-hour normal staging budget is an SLO, not a hard deadline during failure or backlog |
 | Archive work bounds | 2 generations / 2 verifications / 8 partition retirements / 15 min | Independently bounds each lifecycle phase and stops starting new generations at the duration bound; in-progress publication completes safely |
 | Maximum generation | 2,000,000 rows / lower of 2 GiB operator cap or 1/8 DuckDB memory (32 MiB standard) | Deterministic `(phenomenontime,id)` prefixes become same-window revisions; 500-row cleared DuckDB inserts bound native staging memory, and a single oversized row fails closed in the LOGGED child |
@@ -248,21 +248,24 @@ Do not erase an old production volume simply to make the 3.11.0 module start.
 
 ### Phase 1: validate the primary cold tier
 
-The shipping profile commits only the 12 allowlisted immutable high-volume detector, status, report,
-and EML outputs (`gammaCounts`, `gammaThreshold`, `neutronCounts`, `setupGamma`, `setupNeutron`,
-`speed`, `backgroundReport`, `foregroundReport`, `status`, `emlContextual`, `emlScanContextual`,
-`emlAnalysis`) to LOGGED,
+The shipping profile commits all 21 allowlisted operational and evidentiary outputs
+(`gammaCounts`, `gammaThreshold`, `neutronCounts`, `setupGamma`, `setupNeutron`, `speed`,
+`backgroundReport`, `foregroundReport`, `status`, `emlContextual`, `emlScanContextual`,
+`emlAnalysis`, `dailyFile`, `connectionStatus`, `occupancyStatus`, `tamper`, `occupancy`,
+`adjudication`, `report`, `siteStatistics`, `nationalSummary`) to LOGGED,
 UTC-aligned 30-minute PostgreSQL staging children, then makes each closed child Parquet-eligible
 after five minutes and runs the worker every minute (while reconciling existing route entries and
-retroactively migrating any legacy unarchived parent-table rows for those 12 outputs to Parquet on
-startup). After manifest-last activation, object re-hash,
-and exact row/UUID parity, it transactionally detaches and drops the complete child. There is no
-three-day duplicate-raw overlap in `PARQUET_PRIMARY`. The normal stage budget is at most one hour,
-but failure, backlog, lock contention, or downtime can extend it. Mutable event/workflow records
-remain in PostgreSQL `ONLY oscar.obs` (`15` parent indexes including `obs_mutable_datastream_phenomenon_idx`),
-where permanent evidentiary records (`occupancy`, append-only `adjudication`, `report`,
-`nationalSummary`) are preserved and transient operational health/command rows (`connectionStatus` > 1h,
-routine `Clear` `occupancyStatus` > 1h, transient `cmd_commands` > 24h) are pruned hourly.
+retroactively migrating any legacy unarchived parent-table rows for those 21 outputs to Parquet on
+startup and compacting `ONLY oscar.obs`). After manifest-last activation, object re-hash,
+and exact row/UUID parity, it populates `oscar_obs_latest`, 22 per-generation summary counters on
+`oscar_archive_schema`, and `oscar_event_locator`, then transactionally detaches and drops the
+complete child. There is no three-day duplicate-raw overlap in `PARQUET_PRIMARY`. The normal stage
+budget is at most one hour, but failure, backlog, lock contention, or downtime can extend it. Only
+static singleton configuration streams (`sensorLocation`, `adjudicationCodes`, `siteInfo`, ~52 rows
+total across 50 lanes) remain in `ONLY oscar.obs`, while adjudications of archived `occupancy` rows
+are recorded in `oscar_obs_overlay` + `oscar_obs_latest` without rewriting Parquet, and transient
+operational commands (`cmd_commands` / `cmd_status` > 24h, excluding `%adjudicate%`) are pruned
+hourly.
 Run long enough to create multiple generations across representative lane/output rates. Check:
 
 ```sh

@@ -70,7 +70,7 @@ siteStatistics
 nationalSummary
 ```
 
-Only static singleton configuration streams (`sensorLocation`, `adjudicationCodes`, and `siteInfo`, ~52 rows total across a 50-lane deployment) remain permanently in `ONLY oscar.obs`. After verified stage retirement, Parquet and the independently published daily files are the durable long-term representations of all 21 operational and evidentiary streams, while PostgreSQL retains `oscar_obs_latest` (one row per datastream for `< 0.5 ms` `resultTime=latest` / `phenomenonTime=latest` lookups), `oscar_archive_schema` (16 per-generation, per-datastream summary counters for `< 1 ms` SQL alarm/fault counts and zero-match generation pruning), `oscar_event_locator` (`event_id` index), and `oscar_obs_overlay` (for adjudicated archived occupancies).
+Only static singleton configuration streams (`sensorLocation`, `adjudicationCodes`, and `siteInfo`, ~52 rows total across a 50-lane deployment) remain permanently in `ONLY oscar.obs`. After verified stage retirement, Parquet and the independently published daily files are the durable long-term representations of all 21 operational and evidentiary streams, while PostgreSQL retains `oscar_obs_latest` (one row per datastream for `< 0.5 ms` `resultTime=latest` / `phenomenonTime=latest` lookups), `oscar_archive_schema` (22 per-generation, per-datastream summary counters for `< 1 ms` SQL alarm/fault/adjudication counts and zero-match generation pruning), `oscar_event_locator` (`event_id` index), and `oscar_obs_overlay` (for adjudicated or re-adjudicated archived occupancies).
 
 ### 2. Non-disruptive archive export
 
@@ -216,14 +216,15 @@ deletion flow documented under [Delete old cold generations](STORAGE_OPERATIONS.
 
 Generation and object catalog rows remain with `PURGED`/`DELETED` state, along with a generation
 tombstone and deletion ledger. This retained metadata is the audit trail that distinguishes a policy
-removal from an unexplained missing object. Once that state is committed, sparse observation
-overlays and observation tombstones explicitly owned by the purged generation are deleted in the
-same final transaction; they are no longer queryable and otherwise would grow forever. A legacy
-mutation without exact generation ownership is preserved for reviewed migration rather than being
-guessed from a possibly gapped/overlapping ID range. The generation
-tombstone, generation/object catalog, and deletion ledger are preserved. Purged generations are no
-longer query candidates. Do not remove archive files directly with Explorer, Finder, `rm`, or a
-storage-array lifecycle rule; that creates integrity failures instead of an auditable deletion.
+removal from an unexplained missing object. Once that state is committed, sparse observation overlays (`oscar_obs_overlay`), cached latest
+pointers (`oscar_obs_latest`), event locators (`oscar_event_locator`), and observation tombstones
+(`oscar_tombstone`) explicitly owned by the purged generation are deleted in the same final
+transaction; they are no longer queryable and otherwise would grow forever. A legacy mutation
+without exact generation ownership is preserved for reviewed migration rather than being guessed
+from a possibly gapped/overlapping ID range. The generation tombstone, generation/object catalog,
+and deletion ledger are preserved. Purged generations are no longer query candidates. Do not remove
+archive files directly with Explorer, Finder, `rm`, or a storage-array lifecycle rule; that creates
+integrity failures instead of an auditable deletion.
 
 `archive export` instead makes an independent portable copy of selected `ACTIVE` or `SEALED`
 generations. Its catalog, explicit object list, checksums, and bundled DuckDB query make that package
@@ -233,15 +234,15 @@ queryable outside OSCAR, but the export is not live OSCAR storage and is not a c
 
 When `OscarTieredObsSystemDatabase` starts in `PARQUET_PRIMARY` mode:
 
-- **Route reconciliation (`reconcileRoutes`):** Existing `oscar_obs_storage_route` rows whose output name belongs to the 12 allowlisted `archive.outputNames` are automatically upgraded to `immutable=true` and the in-memory route cache is invalidated so subsequent writes route into 30-minute `osg_*` staging partitions.
+- **Route reconciliation (`reconcileRoutes`):** Existing `oscar_obs_storage_route` rows whose output name belongs to the 21 allowlisted `archive.outputNames` (`gammaCounts`, `gammaThreshold`, `neutronCounts`, `setupGamma`, `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`, `status`, `emlContextual`, `emlScanContextual`, `emlAnalysis`, `dailyFile`, `connectionStatus`, `occupancyStatus`, `tamper`, `occupancy`, `adjudication`, `report`, `siteStatistics`, `nationalSummary`) are automatically upgraded to `immutable=true` and the in-memory route cache is invalidated so subsequent writes route into 30-minute `osg_*` staging partitions.
 - **Empty and retired stage cleanup (`reclaimEmptyOrRetiredStages`):** Empty expired `ATTACHED` stage partitions and any leftover `DETACHED` stage partitions are dropped cleanly on startup and during lifecycle maintenance.
-- **Retroactive parent-table migration (`ArchiveLifecycleManager`):** If an upgraded or reconciled deployment contains historical unarchived rows (`archivegenerationid IS NULL`) in the parent `ONLY oscar.obs` table for datastreams now marked `immutable=true`, the archive exporter selects those windows, publishes verified ZSTD Parquet generations, stamps `archivegenerationid` on the migrated parent rows, and removes the sealed rows from `ONLY oscar.obs` after parity verification.
+- **Retroactive parent-table migration and compaction (`ArchiveLifecycleManager`):** If an upgraded or reconciled deployment contains historical unarchived rows (`archivegenerationid IS NULL`) in the parent `ONLY oscar.obs` table for datastreams now marked `immutable=true`, the archive exporter selects those windows, publishes verified ZSTD Parquet generations, populates `oscar_obs_latest`, `oscar_archive_schema` summary counters, and `oscar_event_locator`, removes the sealed rows from `ONLY oscar.obs` after parity verification, deduplicates singleton configuration streams (`sensorLocation`, `adjudicationCodes`, `siteInfo`), and runs `VACUUM (FULL, ANALYZE) ONLY obs` once drained.
 
-For streams that remain in the parent `ONLY oscar.obs` table (`immutable=false`) and for command streams (`cmd_commands` / `cmd_status`), OSCAR separates permanent evidentiary records from transient operational telemetry:
+For overlay-backed evidentiary mutations, non-`PARQUET_PRIMARY` compatibility streams, and command streams (`cmd_commands` / `cmd_status`), OSCAR enforces:
 
-- **Permanent evidentiary records (`occupancy`, `adjudication`, `report`, `nationalSummary`):** Retained indefinitely in `ONLY oscar.obs`. Every adjudication submission (`AdjudicationControl`) is strictly **append-only**: it inserts a new `adjudication` observation and appends both its encoded observation ID and `"code:<n>"` disposition tag onto the parent `occupancy` observation's `adjudicatedIds` JSONB array without deleting or overwriting prior adjudications. CQL2 queries on `adjudicatedIds` use PostgreSQL JSONB array containment (`@> to_jsonb($1::text)`), and the Viewer's `AdjudicationLog` discovers all adjudication datastreams on a lane and merges records matched by `adjudicatedIds` or `occupancyObsId`.
-- **Hourly `connectionStatus` and routine `Clear` `occupancyStatus` pruning (`DatabasePurger`):** `EMLContextualOutput` and driver connection outputs deduplicate identical `connectionStatus` values so only state transitions are emitted. Every hour, `DatabasePurger` purges `connectionStatus` rows older than `connectionStatusRetentionHours` (`1` hour by default) while always keeping the newest row per datastream, and purges routine `Clear` `occupancyStatus` rows older than `1` hour while keeping the newest row per datastream and all non-`Clear` fault/alarm transitions. Backed by the partial index `obs_mutable_datastream_phenomenon_idx ON ONLY oscar.obs (datastreamid, phenomenontime ASC, id ASC) WHERE archivegenerationid IS NULL` (`15` total indexes on `oscar.obs`), mutable-stream purges use `parentTableOnly` selection and `DELETE FROM ONLY obs WHERE id=ANY ($1::bigint[]) AND archivegenerationid IS NULL RETURNING id` so PostgreSQL never scans `osg_*` child partitions or spills temporary files during hourly maintenance.
-- **Hourly 24-hour transient command pruning (`DatabasePurger.purgeOldCommands`):** Every hour, `DatabasePurger` deletes transient operational commands (`streamControl`, `videoControl`, `ptzControl`, `hlsControl`, `oscarServiceControl`) older than **24 hours** along with their cascading `cmd_status` rows (`PostgisCommandStoreImpl` + `PostgisCommandStatusStore`), while permanently preserving all `%adjudicate%` and audit command streams.
+- **Overlay-backed append-only adjudication records (`occupancy`, `adjudication`):** Every adjudication submission (`AdjudicationControl`) is strictly **append-only**: it inserts a new `adjudication` observation and updates the target `occupancy` observation's `adjudicatedIds` array (appending the new command ID and replacing the `"code:<n>"` marker with the latest disposition code so re-adjudications remain mutually exclusive across CQL filters). When the target `occupancy` has already been archived into a cold Parquet generation, `OscarTieredObsStore.put()` writes the updated `occupancy` into `oscar_obs_overlay` and synchronizes `oscar_obs_latest` without rewriting the immutable Parquet file.
+- **Coalesced camera heartbeats and `DatabasePurger` stage-retirement awareness:** `FFMPEGSensor` coalesces unchanged background camera `connectionStatus` heartbeats to 15-minute intervals while publishing state transitions immediately. When `PARQUET_PRIMARY` stage retirement is active, `DatabasePurger` skips row-wise observation deletes so zero `oscar_tombstone` rows are created (when `PARQUET_PRIMARY` is disabled, `DatabasePurger` purges expired `connectionStatus`, routine `Clear` `occupancyStatus`, and manifest-validated `dailyFile` rows from `ONLY oscar.obs` via `obs_mutable_datastream_phenomenon_idx`).
+- **Hourly 24-hour transient command pruning (`DatabasePurger.purgeOldCommands`):** Every hour, `DatabasePurger` deletes completed transient operational commands (`fileControl`, `hlsControl`, `streamControl`, `videoControl`, `ptzControl`, `oscarServiceControl`) older than **24 hours** along with their cascading `cmd_status` rows (`PostgisCommandStoreImpl` + `PostgisCommandStatusStore`), while permanently preserving all `%adjudicate%` and audit command streams.
 
 ## Daily-file lifecycle
 

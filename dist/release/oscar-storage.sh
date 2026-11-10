@@ -2796,6 +2796,18 @@ archive_purge() (
            AND g.id=item.generation_id AND g.store_key=p.store_key AND g.id_scope=p.id_scope
            AND item.state='COMPLETED' AND overlay_row.store_key=p.store_key AND overlay_row.id_scope=p.id_scope
            AND overlay_row.generation_id=item.generation_id;
+        DELETE FROM oscar_obs_latest latest_row
+         USING oscar_deletion_plan_item item, oscar_deletion_plan p, oscar_archive_generation g
+         WHERE item.plan_id='$plan' AND p.id=item.plan_id AND p.store_key='$store_key' AND p.id_scope=$id_scope
+           AND g.id=item.generation_id AND g.store_key=p.store_key AND g.id_scope=p.id_scope
+           AND item.state='COMPLETED' AND latest_row.store_key=p.store_key AND latest_row.id_scope=p.id_scope
+           AND latest_row.generation_id=item.generation_id;
+        DELETE FROM oscar_event_locator locator_row
+         USING oscar_deletion_plan_item item, oscar_deletion_plan p, oscar_archive_generation g
+         WHERE item.plan_id='$plan' AND p.id=item.plan_id AND p.store_key='$store_key' AND p.id_scope=$id_scope
+           AND g.id=item.generation_id AND g.store_key=p.store_key AND g.id_scope=p.id_scope
+           AND item.state='COMPLETED' AND locator_row.store_key=p.store_key AND locator_row.id_scope=p.id_scope
+           AND locator_row.generation_id=item.generation_id;
         DELETE FROM oscar_tombstone observation_tombstone
          USING oscar_deletion_plan_item item, oscar_deletion_plan p, oscar_archive_generation g
          WHERE item.plan_id='$plan' AND p.id=item.plan_id AND p.store_key='$store_key' AND p.id_scope=$id_scope

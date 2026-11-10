@@ -512,23 +512,26 @@ those live dependencies. Verification is still an acceptance mutation: it publis
 volume ownership.
 Fresh deployments default to backup mode `disabled`; backup, verification, restore, and the retired
 prune command fail with opt-in guidance until setup changes the mode to `single`. For a fresh
-database, the standard data lifecycle explicitly selects `PARQUET_PRIMARY`: the 12 allowlisted
-immutable high-volume detector, status, report, and EML outputs (`gammaCounts`, `gammaThreshold`,
+database, the standard data lifecycle explicitly selects `PARQUET_PRIMARY`: all 21 allowlisted
+operational and evidentiary outputs (`gammaCounts`, `gammaThreshold`,
 `neutronCounts`, `setupGamma`, `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`,
-`status`, `emlContextual`, `emlScanContextual`, `emlAnalysis`) commit first to LOGGED, UTC-aligned
-30-minute PostgreSQL staging children (with startup route reconciliation and retroactive Parquet
-migration for any legacy unarchived parent-table rows). A one-minute worker makes a closed child eligible after a five-minute safety delay; a
+`status`, `emlContextual`, `emlScanContextual`, `emlAnalysis`, `dailyFile`, `connectionStatus`,
+`occupancyStatus`, `tamper`, `occupancy`, `adjudication`, `report`, `siteStatistics`,
+`nationalSummary`) commit first to LOGGED, UTC-aligned
+30-minute PostgreSQL staging children (with startup route reconciliation, retroactive Parquet
+migration, and `VACUUM (FULL, ANALYZE) ONLY obs` compaction for any legacy unarchived parent-table rows). A one-minute worker makes a closed child eligible after a five-minute safety delay; a
 detector timestamp more than five minutes ahead of the database receipt clock is rejected. After
-manifest-last activation, object re-hash, and exact row/UUID parity, OSCAR transactionally detaches
+manifest-last activation, object re-hash, exact row/UUID parity, and population of `oscar_obs_latest`,
+`oscar_archive_schema` summary counters, and `oscar_event_locator`, OSCAR transactionally detaches
 and drops the complete child, retiring at most eight children per cycle. There is no three-day raw
 PostgreSQL overlap in this mode. The normal staging budget is at most 60 minutes, but this is an
 operational SLO rather than a hard deadline during backlog, failure, lock contention, or downtime.
-Mutable events (`occupancy`, append-only `adjudication`, `report`, `nationalSummary`), small metadata,
-and other non-allowlisted data remain in PostgreSQL `ONLY oscar.obs`, while transient operational
-health rows (`connectionStatus` > 1h, routine `Clear` `occupancyStatus` > 1h) and transient camera/HLS/statistics
+Static singleton configuration streams (`sensorLocation`, `adjudicationCodes`, `siteInfo`) remain in
+PostgreSQL `ONLY oscar.obs`, adjudications and re-adjudications of archived `occupancy` rows are
+recorded in `oscar_obs_overlay` + `oscar_obs_latest`, and transient camera/HLS/statistics
 commands (`cmd_commands` / `cmd_status` > 24h, excluding `%adjudicate%`) are pruned hourly;
 fresh primary staging children omit generic payload and mutable-event indexes. After safe stage
-retirement, Parquet and the independently published daily files are the durable long-term detector
+retirement, Parquet and the independently published daily files are the durable long-term
 representations; the compact staging-owner ledger is removed with its child.
 Parquet is the primary cold tier, not a backup. Cold archive deletion always requires a reviewed
 `archive dry-run` plan and its one-time token.

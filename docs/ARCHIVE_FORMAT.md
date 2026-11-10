@@ -162,12 +162,13 @@ deployment running the matching release rather than starting older code on a new
 | `oscar_archive_generation` | Window, profile, object/manifest paths, Parquet hash, ID range, state, parity flag |
 | `oscar_archive_object` | Every generation object, kind, relative path, SHA-256, bytes, and lifecycle state |
 | `oscar_archive_id_block` | Generation ID range used to plan exact-ID lookups |
-| `oscar_archive_schema` | PostgreSQL copy of each generation's datastream schemas |
+| `oscar_archive_schema` | PostgreSQL copy of each generation's datastream schemas plus 22 per-generation, per-datastream summary counters (alarm/fault/adjudication counts) |
+| `oscar_obs_latest` | Latest observation per datastream (synchronized across Parquet activation and `oscar_obs_overlay` updates) for `< 0.5 ms` `resultTime=latest` / `phenomenonTime=latest` queries |
 | `oscar_obs_storage_route` | Stable mutable-versus-immutable classification for each observed datastream |
 | `oscar_obs_stage_partition` | Attached/detached catalog for short-lived LOGGED Parquet-primary staging children |
 | `oscar_obs_stage_owner` | Compact exact row-to-generation ownership while a staging child still overlaps Parquet; removed with the child |
 | `oscar_event_locator` | Stable public-event to observation/generation locator reserved for direct lookup |
-| `oscar_obs_overlay` | Mutable value for an updated immutable archived observation |
+| `oscar_obs_overlay` | Mutable value for an updated immutable archived observation (such as an adjudicated or re-adjudicated cold occupancy) |
 | `oscar_tombstone` | Logical removal of an immutable archived observation |
 | `oscar_retention_hold` | Active/released generation or observation holds |
 | `oscar_archive_verification` | Parity plus primary-stage retirement or compatibility hot-deletion receipts |
@@ -196,10 +197,11 @@ EXPORTING job --> ACTIVE generation --> SEALED generation --> DELETING generatio
 Object rows transition from `ACTIVE` to durable `DELETING` intent and then `DELETED`. The
 intermediate state makes a confirmed purge restartable with the same plan/token after interruption.
 Catalog, generation tombstone, and deletion-ledger rows remain after a purge so policy deletion is
-auditable. Observation overlays and observation tombstones carrying that exact generation ID are
-removed only in the final `PURGED` transaction because they no longer have a queryable target;
-legacy unowned mutations are not guessed from ID ranges. The
-generation tombstone and audit rows are not removed.
+auditable. Observation overlays (`oscar_obs_overlay`), cached latest pointers (`oscar_obs_latest`),
+event locators (`oscar_event_locator`), and observation tombstones (`oscar_tombstone`) carrying that
+exact generation ID are removed in the final `PURGED` transaction because they no longer have a
+queryable target; legacy unowned mutations are not guessed from ID ranges. The generation tombstone
+and audit rows are not removed.
 
 Hold creation/release and the purge visibility transition take the same PostgreSQL table lock. A
 hold either commits first and excludes the generation, or the purge commits `DELETING` first and a

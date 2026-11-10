@@ -187,10 +187,12 @@ configuration streams (`sensorLocation`, `adjudicationCodes`, `siteInfo`, ~52 ro
 `adjudication` observation and updates the archived `occupancy` via `oscar_obs_overlay` +
 `oscar_obs_latest` without rewriting Parquet. Meanwhile, `oscar_obs_latest` serves `< 0.5 ms`
 `resultTime=latest` / `phenomenonTime=latest` queries for sparse streams, `oscar_archive_schema`
-stores 16 per-generation, per-datastream summary counters so `StatisticsOutput` and Dashboard/Event
-Log alarm & fault counts sum interior unmutated generations in SQL in `< 1 ms` and prune zero-match
-generations without opening Parquet files, and `PostgisCommandStoreImpl` prunes completed transient
-(`fileControl` / `hlsControl`, non-`adjudicationControl`) commands older than 24 hours. On startup,
+stores 22 per-generation, per-datastream summary counters (including per-category unadjudicated and
+adjudicated Gamma, Neutron, and Gamma-Neutron alarm counters) so `StatisticsOutput` and
+Dashboard/Event Log alarm & fault counts sum interior unmutated generations in SQL in `< 1 ms` and
+prune zero-match generations without opening Parquet files, and `PostgisCommandStoreImpl` prunes
+completed transient (`fileControl` / `hlsControl`, non-`adjudicationControl`) commands older than
+24 hours. On startup,
 OSCAR reconciles existing `oscar_obs_storage_route` entries for all 21 allowlisted outputs to
 `immutable=true`, reclaims empty expired or retired `osg_*` stage partitions, retroactively drains
 and compacts (`VACUUM (FULL, ANALYZE) ONLY obs`) any legacy parent-table rows for newly-promoted
