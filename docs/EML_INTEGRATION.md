@@ -148,7 +148,190 @@ Each automated `Code 9999` adjudication writes a human-readable summary line fol
 
 ---
 
-## 6. Companion Documentation
+## 6. Developer API for Custom Alarm Assessment Algorithms (`EmlAlarmAssessmentAlgorithm`)
+
+In addition to supporting external LLNL ERNIE VM-250 bundles (`config/vm250Analysis.xml` + `gov.llnl.ernie.*`), OSCAR 3.11.0 provides a clean, first-class plugin API so developers can create custom alarm assessment algorithms and upload them through the exact same **Services -> OSCAR Service -> EML Plugin Path** capability (`.jar`, `.zip`, `.tar.gz`, `.tgz`, or `.tar`).
+
+Custom alarm assessment plugins run inside an isolated `URLClassLoader`, receive the per-lane calibration parameters and ordered Rapiscan daily-file occupancy lines on every `GX` (Gamma Exit) event, publish their output on the `emlAnalysis` and `emlContextual` datastreams (`PARQUET_PRIMARY`), and automatically trigger `t = 0` Dashboard suppression and **`Code 9999: EML Non-Threat`** adjudication whenever they return `result = "RELEASE"` with `fallback = false`.
+
+### 6.1 Plugin Discovery Mechanisms
+
+`EmlLoadedRuntime` automatically detects a custom alarm assessment algorithm when any uploaded archive (`.jar` or `.zip`/`.tar.gz` containing `jars/*.jar`) includes one of the following descriptors:
+
+1. **JAR Manifest Attribute (`META-INF/MANIFEST.MF`) — Recommended for Zero-Dependency Standalone JARs:**
+   ```text
+   Manifest-Version: 1.0
+   Oscar-Alarm-Assessment-Class: com.example.assessment.CustomSpectralAssessor
+   ```
+2. **Java `ServiceLoader` Descriptor (`META-INF/services/org.sensorhub.impl.utils.rad.eml.EmlAlarmAssessmentAlgorithm`):**
+   ```text
+   com.example.assessment.CustomSpectralAssessor
+   ```
+3. **Properties Descriptor (`META-INF/oscar-alarm-assessment.properties` or `config/oscar-alarm-assessment.properties`):**
+   ```properties
+   class=com.example.assessment.CustomSpectralAssessor
+   ```
+
+> **No XML/CSV Boilerplate Required:** When any of the three descriptors above is present, `EmlArchiveExtractor` and `EmlLoadedRuntime` do **not** require `config/vm250Analysis.xml`, `config/vm250LaneDatabase.xml`, or `config/CMU_metric.csv`. Any supplementary model weights or configuration files packaged in the archive are extracted into a private `0700` directory (`extractedPluginRoot`) and passed to `initialize(Path extractedPluginRoot)`.
+
+### 6.2 Option A: Zero-Dependency Standalone Java Plugin (Standard JDK Only)
+
+Developers can build a custom alarm assessment plugin using **only standard JDK 21 types** (`java.util.Map`, `java.util.List`, `java.nio.file.Path`) with zero compile-time dependencies on OSCAR or OpenSensorHub:
+
+```java
+package com.example.assessment;
+
+import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+public class CustomSpectralAssessor {
+
+    // Optional lifecycle hook called once when the plugin is extracted and activated
+    public void initialize(Path extractedPluginRoot) throws Exception {
+        // Load any custom model files from extractedPluginRoot if needed
+    }
+
+    public String getVersionId() {
+        return "1.0.0";
+    }
+
+    public String getCollimatedModelId() {
+        return "custom-spectral-collimated";
+    }
+
+    public String getUncollimatedModelId() {
+        return "custom-spectral-uncollimated";
+    }
+
+    /**
+     * Thread-safe occupancy evaluation invoked on every Rapiscan GX (Gamma Exit) message.
+     *
+     * @param laneParams keys: "portId" (String), "laneId" (Integer), "collimated" (Boolean),
+     *                   "laneWidth" (Double, meters), "intervals" (Integer, SG1), "occupancyHoldin" (Integer, SG1)
+     * @param dailyFileLines ordered Rapiscan daily-file lines for the occupancy:
+     *                       latest NS background, latest GS/GB background, and all scan lines from GS through GX
+     * @return Map with assessment decision and probabilities (or null to skip publication)
+     */
+    public Map<String, Object> evaluate(Map<String, Object> laneParams, List<String> dailyFileLines) {
+        boolean localizedSpike = dailyFileLines.stream()
+                .filter(line -> line.startsWith("GA,"))
+                .anyMatch(this::hasHighLocalizedDetectorRatio);
+
+        double releaseProb = localizedSpike ? 0.03 : 0.98;
+        double investigateProb = 1.0 - releaseProb;
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("result", localizedSpike ? "INVESTIGATE" : "RELEASE");
+        result.put("fallback", false);
+        result.put("releaseProbability", releaseProb);
+        result.put("investigateProbability", investigateProb);
+        result.put("primaryThreshold", 0.05);
+        result.put("overallSourceType", localizedSpike ? "Threat" : "NORM");
+        result.put("probabilityNORM", localizedSpike ? 0.02 : 0.98);
+        result.put("probabilityThreat", localizedSpike ? 0.97 : 0.01);
+        result.put("probabilityNonEmitting", 0.01);
+        return result;
+    }
+
+    private boolean hasHighLocalizedDetectorRatio(String gaLine) {
+        // Example: GA, HH:MM:SS,G1,G2,G3,G4
+        String[] parts = gaLine.split(",");
+        if (parts.length < 6) return false;
+        double g1 = Double.parseDouble(parts[2].trim());
+        double g2 = Double.parseDouble(parts[3].trim());
+        return g2 > 0 && (g1 / g2) > 4.0;
+    }
+
+    public void close() {
+        // Optional cleanup when plugin is unloaded or hot-swapped
+    }
+}
+```
+
+#### Packaging the Standalone Plugin JAR with Standard `javac` + `jar`
+
+```sh
+mkdir -p build/classes
+javac --release 21 -d build/classes CustomSpectralAssessor.java
+printf 'Manifest-Version: 1.0\nOscar-Alarm-Assessment-Class: com.example.assessment.CustomSpectralAssessor\n' > build/MANIFEST.MF
+jar cfm custom-spectral-assessor-1.0.0.jar build/MANIFEST.MF -C build/classes .
+```
+
+Upload `custom-spectral-assessor-1.0.0.jar` in **SensorHub Admin -> Services -> OSCAR Service -> EML Plugin Path**, click **Apply Changes**, and click **Save Configuration**.
+
+### 6.3 Option B: Typed OSCAR SPI (`org.sensorhub.impl.utils.rad.eml.EmlAlarmAssessmentAlgorithm`)
+
+When compiling against `sensorhub-utils-rad`, developers can implement [`EmlAlarmAssessmentAlgorithm`](https://github.com/ORNL/osh-oakridge-modules/blob/main/sensors/sensorhub-utils-rad/src/main/java/org/sensorhub/impl/utils/rad/eml/EmlAlarmAssessmentAlgorithm.java) directly for compile-time type safety with [`EmlLaneParameters`](https://github.com/ORNL/osh-oakridge-modules/blob/main/sensors/sensorhub-utils-rad/src/main/java/org/sensorhub/impl/utils/rad/eml/EmlLaneParameters.java), [`EmlEvaluationResult`](https://github.com/ORNL/osh-oakridge-modules/blob/main/sensors/sensorhub-utils-rad/src/main/java/org/sensorhub/impl/utils/rad/eml/EmlEvaluationResult.java), and [`EmlSourceBreakdown`](https://github.com/ORNL/osh-oakridge-modules/blob/main/sensors/sensorhub-utils-rad/src/main/java/org/sensorhub/impl/utils/rad/eml/EmlSourceBreakdown.java):
+
+```java
+package com.example.assessment;
+
+import org.sensorhub.impl.utils.rad.eml.EmlAlarmAssessmentAlgorithm;
+import org.sensorhub.impl.utils.rad.eml.EmlEvaluationResult;
+import org.sensorhub.impl.utils.rad.eml.EmlLaneParameters;
+import org.sensorhub.impl.utils.rad.eml.EmlSourceBreakdown;
+
+import java.nio.file.Path;
+import java.util.List;
+
+public class TypedAlarmAssessor implements EmlAlarmAssessmentAlgorithm {
+
+    @Override
+    public void initialize(Path extractedPluginRoot) throws Exception {
+        // Optional startup initialization
+    }
+
+    @Override
+    public String getVersionId() {
+        return "2.0.0";
+    }
+
+    @Override
+    public String getCollimatedModelId() {
+        return "typed-collimated-v2";
+    }
+
+    @Override
+    public EmlEvaluationResult evaluate(EmlLaneParameters params, List<String> dailyFileLines) {
+        String model = params.collimated() ? getCollimatedModelId() : getUncollimatedModelId();
+        double releaseProb = 0.985;
+        double investigateProb = 0.015;
+        EmlSourceBreakdown overall = new EmlSourceBreakdown(
+                "NORM", model, 0.0, 0.0, 0.0, 0.0, 0.0, releaseProb, investigateProb);
+        return new EmlEvaluationResult(
+                getVersionId(), model, 0.05, params.portId(), params.laneId(),
+                System.currentTimeMillis(), 1L, "ALARM", true, false, false,
+                "RELEASE", false, "", investigateProb, releaseProb,
+                true, false, 1, 5.0, "", List.of(overall), overall);
+    }
+}
+```
+
+Register the class in `META-INF/services/org.sensorhub.impl.utils.rad.eml.EmlAlarmAssessmentAlgorithm` (or `META-INF/MANIFEST.MF` `Oscar-Alarm-Assessment-Class`).
+
+### 6.4 Input & Output Contract Summary
+
+| Field / Key | Type | Description |
+| --- | --- | --- |
+| **Input `laneParams.portId`** | `String` | Rapiscan sensor module name (e.g. `"Rapiscan01"`). |
+| **Input `laneParams.laneId`** | `int` | Numeric lane identifier configured on the Rapiscan driver. |
+| **Input `laneParams.collimated`** | `boolean` | `true` when `emlConfig.isCollimated` is enabled on the lane. |
+| **Input `laneParams.laneWidth`** | `double` | Configured lane width in meters (default `4.82`). |
+| **Input `laneParams.intervals`** | `int` | Gamma background/smoothing intervals (automatically synchronized from daily `SG1`). |
+| **Input `laneParams.occupancyHoldin`** | `int` | Occupancy hold-in count (automatically synchronized from daily `SG1`). |
+| **Input `dailyFileLines`** | `List<String>` | Ordered Rapiscan daily-file lines (`NS`, `GS`, `GB`, `GA`, `NB`, `NA`, `GH`, `GL`, `NH`, `NL`, `GX`). |
+| **Output `result`** | `String` | `"RELEASE"` (auto-adjudicates as **`Code 9999: EML Non-Threat`** when `fallback=false` and `exceptionMessage` is empty) or `"INVESTIGATE"` (keeps alarm active on the Dashboard). |
+| **Output `fallback`** | `boolean` | When `true`, forces human review on the Dashboard even if `result` is `"RELEASE"`. |
+| **Output `releaseProbability`** | `double` | Non-threat release probability in `[0.0, 1.0]`. |
+| **Output `investigateProbability`** | `double` | Threat / investigation probability in `[0.0, 1.0]`. |
+| **Output `primaryThreshold`** | `double` | Decision threshold reported in `emlContextual` and `Code 9999` feedback (default `0.05`). |
+| **Output `overallSourceType`** | `String` | Dominant classification label (e.g. `"NORM"`, `"NonEmitting"`, `"Threat"`). |
+
+---
+
+## 7. Companion Documentation
 
 - [Administrator Guide](../dist/release/DEPLOYMENT.md) — server setup, upgrades, TLS, and storage CLI
 - [Backup, Restore, and Recovery](BACKUP_RESTORE.md) — `oscar_state` backup coverage (including `/var/lib/oscar/eml-plugin`)
