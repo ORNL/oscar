@@ -165,7 +165,9 @@ tombstones are restored, while old uncommitted-v2 or incomplete deletion tombsto
 because their remaining contents cannot prove deletion authorization. Unsafe or acceptance-invalid
 `CURRENT` entries fail closed before cleanup.
 
-Catalog schema v5 adds durable retention-hold resolution provenance and makes holds part of the
+Catalog schema v5 adds content-addressed `DataRecord` schema deduplication (`oscar_obs_schema_catalog`,
+referenced via `schema_sha256` with `schema_json = NULL` in `oscar_obs_overlay` and
+`oscar_obs_latest`), durable retention-hold resolution provenance, and makes holds part of the
 logical mutation boundary. A removal holds the shared store/per-observation locks, takes a shared
 hold-table lock in the same transaction, and materializes only exact observation holds plus held
 generations whose ID blocks are candidates for that bounded ID set. CLI hold creation/release uses

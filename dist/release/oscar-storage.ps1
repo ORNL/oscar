@@ -3150,7 +3150,7 @@ function Restore-Backup([string]$Id, [string]$Confirmation) {
     Protect-DockerStorageDirectory $restoreStage 'ReadOnly'
     try {
         $image = "oscar:$RequiredReleaseVersion"
-        $decryptSecrets = 'openssl enc -d -aes-256-cbc -pbkdf2 -pass file:/backup-key.txt -in /backup/deployment-secrets.tar.gz.enc | tar -C /restore -xzf -'
+        $decryptSecrets = 'openssl enc -d -aes-256-cbc -pbkdf2 -pass file:/backup-key.txt -in /backup/deployment-secrets.tar.gz.enc | tar -C /restore --no-same-owner --no-overwrite-dir -xzf -'
         Invoke-DockerShellInput $decryptSecrets @('run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--workdir', '/', '--user', '0:0', '--entrypoint', 'sh', '--volume', "${root}:/backup:ro", '--volume', "${restoreTemp}:/restore", '--volume', "${BackupKeyFile}:/backup-key.txt:ro", $image, '-seu')
         Prepare-RestoredDeploymentCredentials $restoreTemp $ScriptRoot
         Assert-StorageRootIdentities -IncludeBackup

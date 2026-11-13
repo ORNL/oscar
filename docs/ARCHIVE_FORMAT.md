@@ -162,13 +162,14 @@ deployment running the matching release rather than starting older code on a new
 | `oscar_archive_generation` | Window, profile, object/manifest paths, Parquet hash, ID range, state, parity flag |
 | `oscar_archive_object` | Every generation object, kind, relative path, SHA-256, bytes, and lifecycle state |
 | `oscar_archive_id_block` | Generation ID range used to plan exact-ID lookups |
-| `oscar_archive_schema` | PostgreSQL copy of each generation's datastream schemas plus 22 per-generation, per-datastream summary counters (alarm/fault/adjudication counts) |
-| `oscar_obs_latest` | Latest observation per datastream (synchronized across Parquet activation and `oscar_obs_overlay` updates) for `< 0.5 ms` `resultTime=latest` / `phenomenonTime=latest` queries |
+| `oscar_archive_schema` | PostgreSQL copy of each generation's datastream schemas plus 22 per-generation, per-datastream summary counters (alarm/fault/adjudication counts, including whole-generation `TimeContainedSummarySpec` count pushdown) |
+| `oscar_obs_schema_catalog` | Content-addressed `DataRecord` JSON catalog (`schema_sha256 PRIMARY KEY`) referenced by `oscar_obs_overlay` and `oscar_obs_latest` so per-row `schema_json` stays `NULL` |
+| `oscar_obs_latest` | Latest observation per datastream (synchronized across Parquet activation and `oscar_obs_overlay` updates via `schema_sha256`) for `< 0.5 ms` `resultTime=latest` / `phenomenonTime=latest` queries |
 | `oscar_obs_storage_route` | Stable mutable-versus-immutable classification for each observed datastream |
 | `oscar_obs_stage_partition` | Attached/detached catalog for short-lived LOGGED Parquet-primary staging children |
 | `oscar_obs_stage_owner` | Compact exact row-to-generation ownership while a staging child still overlaps Parquet; removed with the child |
 | `oscar_event_locator` | Stable public-event to observation/generation locator reserved for direct lookup |
-| `oscar_obs_overlay` | Mutable value for an updated immutable archived observation (such as an adjudicated or re-adjudicated cold occupancy) |
+| `oscar_obs_overlay` | Mutable value for an updated immutable archived observation (such as an adjudicated or re-adjudicated cold occupancy, referencing `oscar_obs_schema_catalog` via `schema_sha256`) |
 | `oscar_tombstone` | Logical removal of an immutable archived observation |
 | `oscar_retention_hold` | Active/released generation or observation holds |
 | `oscar_archive_verification` | Parity plus primary-stage retirement or compatibility hot-deletion receipts |

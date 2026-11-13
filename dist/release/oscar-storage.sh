@@ -2261,7 +2261,7 @@ restore_backup() (
         --workdir / --user 0:0 --entrypoint sh \
         --volume "$root:/backup:ro" --volume "$restore_temp:/restore" --volume "$backup_key_file:/backup-key.txt:ro" \
         "oscar:$required_release_version" -eu -c \
-        'openssl enc -d -aes-256-cbc -pbkdf2 -pass file:/backup-key.txt -in /backup/deployment-secrets.tar.gz.enc | tar -C /restore -xzf -'
+        'openssl enc -d -aes-256-cbc -pbkdf2 -pass file:/backup-key.txt -in /backup/deployment-secrets.tar.gz.enc | tar -C /restore --no-same-owner --no-overwrite-dir -xzf -'
     prepare_restored_credentials_exact "$restore_temp" "$script_dir"
 
     local safety="$script_dir/pre-restore-$backup_id"
