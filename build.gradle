@@ -41,6 +41,7 @@ dependencies {
     implementation project(':sensorhub-driver-kromek-d5')
 
     // Processes
+    implementation project(':sensorhub-process-ocr')
 
     // Additional Modules
     implementation project(':sensorhub-system-lane')
@@ -78,6 +79,9 @@ distributions{
             }
             into("osh-node-oscar/rules") {
                 from 'dist/rules'
+            }
+            into("osh-node-oscar/models/ocr") {
+                from 'dist/models/ocr'
             }
             into("osh-node-oscar/documentation") {
                 // The files formerly copied from dist/documentation describe a
