@@ -529,12 +529,12 @@ those live dependencies. Verification is still an acceptance mutation: it publis
 volume ownership.
 Fresh deployments default to backup mode `disabled`; backup, verification, restore, and the retired
 prune command fail with opt-in guidance until setup changes the mode to `single`. For a fresh
-database, the standard data lifecycle explicitly selects `PARQUET_PRIMARY`: all 21 allowlisted
+database, the standard data lifecycle explicitly selects `PARQUET_PRIMARY`: all 22 allowlisted
 operational and evidentiary outputs (`gammaCounts`, `gammaThreshold`,
 `neutronCounts`, `setupGamma`, `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`,
 `status`, `emlContextual`, `emlScanContextual`, `emlAnalysis`, `dailyFile`, `connectionStatus`,
 `occupancyStatus`, `tamper`, `occupancy`, `adjudication`, `report`, `siteStatistics`,
-`nationalSummary`) commit first to LOGGED, UTC-aligned
+`nationalSummary`, `vehicleOcr`) commit first to LOGGED, UTC-aligned
 30-minute PostgreSQL staging children (with startup route reconciliation, retroactive Parquet
 migration, and `VACUUM (FULL, ANALYZE) ONLY obs` compaction for any legacy unarchived parent-table rows). A one-minute worker makes a closed child eligible after a five-minute safety delay; a
 detector timestamp more than five minutes ahead of the database receipt clock is rejected. After

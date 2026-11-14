@@ -24,7 +24,7 @@ popd
 
 call gradlew.bat --no-parallel :sensorhub-datastore-postgis:test --tests org.sensorhub.impl.datastore.postgis.TestTieredArchiveConfiguration --tests org.sensorhub.impl.datastore.postgis.TestParquetArchiveReader --tests org.sensorhub.impl.datastore.postgis.archive.TestDuckDbResourcePolicy --tests org.sensorhub.impl.datastore.postgis.archive.TestArchiveLifecycleInvariants --tests org.sensorhub.impl.datastore.postgis.database.TestOscarTieredModuleProvider --tests org.sensorhub.impl.datastore.postgis.TestParameterizedQueryBuilder || exit /b 1
 
-call gradlew.bat --no-parallel :osh-core:sensorhub-service-consys:test --tests org.sensorhub.impl.service.consys.TestRestApiServletClientDisconnect :sensorhub-service-mqtt-hivemq:test --tests org.sensorhub.impl.service.hivemq.TestWebSocketProxyDisconnect :sensorhub-service-oscar:test :sensorhub-webui-oscar:test :sensorhub-service-bucket:test :sensorhub-service-dailyfile-journal:test :sensorhub-system-lane:test || exit /b 1
+call gradlew.bat --no-parallel :osh-core:sensorhub-service-consys:test --tests org.sensorhub.impl.service.consys.TestRestApiServletClientDisconnect :sensorhub-service-mqtt-hivemq:test --tests org.sensorhub.impl.service.hivemq.TestWebSocketProxyDisconnect :sensorhub-service-oscar:test :sensorhub-webui-oscar:test :sensorhub-service-bucket:test :sensorhub-service-dailyfile-journal:test :sensorhub-process-ocr:test :sensorhub-system-lane:test || exit /b 1
 
 call gradlew.bat --no-parallel :sensorhub-utils-rad:test --tests org.sensorhub.impl.utils.rad.cambio.CambioTempDirectoryTest --tests org.sensorhub.impl.utils.rad.eml.EmlArchiveAndRuntimeTest --tests org.sensorhub.impl.utils.rad.output.OccupancyOutputConcurrencyTest || exit /b 1
 

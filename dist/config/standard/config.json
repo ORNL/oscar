@@ -280,7 +280,8 @@
           "adjudication",
           "report",
           "siteStatistics",
-          "nationalSummary"
+          "nationalSummary",
+          "vehicleOcr"
         ]
       },
       "id": "bfbd6d58-1a4a-40b4-999d-381a1489cbb5",

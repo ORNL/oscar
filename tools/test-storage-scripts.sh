@@ -86,6 +86,7 @@ const outputs = [
     'emlContextual', 'emlScanContextual', 'emlAnalysis',
     'dailyFile', 'connectionStatus', 'occupancyStatus', 'tamper',
     'occupancy', 'adjudication', 'report', 'siteStatistics', 'nationalSummary',
+    'vehicleOcr',
 ];
 const expectedVideoRetention = {
     timeToRetention: 0,
@@ -2454,7 +2455,7 @@ awk '
         if (index(previous "\n" $0, "--workdir /") == 0) missing++
     }
     { previous=$0 }
-    END { exit !(root_helpers == 17 && missing == 0) }
+    END { exit !(root_helpers == 18 && missing == 0) }
 ' "$shell_script" "$setup_shell_script" || {
     printf 'Bash root helper inherited an image-owned working directory.\n' >&2
     exit 1

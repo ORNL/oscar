@@ -39,6 +39,7 @@ node --test tools/update-version.test.js tools/collect-release-contributors.test
     :sensorhub-webui-oscar:test \
     :sensorhub-service-bucket:test \
     :sensorhub-service-dailyfile-journal:test \
+    :sensorhub-process-ocr:test \
     :sensorhub-system-lane:test
 
 ./gradlew --no-parallel \

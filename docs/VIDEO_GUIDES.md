@@ -14,7 +14,7 @@ Every module starts immediately at `00:00` with the workflow action, runs under 
 | Resolution & Framerate | `1920x1080` (`1080p`) capped at `30 FPS` peak variable framerate (VFR) |
 | Accessibility | Embedded MP4 `mov_text` soft captions + standalone `.vtt` and `.srt` files + 3-to-4-step Markdown blocks |
 
-> **Interactive HTML5 Player with Closed Captions:** In a source checkout with submodules initialized, open `docs/video-guides/index.html` in any browser to watch all 16 modules with synchronized closed captions enabled by default.
+> **Interactive HTML5 Player with Closed Captions:** In a source checkout with submodules initialized, open `docs/video-guides/index.html` in any browser to watch all 18 modules with synchronized closed captions enabled by default.
 
 ## Workflow Catalog
 
@@ -36,6 +36,8 @@ Every module starts immediately at `00:00` with the workflow action, runs under 
 | 14 | [Export Signed Alarm QR & Verify Offline on Air-Gapped Transfer](#14-airgapped-alarm-qr-transfer) ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/14-airgapped-alarm-qr-transfer.mp4)) | Track C | 25.2s | 1723.7 KiB | [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/14-airgapped-alarm-qr-transfer.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/14-airgapped-alarm-qr-transfer.srt) |
 | 15 | [Monitor RPM/Camera Status of Health & Georeferenced Site Map](#15-status-of-health-and-site-map) ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/15-status-of-health-and-site-map.mp4)) | Track C | 10.2s | 1251.1 KiB | [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/15-status-of-health-and-site-map.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/15-status-of-health-and-site-map.srt) |
 | 16 | [Analyze National View Statistics & Generate Multi-Format Reports](#16-national-statistics-and-reports) ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/16-national-statistics-and-reports.mp4)) | Track C | 17.1s | 544.2 KiB | [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/16-national-statistics-and-reports.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/16-national-statistics-and-reports.srt) |
+| 17 | [Configure Per-Lane Vehicle OCR & Adjudicate with ISO 6346 Auto-Fill](#17-vehicle-ocr-and-adjudication) ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/17-vehicle-ocr-and-adjudication.mp4)) | Track C | 22.9s | 1657.6 KiB | [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/17-vehicle-ocr-and-adjudication.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/17-vehicle-ocr-and-adjudication.srt) |
+| 18 | [Use Operator Quick Guide (?) & Export Redacted Support Bundle](#18-operator-help-and-support-bundle) ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/18-operator-help-and-support-bundle.mp4)) | Track C | 10.9s | 2049.3 KiB | [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/18-operator-help-and-support-bundle.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/18-operator-help-and-support-bundle.srt) |
 
 ## Track A — CLI Deployment, Upgrades & Storage Lifecycle
 
@@ -227,3 +229,26 @@ Review aggregated occupancy and alarm trends on National View, then configure an
 1. Open **National View** (`/national-view`) to inspect aggregated occupancy totals, gamma/neutron alarm counts, and multi-lane trends.
 2. Navigate to **Report Generator** (`/report`) and choose **Node Selector**, **Report Scope** (`Entire Node`, `Operational View`, or `Specific Lanes`), **Report Type** (`RDS_SITE`, `LANE`, `EVENT`, `ADJUDICATION`, or `ADJUDICATION_DETAILS`), **Export Format** (`PDF`, `CSV`, `JSON`, or `Excel (.xlsx)`), and **Time Range**.
 3. Click **Generate Report** and review the rendered PDF or inline tabular preview (`CSV`, `JSON`, `XLSX`) and download the generated report.
+
+<a id="17-vehicle-ocr-and-adjudication"></a>
+### 17. Configure Per-Lane Vehicle OCR & Adjudicate with ISO 6346 Auto-Fill
+
+Inspect optional per-lane Vehicle OCR configuration in SensorHub Admin, then open an alarm event in Event Details to review ISO 6346 container and plate OCR suggestion chips, evidence crops, and Vehicle ID auto-fill during adjudication.
+
+- **Screen Recording:** [`17-vehicle-ocr-and-adjudication.mp4` (22.9s, 1657.6 KiB)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/17-vehicle-ocr-and-adjudication.mp4) · [WebVTT Captions (`.vtt`)](https://github.com/ORNL/oscar-video-guides/blob/main/captions/17-vehicle-ocr-and-adjudication.vtt) · [SubRip Captions (`.srt`)](https://github.com/ORNL/oscar-video-guides/blob/main/captions/17-vehicle-ocr-and-adjudication.srt)
+
+1. Open **Sensors -> <Lane System> -> Vehicle OCR** in SensorHub Admin (`https://oscar.local/sensorhub/admin`) to review **Enable Vehicle OCR**, **Alarms Only**, **Frames Per Clip**, and confidence thresholds.
+2. Open **Event Details** (`/event-details?eventId=<id>`) in OSCAR Viewer for an alarm occupancy on an OCR-enabled lane.
+3. Verify that **Vehicle ID** automatically populates the ISO 6346 check-digit-verified container code and displays clickable container/plate suggestion chips backed by bounded JPEG evidence crops.
+4. Select an **Adjudicate** disposition code and **Secondary Inspection** status, click **Submit**, and confirm in **Confirm Adjudication Submission** to append the signed audit decision.
+
+<a id="18-operator-help-and-support-bundle"></a>
+### 18. Use Operator Quick Guide (?) & Export Redacted Support Bundle
+
+Open the localized in-UI Operator Quick Guide & Glossary (?) from the top navigation bar, browse console pages, report formats, and radiation/OCR glossary terms, and export a secret-redacted diagnostic support bundle (.zip).
+
+- **Screen Recording:** [`18-operator-help-and-support-bundle.mp4` (10.9s, 2049.3 KiB)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/18-operator-help-and-support-bundle.mp4) · [WebVTT Captions (`.vtt`)](https://github.com/ORNL/oscar-video-guides/blob/main/captions/18-operator-help-and-support-bundle.vtt) · [SubRip Captions (`.srt`)](https://github.com/ORNL/oscar-video-guides/blob/main/captions/18-operator-help-and-support-bundle.srt)
+
+1. Click the **Help (`?`)** button in the OSCAR Viewer top navigation bar to open the localized **OSCAR 3.11.0 Operator Quick Guide & Glossary** (`en`, `es`, `fr`, `el`).
+2. Switch across **Console Pages**, **Reports & Exports**, **Key Terms Explained** (`EML & Code 9999`, `Code 9998`, `PARQUET_PRIMARY`, `Container & License Plate OCR`), and **Manual & Video Guides**.
+3. Click **Export Support Bundle** under **Troubleshooting & Support Bundle (`.zip`)** to download a credential-redacted client + server diagnostic archive (`oscar-support-<UTC>.zip`), or run `sudo bash oscar.sh support-bundle` / `oscar.bat support-bundle` on the host if offline.

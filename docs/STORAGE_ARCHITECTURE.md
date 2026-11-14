@@ -32,12 +32,13 @@ deployment and storage commands fail closed there.
 
 | Data | Primary location | Owner | Default lifecycle |
 | --- | --- | --- | --- |
-| Transactional records, OSH metadata, and 30-minute observation staging | PostgreSQL `postgres_data` volume | Tiered OSH database | All 21 operational and evidentiary observation streams (`gammaCounts`, `gammaThreshold`, `neutronCounts`, `setupGamma`, `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`, `status`, `emlContextual`, `emlScanContextual`, `emlAnalysis`, `dailyFile`, `connectionStatus`, `occupancyStatus`, `tamper`, `occupancy`, `adjudication`, `report`, `siteStatistics`, `nationalSummary`) commit first to short-lived LOGGED 30-minute child relations (`osg_*`); after verified Parquet activation and exact parity the whole child is dropped, while `oscar_obs_latest`, `oscar_archive_schema` summary counters, `oscar_event_locator`, and `oscar_obs_overlay` (for adjudicated archived occupancies) remain in PostgreSQL alongside static singleton configuration streams (`sensorLocation`, `adjudicationCodes`, `siteInfo`, ~52 rows total in `ONLY oscar.obs`) |
+| Transactional records, OSH metadata, and 30-minute observation staging | PostgreSQL `postgres_data` volume | Tiered OSH database | All 22 operational and evidentiary observation streams (`gammaCounts`, `gammaThreshold`, `neutronCounts`, `setupGamma`, `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`, `status`, `emlContextual`, `emlScanContextual`, `emlAnalysis`, `dailyFile`, `connectionStatus`, `occupancyStatus`, `tamper`, `occupancy`, `adjudication`, `report`, `siteStatistics`, `nationalSummary`, `vehicleOcr`) commit first to short-lived LOGGED 30-minute child relations (`osg_*`); after verified Parquet activation and exact parity the whole child is dropped, while `oscar_obs_latest`, `oscar_archive_schema` summary counters, `oscar_event_locator`, `oscar_obs_overlay` (for adjudicated archived occupancies), and datastream-scoped `oscar_tombstone` remain in PostgreSQL alongside static singleton configuration streams (`sensorLocation`, `adjudicationCodes`, `siteInfo`, ~52 rows total in `ONLY oscar.obs`) |
 | Cold detector observations | `${OSCAR_ARCHIVE_DIR}` bind mount | Tiered OSH database and archive catalog | Immutable Parquet generation plus manifest and schema snapshot |
 | Daily-file source journal & Rapiscan daily setup sync | `files/.dailyfile-journal` and `config.json` in `oscar_state` | Daily File Journal service & `RapiscanConfigSaver` | Per-lane framed segments and publication ledger; private sealed segments expire after 30 days only after immutable-publication validation and exact frozen replay, with an optional additional backup gate. Rapiscan daily `SG1`–`SG3` and `SN1`–`SN2` setup records update `RapiscanConfig` in memory and coalesce changes into `config.json` asynchronously |
 | Published daily files | `files/dailyfiles` in `oscar_state` | Daily File Journal service | Immutable legacy CSV plus versioned SHA-256 manifest |
-| Current alarm video | `files/videos` in `oscar_state` | Bucket and OSCAR services | Five-JPEG conversion is immediately eligible after completion and begins asynchronously on a retention scan; source MP4 remains for 24 hours after verified publication |
+| Current alarm video | `files/videos` in `oscar_state` | Bucket and OSCAR services | Five-JPEG conversion is immediately eligible after completion and begins asynchronously on a retention scan; source MP4 remains for 24 hours after verified publication (non-alarm clips are discarded immediately, or immediately after OCR when `alarmsOnly=false`) |
 | Retained alarm media | `files/videos/retained-media/v1` in `oscar_state` | Retained-media backend | Exactly five JPEGs, manifest, and job ledger |
+| Vehicle OCR evidence crops | `files/ocr/crops` in `oscar_state` | `VehicleOcrProcessor` | Optional per-lane OCR (`enabled=false` by default); bounded at `2,000` JPEG thumbnails (`< 100 MiB` steady-state FIFO cap) |
 | Reports, adjudication artifacts, sitemap | Bucket directories in `oscar_state` | Bucket and OSCAR services | Not deleted by cold-observation or storage-pressure maintenance |
 | Legacy PostgreSQL WAL root | Preserved `${OSCAR_WAL_ARCHIVE_DIR}` host path, when present | Administrator legacy data | Not mounted or read by current restore; retained unchanged only to avoid destructive upgrade behavior, not a current PITR chain |
 | Coordinated snapshot | Administrator-owned `${OSCAR_BACKUP_DIR}` host root | OSCAR storage CLI | Disabled by default; `single` mode uses an operator-selected safe absolute non-overlapping path and commits one verified snapshot through authenticated `CURRENT`; a separate physical drive is recommended, not required; never mounted into a long-running service |
@@ -178,16 +179,18 @@ racing a successful hold without loading every generation hold in the store.
 
 Parquet is OSCAR's primary cold observation tier, not a backup. It depends on the PostgreSQL catalog,
 overlays, tombstones, and application state and therefore must be captured with those components in
-a coordinated snapshot. All 21 operational and evidentiary observation streams allowlisted in the
+a coordinated snapshot. All 22 operational and evidentiary observation streams allowlisted in the
 standard configuration (`gammaCounts`, `gammaThreshold`, `neutronCounts`, `setupGamma`,
 `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`, `status`, `emlContextual`,
 `emlScanContextual`, `emlAnalysis`, `dailyFile`, `connectionStatus`, `occupancyStatus`, `tamper`,
-`occupancy`, `adjudication`, `report`, `siteStatistics`, `nationalSummary`) are routed through
+`occupancy`, `adjudication`, `report`, `siteStatistics`, `nationalSummary`, `vehicleOcr`) are routed through
 30-minute `osg_*` stage partitions and cold-tiered to ZSTD Parquet, leaving only static singleton
 configuration streams (`sensorLocation`, `adjudicationCodes`, `siteInfo`, ~52 rows total) in
 `ONLY oscar.obs`. When an archived `occupancy` is adjudicated, `AdjudicationControl` appends a new
 `adjudication` observation and updates the archived `occupancy` via `oscar_obs_overlay` +
-`oscar_obs_latest` without rewriting Parquet. Meanwhile, `oscar_obs_latest` serves `< 0.5 ms`
+`oscar_obs_latest` without rewriting Parquet, while `oscar_tombstone` scopes tombstones by
+`datastream_id` (with startup backfill of legacy `NULL` tombstones) so `resultTime=latest` pushdown
+applies to any datastream without active overlays or tombstones. Meanwhile, `oscar_obs_latest` serves `< 0.5 ms`
 `resultTime=latest` / `phenomenonTime=latest` queries for sparse streams, `oscar_archive_schema`
 stores 22 per-generation, per-datastream summary counters (including per-category unadjudicated and
 adjudicated Gamma, Neutron, and Gamma-Neutron alarm counters) so `StatisticsOutput` and
@@ -195,7 +198,7 @@ Dashboard/Event Log alarm & fault counts sum interior unmutated generations in S
 prune zero-match generations without opening Parquet files, and `PostgisCommandStoreImpl` prunes
 completed transient (`fileControl` / `hlsControl`, non-`adjudicationControl`) commands older than
 24 hours. On startup,
-OSCAR reconciles existing `oscar_obs_storage_route` entries for all 21 allowlisted outputs to
+OSCAR reconciles existing `oscar_obs_storage_route` entries for all 22 allowlisted outputs to
 `immutable=true`, reclaims empty expired or retired `osg_*` stage partitions, retroactively drains
 and compacts (`VACUUM (FULL, ANALYZE) ONLY obs`) any legacy parent-table rows for newly-promoted
 streams into verified Parquet generations, and backfills summary counters and `oscar_obs_latest` for
