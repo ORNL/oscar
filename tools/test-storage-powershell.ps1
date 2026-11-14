@@ -275,11 +275,12 @@ try {
     # The storage launcher has 19 bounded shell adapters after retiring both
     # the cumulative WAL-archive tar helper and its prune-intent helper, then
     # adding the authenticated CURRENT-pointer helper plus the locked legacy
-    # cleanup and config-aware journal migration. Setup retains one adapter.
-    # Keep these exact counts so every future native-shell call still receives
-    # an explicit safety review.
+    # cleanup and config-aware journal migration. Setup retains 3 bounded
+    # read-only adapters (TLS expiry check, TLS key-pair match check, and
+    # support-bundle offline state extraction). Keep these exact counts so
+    # every future native-shell call still receives an explicit safety review.
     foreach ($astFixture in @(
-        @{ Path = $setupScript; ExpectedShellRuns = 2 },
+        @{ Path = $setupScript; ExpectedShellRuns = 3 },
         @{ Path = $hostPrepScript; ExpectedShellRuns = 0 },
         @{ Path = $storageScript; ExpectedShellRuns = 19 })) {
         $tokens = $null
