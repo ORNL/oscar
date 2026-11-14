@@ -2312,14 +2312,14 @@ function New-Backup {
         Invoke-DockerShellInput $basebackup @('run', '--rm', '--network', "container:$postgresContainer", '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--tmpfs', '/tmp:rw,noexec,nosuid,nodev', '--user', '999:999', '--entrypoint', 'sh', '--volume', "$(Join-Path $work 'postgres'):/backup", '--volume', "$(Join-Path $ScriptRoot 'secrets/postgres-bootstrap-password.txt'):/run/secrets/postgres_bootstrap_password:ro", $postgresImage, '-seu')
         Invoke-Compose @('stop', 'postgres')
         $stateArchive = @'
-for entry in lib web rules documentation trusted_certificates config logback.xml; do
+for entry in lib web rules models documentation trusted_certificates config logback.xml; do
     if [ -L "/state/$entry" ]; then
         [ "$(readlink "/state/$entry")" = "/opt/oscar/$entry" ] || { echo "Unexpected OSCAR state symlink target: $entry" >&2; exit 1; }
     elif [ -e "/state/$entry" ]; then
         echo "Reserved OSCAR image-owned state path is not the expected symlink: $entry" >&2; exit 1
     fi
 done
-tar --exclude='./archive' --exclude='./backups' --exclude='./duckdb-tmp' --exclude='./lib' --exclude='./web' --exclude='./rules' --exclude='./documentation' --exclude='./trusted_certificates' --exclude='./config' --exclude='./logback.xml' -C /state -czf /output.tar.gz .
+tar --exclude='./archive' --exclude='./backups' --exclude='./duckdb-tmp' --exclude='./lib' --exclude='./web' --exclude='./rules' --exclude='./models' --exclude='./documentation' --exclude='./trusted_certificates' --exclude='./config' --exclude='./logback.xml' -C /state -czf /output.tar.gz .
 '@
         Invoke-DockerShellInput $stateArchive @('run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--user', '10001:10001', '--entrypoint', 'sh', '--volume', 'oscar_oscar_state:/state:ro', '--volume', "$(Join-Path $work 'oscar-state.tar.gz'):/output.tar.gz", $image, '-seu')
         Invoke-DockerShellInput "tar --exclude='./.oscar-storage-root' -C /archive -czf /output.tar.gz ." @('run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--user', '10001:10001', '--entrypoint', 'sh', '--volume', "${ArchiveDirectory}:/archive:ro", '--volume', "$(Join-Path $work 'archive.tar.gz'):/output.tar.gz", $image, '-seu')

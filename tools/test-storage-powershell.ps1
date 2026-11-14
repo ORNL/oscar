@@ -208,6 +208,9 @@ try {
             $storageSource, [Text.RegularExpressions.Regex]::Escape($restoreCommand))).Count -eq 1) `
             "Restore extraction can overwrite mounted-root metadata: $restoreCommand"
     }
+    Assert-True ($storageSource.Contains('for entry in lib web rules models documentation trusted_certificates config logback.xml; do') -and
+        $storageSource.Contains("--exclude='./rules' --exclude='./models' --exclude='./documentation'")) `
+        'Windows state backup must validate and exclude the image-owned /state/models symlink.'
     $prepareImagesStart = $setupSource.IndexOf('function Prepare-DeploymentImages', [StringComparison]::Ordinal)
     $prepareImagesEnd = $setupSource.IndexOf('function Initialize-Tls', $prepareImagesStart, [StringComparison]::Ordinal)
     Assert-True ($prepareImagesStart -ge 0 -and $prepareImagesEnd -gt $prepareImagesStart) `

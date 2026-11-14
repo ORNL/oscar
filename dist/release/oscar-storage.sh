@@ -1751,7 +1751,7 @@ create_backup() (
     docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
         --user 10001:10001 --entrypoint sh --volume oscar_oscar_state:/state:ro \
         --volume "$work/oscar-state.tar.gz:/output.tar.gz" "$image" -eu -c \
-        'for entry in lib web rules documentation trusted_certificates config logback.xml; do
+        'for entry in lib web rules models documentation trusted_certificates config logback.xml; do
              if [ -L "/state/$entry" ]; then
                  [ "$(readlink "/state/$entry")" = "/opt/oscar/$entry" ] || {
                      echo "Unexpected OSCAR state symlink target: $entry" >&2; exit 1;
@@ -1761,7 +1761,7 @@ create_backup() (
              fi
          done
          tar --exclude="./archive" --exclude="./backups" --exclude="./duckdb-tmp" --exclude="./lib" --exclude="./web" \
-             --exclude="./rules" --exclude="./documentation" --exclude="./trusted_certificates" \
+             --exclude="./rules" --exclude="./models" --exclude="./documentation" --exclude="./trusted_certificates" \
              --exclude="./config" --exclude="./logback.xml" -C /state -czf /output.tar.gz .'
     docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
         --user 10001:10001 --entrypoint sh --volume "$archive_dir:/archive:ro" \
