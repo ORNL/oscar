@@ -15,6 +15,8 @@ ARG OSCAR_GID=10001
 LABEL org.opencontainers.image.title="OSCAR" \
       org.opencontainers.image.version="${OSCAR_VERSION}"
 
+ENV OSCAR_VERSION="${OSCAR_VERSION}"
+
 COPY --chown=root:root docker/oscar/atomic-publish.c /tmp/oscar-atomic-publish.c
 
 RUN apt-get update \

@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('init', 'check', 'host-check', 'prepare-host', 'verify', 'start', 'stop', 'restart', 'status', 'logs', 'upgrade', 'backup', 'backup-verify', 'backup-prune', 'restore', 'archive', 'help')]
+    [ValidateSet('init', 'check', 'host-check', 'prepare-host', 'verify', 'start', 'stop', 'restart', 'status', 'logs', 'support-bundle', 'upgrade', 'backup', 'backup-verify', 'backup-prune', 'restore', 'archive', 'help')]
     [string]$Command = 'help',
     [string]$StorageAction,
     [string]$HoldAction,
@@ -37,6 +37,7 @@ param(
     [string]$Plan,
     [string]$Token,
     [string]$Generation,
+    [Alias('Output', 'OutputPath')]
     [string]$Destination,
     [string]$Observation,
     [string]$StoreKey,
@@ -1395,6 +1396,663 @@ function Get-ConfiguredEndpoint {
     return "https://${hostnameValue}:$portValue/sensorhub/admin"
 }
 
+function Export-HostSupportBundle([int]$EffectiveTail, [bool]$ExplicitDestination) {
+    if ($EffectiveTail -lt 1 -or $EffectiveTail -gt 10000) {
+        throw '-Tail must be between 1 and 10000.'
+    }
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+    $tsCompact = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ', [Globalization.CultureInfo]::InvariantCulture)
+    $generatedAt = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ', [Globalization.CultureInfo]::InvariantCulture)
+    $scriptRootFull = [IO.Path]::GetFullPath($ScriptRoot).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+
+    if ([string]::IsNullOrWhiteSpace($Destination)) {
+        $defaultDir = Split-Path -Parent $scriptRootFull
+        if ([string]::IsNullOrWhiteSpace($defaultDir)) { $defaultDir = [IO.Path]::GetTempPath() }
+        $targetZip = [IO.Path]::GetFullPath((Join-Path $defaultDir "oscar-host-support-$tsCompact.zip"))
+    } elseif (Test-Path -LiteralPath $Destination -PathType Container) {
+        $targetZip = [IO.Path]::GetFullPath((Join-Path $Destination "oscar-host-support-$tsCompact.zip"))
+    } else {
+        $targetZip = [IO.Path]::GetFullPath($Destination)
+    }
+
+    if ((Test-Path -LiteralPath (Join-Path $ScriptRoot 'SHA256SUMS') -PathType Leaf) -and
+        ($targetZip.Equals($scriptRootFull, [StringComparison]::OrdinalIgnoreCase) -or
+         $targetZip.StartsWith($scriptRootFull + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase))) {
+        throw 'Choose a -Destination path outside the offline bundle directory so SHA256SUMS verification remains intact.'
+    }
+
+    $targetParent = Split-Path -Parent $targetZip
+    if ($targetParent -and -not (Test-Path -LiteralPath $targetParent -PathType Container)) {
+        New-Item -ItemType Directory -Force -Path $targetParent | Out-Null
+    }
+    $existingTarget = Get-Item -LiteralPath $targetZip -Force -ErrorAction SilentlyContinue
+    if ($existingTarget -and ($existingTarget.PSIsContainer -or ($existingTarget.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
+        throw "Support bundle output path must be a regular non-reparse file path: $targetZip"
+    }
+
+    Write-Heading 'Collecting OSCAR host support bundle'
+
+    $redacted = '[REDACTED]'
+    $redactedSecretFile = '[REDACTED_SECRET_FILE]'
+    $redactedPrivateKey = '[REDACTED_PRIVATE_KEY]'
+    $maxZipBytes = 25 * 1024 * 1024
+
+    $safeKeys = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($k in @('cookiename', 'keyalias', 'idprovidertype', 'authmethod', 'securecookie')) { [void]$safeKeys.Add($k) }
+
+    $secretFileKeys = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($k in @('passwordfile', 'secretfile', 'privatekeyfile', 'keystorepath', 'truststorepath')) { [void]$secretFileKeys.Add($k) }
+
+    $sensitiveExact = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($k in @(
+        'password', 'passwd', 'pwd', 'secret', 'token', 'accesstoken', 'access_token',
+        'refreshtoken', 'refresh_token', 'idtoken', 'id_token', 'apikey', 'api_key',
+        'authorization', 'cookie', 'cookies', 'set-cookie', 'sessioncookie', 'oscar_session',
+        'jsessionid', 'privatekey', 'private_key', 'passphrase', 'credentials',
+        'clientsecret', 'client_secret', 'keystorepassword', 'truststorepassword', 'hmac'
+    )) { [void]$sensitiveExact.Add($k) }
+
+    $pemRegex = [regex]::new('-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----')
+    $uriRegex = [regex]::new('((?:jdbc:)?[a-zA-Z][a-zA-Z0-9+.-]*://)([^/@\s"''<>]+)@')
+    $authHdrRegex = [regex]::new('(?i)(\bAuthorization\s*[:=]\s*(?:Basic|Bearer|Digest|Token)\s+)([^\s,;"'']+)')
+    $authSchemeRegex = [regex]::new('(?i)\b(Bearer|Basic)\s+([A-Za-z0-9._~+/=-]{12,})')
+    $cookieHdrRegex = [regex]::new('(?i)(\b(?:Cookie|Set-Cookie)\s*:\s*)([A-Za-z0-9._-]+)=([^;\s"'',]+)((?:\s*;\s*[A-Za-z0-9._-]+=[^;\s"'',]+)*)')
+    $cookiePairRegex = [regex]::new('([A-Za-z0-9._-]+)=([^;\s"'',]+)')
+    $sessionRegex = [regex]::new('(?i)\b(OSCAR_SESSION|JSESSIONID)\s*=\s*([^;\s"'',]+)')
+    $queryRegex = [regex]::new('(?i)([?&](?:password|passwd|pwd|token|access_token|refresh_token|api_key|apikey|secret|auth|session|sig|signature)=)([^&\s"''#]+)')
+    $kvRegex = [regex]::new('(?i)("?\b(?:password|passwd|pwd|secret|api[_-]?key|(?:(?:access|refresh|id|auth|session|csrf|api)[_-]?)?token|private[_-]?key|passphrase|db_password|admin_password)\b"?\s*[:=]\s*)("[^"]*"|''[^'']*''|[^\s,;}\]\"]+)')
+    $emailRegex = [regex]::new('\b([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b')
+
+    $stats = [ordered]@{
+        jsonFieldsRedacted     = 0
+        uriCredentialsRedacted = 0
+        authHeadersRedacted    = 0
+        cookiesRedacted        = 0
+        querySecretsRedacted   = 0
+        keyValueSecretsRedacted = 0
+        pemBlocksRedacted      = 0
+        emailsMasked           = 0
+        containerEnvStripped   = 0
+    }
+
+    $testSensitiveKey = {
+        param([string]$KeyName)
+        if ([string]::IsNullOrWhiteSpace($KeyName)) { return $false }
+        $trimmed = $KeyName.Trim().ToLowerInvariant()
+        if ($safeKeys.Contains($trimmed)) { return $false }
+        if ($sensitiveExact.Contains($trimmed)) { return $true }
+        foreach ($suffix in @('password', 'passwd', 'secret', 'token', 'apikey', 'api_key', 'privatekey', 'private_key', 'passphrase')) {
+            if ($trimmed.EndsWith($suffix, [StringComparison]::Ordinal)) { return $true }
+        }
+        return $false
+    }
+
+    $redactText = {
+        param([string]$InputText)
+        if ([string]::IsNullOrEmpty($InputText)) { return '' }
+        $out = $pemRegex.Replace($InputText, {
+            param($m)
+            $stats['pemBlocksRedacted'] = [int]$stats['pemBlocksRedacted'] + 1
+            return $redactedPrivateKey
+        })
+        $out = $uriRegex.Replace($out, {
+            param($m)
+            $stats['uriCredentialsRedacted'] = [int]$stats['uriCredentialsRedacted'] + 1
+            return "$($m.Groups[1].Value)$redacted@"
+        })
+        $out = $authHdrRegex.Replace($out, {
+            param($m)
+            $stats['authHeadersRedacted'] = [int]$stats['authHeadersRedacted'] + 1
+            return "$($m.Groups[1].Value)$redacted"
+        })
+        $out = $authSchemeRegex.Replace($out, {
+            param($m)
+            $stats['authHeadersRedacted'] = [int]$stats['authHeadersRedacted'] + 1
+            return "$($m.Groups[1].Value) $redacted"
+        })
+        $out = $cookieHdrRegex.Replace($out, {
+            param($m)
+            $stats['cookiesRedacted'] = [int]$stats['cookiesRedacted'] + 1
+            $tailPart = $m.Groups[4].Value
+            if ($tailPart) {
+                $tailPart = $cookiePairRegex.Replace($tailPart, "`$1=$redacted")
+            }
+            return "$($m.Groups[1].Value)$($m.Groups[2].Value)=$redacted$tailPart"
+        })
+        $out = $sessionRegex.Replace($out, {
+            param($m)
+            $stats['cookiesRedacted'] = [int]$stats['cookiesRedacted'] + 1
+            return "$($m.Groups[1].Value)=$redacted"
+        })
+        $out = $queryRegex.Replace($out, {
+            param($m)
+            $stats['querySecretsRedacted'] = [int]$stats['querySecretsRedacted'] + 1
+            return "$($m.Groups[1].Value)$redacted"
+        })
+        $out = $kvRegex.Replace($out, {
+            param($m)
+            $val = $m.Groups[2].Value
+            if ([string]::IsNullOrEmpty($val) -or $val -ceq '""' -or $val -ceq "''" -or $val.Contains($redacted)) {
+                return $m.Value
+            }
+            $stats['keyValueSecretsRedacted'] = [int]$stats['keyValueSecretsRedacted'] + 1
+            if ($val.Length -ge 2 -and $val[0] -eq $val[$val.Length - 1] -and ($val[0] -eq '"' -or $val[0] -eq "'")) {
+                $q = $val[0]
+                return "$($m.Groups[1].Value)$q$redacted$q"
+            }
+            return "$($m.Groups[1].Value)$redacted"
+        })
+        $out = $emailRegex.Replace($out, {
+            param($m)
+            $stats['emailsMasked'] = [int]$stats['emailsMasked'] + 1
+            return "$($m.Groups[1].Value)***@$($m.Groups[2].Value)"
+        })
+        return $out
+    }
+
+    $redactObject = $null
+    $redactObject = {
+        param($Node)
+        if ($null -eq $Node) { return $null }
+        if ($Node -is [string]) { return (& $redactText $Node) }
+        if ($Node -is [bool] -or $Node -is [ValueType]) { return $Node }
+        if ($Node -is [Collections.IDictionary]) {
+            $mapped = [ordered]@{}
+            foreach ($key in @($Node.Keys)) {
+                $keyStr = [string]$key
+                $val = $Node[$key]
+                if ($secretFileKeys.Contains($keyStr.Trim())) {
+                    if ($val -is [string] -and -not [string]::IsNullOrWhiteSpace($val)) {
+                        $stats['jsonFieldsRedacted'] = [int]$stats['jsonFieldsRedacted'] + 1
+                        $mapped[$keyStr] = $redactedSecretFile
+                    } else {
+                        $mapped[$keyStr] = $val
+                    }
+                } elseif (& $testSensitiveKey $keyStr) {
+                    if ($null -eq $val -or ($val -is [string] -and $val.Length -eq 0)) {
+                        $mapped[$keyStr] = $val
+                    } else {
+                        $stats['jsonFieldsRedacted'] = [int]$stats['jsonFieldsRedacted'] + 1
+                        $mapped[$keyStr] = $redacted
+                    }
+                } else {
+                    $mapped[$keyStr] = (& $redactObject $val)
+                }
+            }
+            return $mapped
+        }
+        if ($Node -is [Collections.IEnumerable]) {
+            $list = New-Object System.Collections.Generic.List[object]
+            foreach ($elem in $Node) {
+                $list.Add((& $redactObject $elem))
+            }
+            return ,$list.ToArray()
+        }
+        if ($null -ne $Node.PSObject -and $Node.PSObject.Properties) {
+            $mapped = [ordered]@{}
+            foreach ($prop in @($Node.PSObject.Properties)) {
+                $keyStr = [string]$prop.Name
+                $val = $prop.Value
+                if ($secretFileKeys.Contains($keyStr.Trim())) {
+                    if ($val -is [string] -and -not [string]::IsNullOrWhiteSpace($val)) {
+                        $stats['jsonFieldsRedacted'] = [int]$stats['jsonFieldsRedacted'] + 1
+                        $mapped[$keyStr] = $redactedSecretFile
+                    } else {
+                        $mapped[$keyStr] = $val
+                    }
+                } elseif (& $testSensitiveKey $keyStr) {
+                    if ($null -eq $val -or ($val -is [string] -and $val.Length -eq 0)) {
+                        $mapped[$keyStr] = $val
+                    } else {
+                        $stats['jsonFieldsRedacted'] = [int]$stats['jsonFieldsRedacted'] + 1
+                        $mapped[$keyStr] = $redacted
+                    }
+                } else {
+                    $mapped[$keyStr] = (& $redactObject $val)
+                }
+            }
+            return $mapped
+        }
+        return (& $redactText ([string]$Node))
+    }
+
+    $entries = [ordered]@{}
+    $script:supportErrorLines = 0
+    $script:supportWarnLines = 0
+    $highlights = New-Object System.Collections.Generic.List[string]
+
+    $addTextEntry = {
+        param([string]$ZipPath, [string]$Text, [bool]$ScanHighlights = $false)
+        $normalized = if ($null -eq $Text) { '' } else { $Text.Replace("`r`n", "`n").Replace("`r", "`n") }
+        $sanitized = (& $redactText $normalized)
+        if ($ScanHighlights -and $sanitized) {
+            foreach ($line in ($sanitized -split "`n")) {
+                if ($line.Contains(' ERROR ') -or $line.StartsWith('ERROR') -or $line.Contains('Exception:') -or $line.Contains('FATAL')) {
+                    $script:supportErrorLines++
+                    $snippet = if ($line.Length -gt 360) { $line.Substring(0, 360) } else { $line }
+                    $highlights.Add("[$ZipPath] $snippet")
+                    if ($highlights.Count -gt 30) { $highlights.RemoveAt(0) }
+                } elseif ($line.Contains(' WARN ') -or $line.StartsWith('WARN')) {
+                    $script:supportWarnLines++
+                    $snippet = if ($line.Length -gt 360) { $line.Substring(0, 360) } else { $line }
+                    $highlights.Add("[$ZipPath] $snippet")
+                    if ($highlights.Count -gt 30) { $highlights.RemoveAt(0) }
+                }
+            }
+        }
+        $entries[$ZipPath] = $Utf8NoBom.GetBytes($sanitized.TrimEnd([char]10) + "`n")
+    }
+
+    $runCapture = {
+        param([scriptblock]$Action)
+        $prevPref = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            $lines = @(& $Action 2>&1 | ForEach-Object { [string]$_ })
+            return ((($lines -join "`n") -replace "`0", '').TrimEnd())
+        } catch {
+            return "Command failed: $($_.Exception.Message)"
+        } finally {
+            $ErrorActionPreference = $prevPref
+        }
+    }
+
+    $releaseVer = 'unknown'
+    try { $releaseVer = Get-ReleaseVersion } catch { $releaseVer = 'unknown' }
+
+    $sysLines = New-Object System.Collections.Generic.List[string]
+    $sysLines.Add("Generated (UTC): $generatedAt")
+    $sysLines.Add("Release directory: $ScriptRoot")
+    $sysLines.Add("Release version (.env.example): $releaseVer")
+    $sysLines.Add("Administrator: $(Test-Administrator)")
+    $sysLines.Add("Session 0 process: $(Test-SessionZeroProcess)")
+    $sysLines.Add("Reboot pending: $(Test-WindowsRebootPending)")
+    $sysLines.Add("OS version: $([Environment]::OSVersion.VersionString)")
+    $sysLines.Add("Processor count: $([Environment]::ProcessorCount)")
+    try {
+        $osInfo = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
+        $totalGb = [Math]::Round($osInfo.TotalVisibleMemorySize / 1048576.0, 2)
+        $freeGb = [Math]::Round($osInfo.FreePhysicalMemory / 1048576.0, 2)
+        $sysLines.Add("Windows caption: $($osInfo.Caption) ($($osInfo.BuildNumber))")
+        $sysLines.Add("Physical memory: ${freeGb} GiB free / ${totalGb} GiB total")
+        $sysLines.Add("Last boot (UTC): $($osInfo.LastBootUpTime.ToUniversalTime().ToString('o'))")
+    } catch {
+        $sysLines.Add("Win32_OperatingSystem query unavailable: $($_.Exception.Message)")
+    }
+    try {
+        $sysLines.Add('')
+        $sysLines.Add('--- Logical disks ---')
+        foreach ($disk in @(Get-CimInstance -ClassName Win32_LogicalDisk -Filter 'DriveType=3' -ErrorAction Stop)) {
+            $sizeGb = if ($disk.Size) { [Math]::Round($disk.Size / 1GB, 2) } else { 0 }
+            $availGb = if ($disk.FreeSpace) { [Math]::Round($disk.FreeSpace / 1GB, 2) } else { 0 }
+            $sysLines.Add("$($disk.DeviceID) free=${availGb}GiB total=${sizeGb}GiB fs=$($disk.FileSystem)")
+        }
+    } catch {
+        $sysLines.Add("Win32_LogicalDisk query unavailable: $($_.Exception.Message)")
+    }
+    if ($env:USERPROFILE) {
+        $wslConfigPath = Join-Path $env:USERPROFILE '.wslconfig'
+        $wslConfigItem = Get-Item -LiteralPath $wslConfigPath -Force -ErrorAction SilentlyContinue
+        if ($wslConfigItem -and -not $wslConfigItem.PSIsContainer -and ($wslConfigItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) {
+            $sysLines.Add('')
+            $sysLines.Add('--- .wslconfig ---')
+            $sysLines.Add([IO.File]::ReadAllText($wslConfigPath))
+        }
+    }
+    if (Get-Command wsl.exe -ErrorAction SilentlyContinue) {
+        $sysLines.Add('')
+        $sysLines.Add('--- wsl.exe --status ---')
+        $sysLines.Add((& $runCapture { wsl.exe --status }))
+        $sysLines.Add('')
+        $sysLines.Add('--- wsl.exe -l -v ---')
+        $sysLines.Add((& $runCapture { wsl.exe -l -v }))
+    } else {
+        $sysLines.Add('')
+        $sysLines.Add('WSL CLI: not installed')
+    }
+    if (Get-Command docker -ErrorAction SilentlyContinue) {
+        $sysLines.Add('')
+        $sysLines.Add('--- docker version ---')
+        $sysLines.Add((& $runCapture { docker version }))
+        $sysLines.Add('')
+        $sysLines.Add('--- docker compose version ---')
+        $sysLines.Add((& $runCapture { docker compose version }))
+    } else {
+        $sysLines.Add('')
+        $sysLines.Add('Docker CLI: not installed')
+    }
+    & $addTextEntry 'host/system-info.txt' ($sysLines -join "`n") $false
+
+    $configuredVer = $null
+    $envPath = Join-Path $ScriptRoot '.env'
+    $envItem = Get-Item -LiteralPath $envPath -Force -ErrorAction SilentlyContinue
+    if ($envItem -and -not $envItem.PSIsContainer -and ($envItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) {
+        try {
+            $envOut = New-Object System.Collections.Generic.List[string]
+            foreach ($rawLine in [IO.File]::ReadAllLines($envPath)) {
+                $trimmed = $rawLine.Trim()
+                $eqIdx = $rawLine.IndexOf('=')
+                if (-not $trimmed -or $trimmed.StartsWith('#') -or $eqIdx -lt 0) {
+                    $envOut.Add((& $redactText $rawLine))
+                    continue
+                }
+                $k = $rawLine.Substring(0, $eqIdx)
+                $v = $rawLine.Substring($eqIdx + 1)
+                if ($k.Trim() -ceq 'OSCAR_VERSION' -and $v.Trim()) {
+                    $configuredVer = $v.Trim()
+                }
+                $upperKey = $k.ToUpperInvariant()
+                if ((& $testSensitiveKey $k) -or $upperKey.Contains('SECRET') -or ($upperKey.Contains('KEY') -and -not $upperKey.Contains('BACKUP_MODE'))) {
+                    if ($v.Trim()) {
+                        $stats['keyValueSecretsRedacted'] = [int]$stats['keyValueSecretsRedacted'] + 1
+                        $envOut.Add("$k=$redacted")
+                    } else {
+                        $envOut.Add("$k=")
+                    }
+                } else {
+                    $envOut.Add("$k=$(& $redactText $v)")
+                }
+            }
+            $entries['host/env.redacted.txt'] = $Utf8NoBom.GetBytes(($envOut -join "`n") + "`n")
+        } catch {
+            & $addTextEntry 'host/env.error.txt' $_.Exception.Message $false
+        }
+    }
+
+    $initStatePath = Join-Path $ScriptRoot '.oscar-init-state'
+    $initStateItem = Get-Item -LiteralPath $initStatePath -Force -ErrorAction SilentlyContinue
+    if ($initStateItem -and -not $initStateItem.PSIsContainer -and ($initStateItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) {
+        try {
+            & $addTextEntry 'host/init-state.txt' ([IO.File]::ReadAllText($initStatePath)) $false
+        } catch { }
+    }
+
+    $certPath = Join-Path $ScriptRoot 'tls\server.crt'
+    $certItem = Get-Item -LiteralPath $certPath -Force -ErrorAction SilentlyContinue
+    if ($certItem -and -not $certItem.PSIsContainer -and ($certItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) {
+        try {
+            $pemText = [IO.File]::ReadAllText($certPath)
+            $certMatch = [regex]::Match($pemText, '-----BEGIN CERTIFICATE-----\s*([A-Za-z0-9+/=\r\n]+?)\s*-----END CERTIFICATE-----')
+            $certBytes = if ($certMatch.Success) {
+                [Convert]::FromBase64String(($certMatch.Groups[1].Value -replace '\s+', ''))
+            } else {
+                [IO.File]::ReadAllBytes($certPath)
+            }
+            $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 (,$certBytes)
+            try {
+                $sha256 = [Security.Cryptography.SHA256]::Create()
+                try {
+                    $fpSha256 = [BitConverter]::ToString($sha256.ComputeHash($cert.RawData)) -replace '-', ':'
+                } finally {
+                    $sha256.Dispose()
+                }
+                $certLines = New-Object System.Collections.Generic.List[string]
+                $certLines.Add("subject=$($cert.Subject)")
+                $certLines.Add("issuer=$($cert.Issuer)")
+                $certLines.Add("notBefore=$($cert.NotBefore.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'))")
+                $certLines.Add("notAfter=$($cert.NotAfter.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'))")
+                $certLines.Add("serial=$($cert.SerialNumber)")
+                $certLines.Add("sha256 Fingerprint=$fpSha256")
+                foreach ($ext in @($cert.Extensions)) {
+                    if ($ext.Oid -and $ext.Oid.Value -ceq '2.5.29.17') {
+                        $certLines.Add('X509v3 Subject Alternative Name:')
+                        $certLines.Add("    $($ext.Format($false))")
+                    }
+                }
+                & $addTextEntry 'tls/certificate-info.txt' ($certLines -join "`n") $false
+            } finally {
+                $cert.Dispose()
+            }
+        } catch {
+            & $addTextEntry 'tls/certificate-info.txt' "Certificate metadata parse error: $($_.Exception.Message)" $false
+        }
+    }
+
+    $containerSummaries = New-Object System.Collections.Generic.List[object]
+    if (Test-DockerReady) {
+        & $addTextEntry 'docker/compose-ps.txt' (& $runCapture { docker ps -a --no-trunc --filter label=com.docker.compose.project=oscar }) $false
+        & $addTextEntry 'docker/volumes.txt' (& $runCapture { docker volume ls --filter name=oscar }) $false
+
+        $containerIdsRaw = & $runCapture { docker ps -aq --filter label=com.docker.compose.project=oscar }
+        $containerIds = @($containerIdsRaw -split '\s+' | Where-Object { $_ -match '^[0-9a-fA-F]{12,64}$' })
+        if ($containerIds.Count -gt 0) {
+            try {
+                $inspectJsonText = & $runCapture { docker inspect @containerIds }
+                $parsedRaw = $inspectJsonText | ConvertFrom-Json
+                $parsedInspect = if ($null -ne $parsedRaw) { @($parsedRaw) } else { @() }
+                foreach ($item in $parsedInspect) {
+                    if ($null -eq $item) { continue }
+                    $cfg = Get-DockerInspectProperty $item 'Config'
+                    $rawEnv = if ($cfg) { Get-DockerInspectProperty $cfg 'Env' } else { $null }
+                    $envList = if ($null -ne $rawEnv) { @($rawEnv) } else { @() }
+                    if ($envList.Count -gt 0) {
+                        $stats['containerEnvStripped'] = [int]$stats['containerEnvStripped'] + $envList.Count
+                    }
+                    $stateObj = Get-DockerInspectProperty $item 'State'
+                    $healthObj = if ($stateObj) { Get-DockerInspectProperty $stateObj 'Health' } else { $null }
+                    $mountItems = New-Object System.Collections.Generic.List[object]
+                    $rawMounts = Get-DockerInspectProperty $item 'Mounts'
+                    foreach ($m in $(if ($null -ne $rawMounts) { @($rawMounts) } else { @() })) {
+                        if ($null -eq $m) { continue }
+                        $destStr = [string](Get-DockerInspectProperty $m 'Destination')
+                        if ($destStr.StartsWith('/run/secrets', [StringComparison]::Ordinal)) { continue }
+                        $mountItems.Add([ordered]@{
+                            type        = Get-DockerInspectProperty $m 'Type'
+                            name        = Get-DockerInspectProperty $m 'Name'
+                            destination = $destStr
+                            rw          = Get-DockerInspectProperty $m 'RW'
+                        })
+                    }
+                    $rawName = [string](Get-DockerInspectProperty $item 'Name')
+                    $summaryObj = [ordered]@{
+                        name         = $rawName.TrimStart('/')
+                        image        = if ($cfg) { Get-DockerInspectProperty $cfg 'Image' } else { $null }
+                        created      = Get-DockerInspectProperty $item 'Created'
+                        status       = if ($stateObj) { Get-DockerInspectProperty $stateObj 'Status' } else { $null }
+                        running      = if ($stateObj) { Get-DockerInspectProperty $stateObj 'Running' } else { $null }
+                        restarting   = if ($stateObj) { Get-DockerInspectProperty $stateObj 'Restarting' } else { $null }
+                        oomKilled    = if ($stateObj) { Get-DockerInspectProperty $stateObj 'OOMKilled' } else { $null }
+                        exitCode     = if ($stateObj) { Get-DockerInspectProperty $stateObj 'ExitCode' } else { $null }
+                        error        = & $redactText ([string]$(if ($stateObj) { Get-DockerInspectProperty $stateObj 'Error' } else { '' }))
+                        startedAt    = if ($stateObj) { Get-DockerInspectProperty $stateObj 'StartedAt' } else { $null }
+                        finishedAt   = if ($stateObj) { Get-DockerInspectProperty $stateObj 'FinishedAt' } else { $null }
+                        restartCount = Get-DockerInspectProperty $item 'RestartCount'
+                        health       = if ($healthObj) { & $redactObject $healthObj } else { $null }
+                        mounts       = @($mountItems.ToArray())
+                    }
+                    $containerSummaries.Add($summaryObj)
+                }
+                $entries['docker/inspect.redacted.json'] = $Utf8NoBom.GetBytes(((ConvertTo-Json -InputObject @($containerSummaries.ToArray()) -Depth 16) + "`n"))
+            } catch {
+                & $addTextEntry 'docker/inspect.error.txt' $_.Exception.Message $false
+            }
+
+            foreach ($cid in $containerIds) {
+                $cnameRaw = (& $runCapture { docker inspect --format '{{.Name}}' $cid }).TrimStart('/')
+                $cname = if ($cnameRaw) { ($cnameRaw -replace '[^A-Za-z0-9._-]', '_') } else { $cid }
+                $logOut = & $runCapture { docker logs --timestamps --tail "$EffectiveTail" $cid }
+                & $addTextEntry "logs/$cname.log" $logOut $true
+            }
+        }
+
+        if (Invoke-ExternalProbe { docker volume inspect oscar_oscar_state }) {
+            $helperImage = Get-OscarImage
+            if (-not (Test-ContainerImage $helperImage)) {
+                $fallbackLines = (& $runCapture { docker images --format '{{.Repository}}:{{.Tag}}' }) -split "`n"
+                $firstOscar = @($fallbackLines | Where-Object { $_ -match '^oscar:' } | Select-Object -First 1)
+                if ($firstOscar.Count -eq 1) { $helperImage = $firstOscar[0].Trim() }
+            }
+            if ($helperImage -and (Test-ContainerImage $helperImage)) {
+                $extractScript = @'
+tail_count=$1
+if [ -f /state/config.json ] && [ ! -L /state/config.json ]; then
+    printf "FILE:config.raw.json:"
+    head -c 4194304 /state/config.json | base64 | tr -d "\r\n"
+    printf "\n"
+fi
+if [ -f /state/logs/oscar.log ] && [ ! -L /state/logs/oscar.log ]; then
+    printf "FILE:oscar.log:"
+    tail -n "$tail_count" /state/logs/oscar.log | base64 | tr -d "\r\n"
+    printf "\n"
+fi
+if [ -d /state/.moduledata ]; then
+    count=0
+    for mod_log in /state/.moduledata/*/log.txt; do
+        [ -f "$mod_log" ] && [ ! -L "$mod_log" ] || continue
+        mod_name=$(basename "$(dirname "$mod_log")" | tr -c "A-Za-z0-9._-" "_")
+        printf "FILE:module-logs/%s.log:" "$mod_name"
+        tail -n 200 "$mod_log" | base64 | tr -d "\r\n"
+        printf "\n"
+        count=$((count + 1))
+        [ "$count" -lt 10 ] || break
+    done
+fi
+'@
+                try {
+                    $b64Lines = Get-DockerShellInputOutput $extractScript @(
+                        'run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL',
+                        '--security-opt', 'no-new-privileges', '--workdir', '/', '--user', '10001:10001',
+                        '--volume', 'oscar_oscar_state:/state:ro', '--entrypoint', 'sh',
+                        $helperImage, '-seu', "$EffectiveTail"
+                    )
+                    foreach ($b64Line in @($b64Lines)) {
+                        $lineStr = [string]$b64Line
+                        if (-not $lineStr.StartsWith('FILE:', [StringComparison]::Ordinal)) { continue }
+                        $parts = @($lineStr -split ':', 3)
+                        if ($parts.Length -ne 3) { continue }
+                        $relName = $parts[1]
+                        $decodedText = $Utf8NoBom.GetString([Convert]::FromBase64String($parts[2]))
+                        if ($relName -ceq 'config.raw.json') {
+                            try {
+                                $parsedCfg = $decodedText | ConvertFrom-Json
+                                $redactedCfg = & $redactObject $parsedCfg
+                                $entries['volume/config.redacted.json'] = $Utf8NoBom.GetBytes((($redactedCfg | ConvertTo-Json -Depth 32) + "`n"))
+                            } catch {
+                                & $addTextEntry 'volume/config.error.txt' $_.Exception.Message $false
+                            }
+                        } elseif ($relName -ceq 'oscar.log') {
+                            & $addTextEntry 'volume/oscar.log' $decodedText $true
+                        } elseif ($relName -match '^module-logs/[A-Za-z0-9._-]+\.log$') {
+                            & $addTextEntry "volume/$relName" $decodedText $true
+                        }
+                    }
+                } catch {
+                    & $addTextEntry 'volume/extract.error.txt' $_.Exception.Message $false
+                }
+            }
+        }
+
+        $isConfiguredForArchive = $false
+        if (Test-Administrator) {
+            try { Assert-Configured; $isConfiguredForArchive = $true } catch { $isConfiguredForArchive = $false }
+        }
+        if ($isConfiguredForArchive) {
+            $storageScript = Join-Path $ScriptRoot 'oscar-storage.ps1'
+            if (Test-Path -LiteralPath $storageScript -PathType Leaf) {
+                $archOut = & $runCapture {
+                    powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $storageScript -Command archive -Action status
+                }
+                if ($archOut) {
+                    & $addTextEntry 'archive/status.txt' $archOut $false
+                }
+            }
+        }
+    }
+
+    $totalRedactions = 0
+    foreach ($cnt in @($stats.Values)) { $totalRedactions += [int]$cnt }
+
+    $redactionReport = [ordered]@{
+        schemaVersion  = 1
+        generatedAt    = $generatedAt
+        policy         = 'automatic-edge-redaction'
+        bundleSource   = 'host-cli'
+        neverCollected = @('secrets/*', '/run/secrets/*', 'tls/*.key', '.keystore/*', 'hivemq-data/*')
+        counts         = [ordered]@{
+            jsonFieldsRedacted      = [int]$stats['jsonFieldsRedacted']
+            uriCredentialsRedacted  = [int]$stats['uriCredentialsRedacted']
+            authHeadersRedacted     = [int]$stats['authHeadersRedacted']
+            cookiesRedacted         = [int]$stats['cookiesRedacted']
+            querySecretsRedacted    = [int]$stats['querySecretsRedacted']
+            keyValueSecretsRedacted = [int]$stats['keyValueSecretsRedacted']
+            pemBlocksRedacted       = [int]$stats['pemBlocksRedacted']
+            emailsMasked            = [int]$stats['emailsMasked']
+            containerEnvStripped    = [int]$stats['containerEnvStripped']
+            totalRedactions         = $totalRedactions
+        }
+    }
+
+    $summary = [ordered]@{
+        schemaVersion     = 1
+        bundleType        = 'oscar-support-bundle'
+        bundleSource      = 'host-cli'
+        platform          = 'windows'
+        generatedAt       = $generatedAt
+        releaseVersion    = $releaseVer
+        configuredVersion = if ($configuredVer) { $configuredVer } else { $releaseVer }
+        tailLinesRequested = $EffectiveTail
+        containers        = @($containerSummaries.ToArray())
+        logs              = [ordered]@{
+            errorLineCount   = [int]$script:supportErrorLines
+            warnLineCount    = [int]$script:supportWarnLines
+            recentHighlights = @($highlights.ToArray())
+        }
+        redaction         = [ordered]@{
+            applied         = $true
+            totalRedactions = $totalRedactions
+        }
+    }
+
+    $tmpZip = "$targetZip.tmp.$([Guid]::NewGuid().ToString('N'))"
+    try {
+        try {
+            $zipStream = [IO.FileStream]::new($tmpZip, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+        } catch [UnauthorizedAccessException] {
+            if ($ExplicitDestination) { throw }
+            $targetZip = [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetTempPath()) "oscar-host-support-$tsCompact.zip"))
+            $tmpZip = "$targetZip.tmp.$([Guid]::NewGuid().ToString('N'))"
+            $zipStream = [IO.FileStream]::new($tmpZip, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+        }
+        try {
+            $archive = [IO.Compression.ZipArchive]::new($zipStream, [IO.Compression.ZipArchiveMode]::Create, $false, $Utf8NoBom)
+            try {
+                $writeZipEntry = {
+                    param([string]$EntryName, [byte[]]$Payload)
+                    $entry = $archive.CreateEntry($EntryName, [IO.Compression.CompressionLevel]::Optimal)
+                    $entryStream = $entry.Open()
+                    try {
+                        $entryStream.Write($Payload, 0, $Payload.Length)
+                    } finally {
+                        $entryStream.Dispose()
+                    }
+                }
+                & $writeZipEntry 'summary.json' ($Utf8NoBom.GetBytes((($summary | ConvertTo-Json -Depth 16) + "`n")))
+                & $writeZipEntry 'redaction-report.json' ($Utf8NoBom.GetBytes((($redactionReport | ConvertTo-Json -Depth 8) + "`n")))
+                foreach ($entryName in @($entries.Keys)) {
+                    $payload = [byte[]]$entries[$entryName]
+                    $zipStream.Flush()
+                    if (($zipStream.Length + [Math]::Floor($payload.Length / 2)) -gt ($maxZipBytes - 65536)) {
+                        break
+                    }
+                    & $writeZipEntry ([string]$entryName) $payload
+                }
+            } finally {
+                $archive.Dispose()
+            }
+        } finally {
+            $zipStream.Dispose()
+        }
+        Move-Item -LiteralPath $tmpZip -Destination $targetZip -Force
+    } finally {
+        if (Test-Path -LiteralPath $tmpZip) {
+            Remove-Item -LiteralPath $tmpZip -Force -ErrorAction SilentlyContinue
+        }
+    }
+    Write-Host "Support bundle written to: $targetZip" -ForegroundColor Green
+}
+
 function Show-Help {
     @'
 OSCAR deployment administration
@@ -1413,6 +2071,7 @@ OSCAR deployment administration
   .\oscar.bat upgrade [-AdoptLegacyVolumes] [-AdoptLegacyStorageRoots]
       [-BackupMode disabled|single] [-BackupDir ABSOLUTE_PATH]
   .\oscar.bat logs [-Service all|oscar|postgres|gateway] [-Tail 200] [-Follow]
+  .\oscar.bat support-bundle [-Tail 2500] [-Destination PATH]
   .\oscar.bat backup
   .\oscar.bat backup-verify -BackupId ID
   .\oscar.bat restore -BackupId ID -Confirm ID
@@ -1577,6 +2236,10 @@ try {
             if ($Follow) { $logArguments += '--follow' }
             if ($Service -ne 'all') { $logArguments += $Service }
             Invoke-Compose $logArguments
+        }
+        'support-bundle' {
+            $effectiveSupportTail = if ($PSBoundParameters.ContainsKey('Tail')) { $Tail } else { 2500 }
+            Export-HostSupportBundle $effectiveSupportTail (-not [string]::IsNullOrWhiteSpace($Destination))
         }
         'upgrade' {
             Assert-Administrator

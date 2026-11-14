@@ -80,7 +80,7 @@ On a graphical Ubuntu installation, double-click the executable `oscar.sh` launc
 
 ## Routine administration
 
-Double-click/open `oscar.bat` or `oscar.sh` with no arguments to keep an administration window open. Enter commands such as `status`, `start`, `stop`, `restart`, `logs -Service oscar` (Windows), or `logs --service oscar` (Ubuntu). Enter `exit` to close it. Passing arguments directly continues to work for scripts and experienced administrators:
+Double-click/open `oscar.bat` or `oscar.sh` with no arguments to keep an administration window open. Enter commands such as `status`, `start`, `stop`, `restart`, `logs -Service oscar`, `support-bundle` (Windows), or `logs --service oscar`, `support-bundle` (Ubuntu). Enter `exit` to close it. Passing arguments directly continues to work for scripts and experienced administrators:
 
 Windows:
 
@@ -90,6 +90,7 @@ Windows:
 .\oscar.bat stop
 .\oscar.bat restart
 .\oscar.bat logs -Service oscar
+.\oscar.bat support-bundle
 ```
 
 Ubuntu:
@@ -100,7 +101,10 @@ sudo bash oscar.sh start
 sudo bash oscar.sh stop
 sudo bash oscar.sh restart
 sudo bash oscar.sh logs --service oscar
+sudo bash oscar.sh support-bundle
 ```
+
+For day-to-day troubleshooting when the web UI is reachable, operators can also select **Help (`?`) -> Export Support Bundle** in the OSCAR Viewer navigation bar to download a redacted `.zip` combining browser diagnostics and rolling server logs; use `support-bundle` from the host CLI whenever containers are degraded or not booting.
 
 The launcher deliberately stops services in dependency order: gateway, OSCAR, then PostgreSQL.
 This lets OSCAR finish its bounded journal and database-backed module shutdown before the database

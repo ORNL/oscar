@@ -61,7 +61,7 @@ run_menu_command() {
     local command_name=${1:-}
     shift || true
     case "$command_name" in
-        init|verify|start|stop|restart|upgrade|backup|backup-verify|backup-prune|restore|archive)
+        init|verify|start|stop|restart|upgrade|backup|backup-verify|backup-prune|restore|archive|support-bundle)
             if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
                 bash "$setup_script" "$command_name" "$@"
             else
@@ -95,6 +95,7 @@ Enter a command and any options. Examples:
   status
   logs --service oscar --tail 200
   logs --service postgres --follow
+  support-bundle
   check
   verify
   upgrade

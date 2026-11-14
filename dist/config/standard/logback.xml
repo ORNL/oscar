@@ -8,6 +8,21 @@
         </encoder>
     </appender>
 
+    <!-- bounded rolling application log for support bundles -->
+    <property name="OSCAR_LOG_DIR" value="${OSCAR_LOG_DIR:-logs}" />
+    <appender name="OSCAR_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${OSCAR_LOG_DIR}/oscar.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${OSCAR_LOG_DIR}/oscar.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>5</maxHistory>
+            <totalSizeCap>50MB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level %logger{36} [%thread] - %msg%n</pattern>
+        </encoder>
+    </appender>
+
     <!-- individual module log files -->
     <property name="MODULE_ID" value="${MODULE_ID:-.}" />
     <appender name="MODULE_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
@@ -25,6 +40,7 @@
 
     <root level="info">
         <appender-ref ref="STDOUT" />
+        <appender-ref ref="OSCAR_FILE" />
     </root>
     <logger name="org.sensorhub" level="info">
         <appender-ref ref="MODULE_FILE" />

@@ -31,7 +31,9 @@ backup_directory_value=''
 prerequisites_mode=auto
 log_service=all
 log_tail=200
+log_tail_explicit=false
 log_follow=false
+support_output_path=''
 
 usage() {
     cat <<'EOF'
@@ -47,6 +49,7 @@ OSCAR deployment administration
   sudo ./oscar.sh upgrade [--adopt-legacy-volumes] [--adopt-legacy-storage-roots]
       [--backup-mode disabled|single] [--backup-dir ABSOLUTE_PATH]
   sudo ./oscar.sh logs [--service all|oscar|postgres|gateway] [--tail 200] [--follow]
+  sudo ./oscar.sh support-bundle [--tail 2500] [--output PATH]
   sudo ./oscar.sh backup
   sudo ./oscar.sh backup-verify BACKUP_ID
   sudo ./oscar.sh restore --backup BACKUP_ID --confirm BACKUP_ID
@@ -87,8 +90,9 @@ while (($#)); do
         --backup-dir) backup_directory_value=${2:?missing backup directory}; shift 2 ;;
         --prerequisites) prerequisites_mode=${2:?missing prerequisite mode}; shift 2 ;;
         --service) log_service=${2:?missing service}; shift 2 ;;
-        --tail) log_tail=${2:?missing tail count}; shift 2 ;;
+        --tail) log_tail=${2:?missing tail count}; log_tail_explicit=true; shift 2 ;;
         --follow) log_follow=true; shift ;;
+        --output|--destination) support_output_path=${2:?missing output path}; shift 2 ;;
         --help|-h) usage; exit 0 ;;
         *) fail "Unknown option: $1" ;;
     esac
@@ -998,6 +1002,474 @@ finalize_pending_fresh_init() {
     write_init_receipt "$deployment_id" COMPLETE
 }
 
+export_host_support_bundle() {
+    local effective_tail=$log_tail ts_compact generated_at target_zip target_parent stage_dir raw_dir helper_image container_ids cid cname
+    $log_tail_explicit || effective_tail=2500
+    [[ $effective_tail =~ ^[0-9]+$ ]] && ((effective_tail >= 1 && effective_tail <= 10000)) ||
+        fail '--tail must be between 1 and 10000.'
+    command -v python3 >/dev/null 2>&1 || fail 'python3 is required to package and redact the host support bundle.'
+
+    ts_compact=$(date -u +%Y%m%dT%H%M%SZ)
+    generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    if [[ -z $support_output_path ]]; then
+        local default_dir
+        default_dir=$(dirname "$script_dir")
+        if [[ -z $default_dir || $default_dir == / || ! -w $default_dir ]]; then
+            default_dir=${TMPDIR:-/tmp}
+        fi
+        target_zip="${default_dir%/}/oscar-host-support-${ts_compact}.zip"
+    elif [[ -d $support_output_path ]]; then
+        target_zip="${support_output_path%/}/oscar-host-support-${ts_compact}.zip"
+    else
+        target_zip=$support_output_path
+    fi
+    target_parent=$(dirname "$target_zip")
+    mkdir -p "$target_parent"
+    target_parent=$(CDPATH= cd -- "$target_parent" && pwd -P)
+    target_zip="$target_parent/$(basename "$target_zip")"
+    if [[ -f $script_dir/SHA256SUMS && ( $target_zip == "$script_dir"/* || $target_zip == "$script_dir" ) ]]; then
+        fail 'Choose an --output path outside the offline bundle directory so SHA256SUMS verification remains intact.'
+    fi
+    [[ ! -L $target_zip ]] || fail "Support bundle output path must not be a symlink: $target_zip"
+
+    stage_dir=$(mktemp -d "${TMPDIR:-/tmp}/oscar-support-bundle.XXXXXX")
+    raw_dir="$stage_dir/raw"
+    mkdir -p "$raw_dir/host" "$raw_dir/docker" "$raw_dir/logs" "$raw_dir/volume/module-logs" "$raw_dir/tls" "$raw_dir/archive"
+    cleanup_support_stage() { [[ -z ${stage_dir:-} ]] || rm -rf -- "$stage_dir"; }
+    trap cleanup_support_stage EXIT HUP INT TERM
+
+    heading 'Collecting OSCAR host support bundle'
+
+    {
+        printf 'Generated (UTC): %s\n' "$generated_at"
+        printf 'Release directory: %s\n' "$script_dir"
+        printf 'Release version (.env.example): %s\n' "$(release_version 2>/dev/null || echo unknown)"
+        printf 'Effective user: id=%s sudo_user=%s\n' "$(id -u)" "${SUDO_USER:-none}"
+        printf '\n--- uname -a ---\n'
+        uname -a 2>&1 || true
+        if [[ -r /etc/os-release ]]; then
+            printf '\n--- /etc/os-release ---\n'
+            cat /etc/os-release 2>&1 || true
+        fi
+        printf '\n--- uptime ---\n'
+        uptime 2>&1 || true
+        if command -v free >/dev/null 2>&1; then
+            printf '\n--- free -h ---\n'
+            free -h 2>&1 || true
+        fi
+        printf '\n--- df -h ---\n'
+        df -h 2>&1 || true
+        if command -v docker >/dev/null 2>&1; then
+            printf '\n--- docker version ---\n'
+            docker version 2>&1 || true
+            printf '\n--- docker compose version ---\n'
+            docker compose version 2>&1 || true
+        else
+            printf '\nDocker CLI: not installed\n'
+        fi
+    } >"$raw_dir/host/system-info.txt"
+
+    if [[ -r $script_dir/.env && ! -L $script_dir/.env ]]; then
+        cp "$script_dir/.env" "$raw_dir/host/env.raw" 2>/dev/null || true
+    fi
+    if [[ -r $script_dir/.oscar-init-state && ! -L $script_dir/.oscar-init-state ]]; then
+        cp "$script_dir/.oscar-init-state" "$raw_dir/host/init-state.txt" 2>/dev/null || true
+    fi
+
+    if [[ -r $script_dir/tls/server.crt && ! -L $script_dir/tls/server.crt ]]; then
+        if command -v openssl >/dev/null 2>&1; then
+            openssl x509 -in "$script_dir/tls/server.crt" -noout -subject -issuer -dates -fingerprint -sha256 -ext subjectAltName \
+                >"$raw_dir/tls/certificate-info.txt" 2>&1 || true
+        elif docker_ready && container_image_exists "$(oscar_image)"; then
+            docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+                --workdir / --user 0:0 --entrypoint openssl --volume "$script_dir/tls:/tls:ro" "$(oscar_image)" \
+                x509 -in /tls/server.crt -noout -subject -issuer -dates -fingerprint -sha256 -ext subjectAltName \
+                >"$raw_dir/tls/certificate-info.txt" 2>&1 || true
+        fi
+    fi
+
+    if docker_ready; then
+        docker ps -a --no-trunc --filter label=com.docker.compose.project=oscar \
+            >"$raw_dir/docker/compose-ps.txt" 2>&1 || true
+        docker volume ls --filter name=oscar \
+            >"$raw_dir/docker/volumes.txt" 2>&1 || true
+
+        container_ids=$(docker ps -aq --filter label=com.docker.compose.project=oscar 2>/dev/null || true)
+        if [[ -n $container_ids ]]; then
+            # shellcheck disable=SC2086
+            docker inspect $container_ids >"$raw_dir/docker/inspect.raw.json" 2>/dev/null || true
+            for cid in $container_ids; do
+                cname=$(docker inspect --format '{{.Name}}' "$cid" 2>/dev/null | sed 's|^/||; s|[^A-Za-z0-9._-]|_|g')
+                [[ -n $cname ]] || cname=$cid
+                docker logs --timestamps --tail "$effective_tail" "$cid" \
+                    >"$raw_dir/logs/${cname}.log" 2>&1 || true
+            done
+        fi
+
+        if docker volume inspect oscar_oscar_state >/dev/null 2>&1; then
+            helper_image=$(oscar_image)
+            if ! container_image_exists "$helper_image"; then
+                helper_image=$(docker images --format '{{.Repository}}:{{.Tag}}' | awk '/^oscar:/ { print; exit }')
+            fi
+            if [[ -n $helper_image ]] && container_image_exists "$helper_image"; then
+                docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+                    --workdir / --user 10001:10001 --entrypoint sh \
+                    --volume oscar_oscar_state:/state:ro \
+                    "$helper_image" -eu -c '
+                        tail_count=$1
+                        if [ -f /state/config.json ] && [ ! -L /state/config.json ]; then
+                            printf "FILE:config.raw.json:"
+                            head -c 4194304 /state/config.json | base64 | tr -d "\r\n"
+                            printf "\n"
+                        fi
+                        if [ -f /state/logs/oscar.log ] && [ ! -L /state/logs/oscar.log ]; then
+                            printf "FILE:oscar.log:"
+                            tail -n "$tail_count" /state/logs/oscar.log | base64 | tr -d "\r\n"
+                            printf "\n"
+                        fi
+                        if [ -d /state/.moduledata ]; then
+                            count=0
+                            for mod_log in /state/.moduledata/*/log.txt; do
+                                [ -f "$mod_log" ] && [ ! -L "$mod_log" ] || continue
+                                mod_name=$(basename "$(dirname "$mod_log")" | tr -c "A-Za-z0-9._-" "_")
+                                printf "FILE:module-logs/%s.log:" "$mod_name"
+                                tail -n 200 "$mod_log" | base64 | tr -d "\r\n"
+                                printf "\n"
+                                count=$((count + 1))
+                                [ "$count" -lt 10 ] || break
+                            done
+                        fi
+                    ' support-volume-extract "$effective_tail" >"$raw_dir/volume/extracted.b64" 2>/dev/null || true
+            fi
+        fi
+
+        if [[ ${EUID:-$(id -u)} -eq 0 ]] && configured; then
+            bash "$script_dir/oscar-storage.sh" archive status >"$raw_dir/archive/status.txt" 2>&1 || true
+        fi
+    fi
+
+    python3 - "$raw_dir" "$target_zip" "$generated_at" "$(release_version 2>/dev/null || echo unknown)" "$effective_tail" <<'PY'
+import base64
+import json
+import os
+import re
+import sys
+import zipfile
+from pathlib import Path
+
+raw_dir = Path(sys.argv[1])
+target_zip = Path(sys.argv[2])
+generated_at = sys.argv[3]
+release_ver = sys.argv[4]
+tail_lines = int(sys.argv[5])
+
+REDACTED = "[REDACTED]"
+REDACTED_SECRET_FILE = "[REDACTED_SECRET_FILE]"
+REDACTED_PRIVATE_KEY = "[REDACTED_PRIVATE_KEY]"
+MAX_ZIP_BYTES = 25 * 1024 * 1024
+
+SAFE_KEYS = {"cookiename", "keyalias", "idprovidertype", "authmethod", "securecookie"}
+SECRET_FILE_KEYS = {"passwordfile", "secretfile", "privatekeyfile", "keystorepath", "truststorepath"}
+SENSITIVE_EXACT = {
+    "password", "passwd", "pwd", "secret", "token", "accesstoken", "access_token",
+    "refreshtoken", "refresh_token", "idtoken", "id_token", "apikey", "api_key",
+    "authorization", "cookie", "cookies", "set-cookie", "sessioncookie", "oscar_session",
+    "jsessionid", "privatekey", "private_key", "passphrase", "credentials",
+    "clientsecret", "client_secret", "keystorepassword", "truststorepassword", "hmac",
+}
+
+PEM_RE = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----")
+URI_RE = re.compile(r"((?:jdbc:)?[a-zA-Z][a-zA-Z0-9+.-]*://)([^/@\s\"'<>]+)@")
+AUTH_HDR_RE = re.compile(r"(?i)(\bAuthorization\s*[:=]\s*(?:Basic|Bearer|Digest|Token)\s+)([^\s,;\"']+)")
+AUTH_SCHEME_RE = re.compile(r"(?i)\b(Bearer|Basic)\s+([A-Za-z0-9._~+/=-]{12,})")
+COOKIE_HDR_RE = re.compile(r"(?i)(\b(?:Cookie|Set-Cookie)\s*:\s*)([A-Za-z0-9._-]+)=([^;\s\"',]+)((?:\s*;\s*[A-Za-z0-9._-]+=[^;\s\"',]+)*)")
+COOKIE_PAIR_RE = re.compile(r"([A-Za-z0-9._-]+)=([^;\s\"',]+)")
+SESSION_RE = re.compile(r"(?i)\b(OSCAR_SESSION|JSESSIONID)\s*=\s*([^;\s\"',]+)")
+QUERY_RE = re.compile(r"(?i)([?&](?:password|passwd|pwd|token|access_token|refresh_token|api_key|apikey|secret|auth|session|sig|signature)=)([^&\s\"'#]+)")
+KV_RE = re.compile(r"(?i)(\"?\b(?:password|passwd|pwd|secret|api[_-]?key|(?:(?:access|refresh|id|auth|session|csrf|api)[_-]?)?token|private[_-]?key|passphrase|db_password|admin_password)\b\"?\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|[^\s,;}\]\"]+)")
+EMAIL_RE = re.compile(r"\b([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b")
+
+stats = {
+    "jsonFieldsRedacted": 0,
+    "uriCredentialsRedacted": 0,
+    "authHeadersRedacted": 0,
+    "cookiesRedacted": 0,
+    "querySecretsRedacted": 0,
+    "keyValueSecretsRedacted": 0,
+    "pemBlocksRedacted": 0,
+    "emailsMasked": 0,
+    "containerEnvStripped": 0,
+}
+
+def is_sensitive_key(k: str) -> bool:
+    low = k.strip().lower()
+    if low in SAFE_KEYS:
+        return False
+    if low in SENSITIVE_EXACT:
+        return True
+    return low.endswith(("password", "passwd", "secret", "token", "apikey", "api_key", "privatekey", "private_key", "passphrase"))
+
+def redact_text(text: str) -> str:
+    if not text:
+        return ""
+    out, n = PEM_RE.subn(REDACTED_PRIVATE_KEY, text)
+    stats["pemBlocksRedacted"] += n
+    out, n = URI_RE.subn(lambda m: f"{m.group(1)}{REDACTED}@", out)
+    stats["uriCredentialsRedacted"] += n
+    out, n = AUTH_HDR_RE.subn(lambda m: f"{m.group(1)}{REDACTED}", out)
+    stats["authHeadersRedacted"] += n
+    out, n = AUTH_SCHEME_RE.subn(lambda m: f"{m.group(1)} {REDACTED}", out)
+    stats["authHeadersRedacted"] += n
+    def _cookie_hdr(m):
+        tail = COOKIE_PAIR_RE.sub(rf"\1={REDACTED}", m.group(4) or "")
+        return f"{m.group(1)}{m.group(2)}={REDACTED}{tail}"
+    out, n = COOKIE_HDR_RE.subn(_cookie_hdr, out)
+    stats["cookiesRedacted"] += n
+    out, n = SESSION_RE.subn(lambda m: f"{m.group(1)}={REDACTED}", out)
+    stats["cookiesRedacted"] += n
+    out, n = QUERY_RE.subn(lambda m: f"{m.group(1)}{REDACTED}", out)
+    stats["querySecretsRedacted"] += n
+    def _kv(m):
+        val = m.group(2)
+        if not val or val in ('""', "''") or REDACTED in val:
+            return m.group(0)
+        stats["keyValueSecretsRedacted"] += 1
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
+            return f"{m.group(1)}{val[0]}{REDACTED}{val[0]}"
+        return f"{m.group(1)}{REDACTED}"
+    out = KV_RE.sub(_kv, out)
+    out, n = EMAIL_RE.subn(lambda m: f"{m.group(1)}***@{m.group(2)}", out)
+    stats["emailsMasked"] += n
+    return out
+
+def redact_json(node):
+    if isinstance(node, list):
+        return [redact_json(x) for x in node]
+    if isinstance(node, dict):
+        res = {}
+        for k, v in node.items():
+            low = k.strip().lower()
+            if low in SECRET_FILE_KEYS:
+                if isinstance(v, str) and v.strip():
+                    stats["jsonFieldsRedacted"] += 1
+                    res[k] = REDACTED_SECRET_FILE
+                else:
+                    res[k] = v
+            elif is_sensitive_key(k):
+                if v in (None, ""):
+                    res[k] = v
+                else:
+                    stats["jsonFieldsRedacted"] += 1
+                    res[k] = REDACTED
+            else:
+                res[k] = redact_json(v)
+        return res
+    if isinstance(node, str):
+        return redact_text(node)
+    return node
+
+entries: dict[str, bytes] = {}
+error_lines = 0
+warn_lines = 0
+highlights: list[str] = []
+
+def add_text_entry(zip_path: str, text: str, scan_highlights: bool = False):
+    global error_lines, warn_lines
+    sanitized = redact_text(text)
+    if scan_highlights:
+        for line in sanitized.splitlines():
+            if " ERROR " in line or line.startswith("ERROR") or "Exception:" in line or "FATAL" in line:
+                error_lines += 1
+                highlights.append(f"[{zip_path}] {line[:360]}")
+                if len(highlights) > 30:
+                    highlights.pop(0)
+            elif " WARN " in line or line.startswith("WARN"):
+                warn_lines += 1
+                highlights.append(f"[{zip_path}] {line[:360]}")
+                if len(highlights) > 30:
+                    highlights.pop(0)
+    entries[zip_path] = (sanitized.rstrip("\n") + "\n").encode("utf-8")
+
+sys_info = raw_dir / "host" / "system-info.txt"
+if sys_info.is_file():
+    add_text_entry("host/system-info.txt", sys_info.read_text(encoding="utf-8", errors="replace"))
+
+env_raw = raw_dir / "host" / "env.raw"
+configured_ver = None
+if env_raw.is_file():
+    env_lines = []
+    for raw_line in env_raw.read_text(encoding="utf-8", errors="replace").splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in raw_line:
+            env_lines.append(redact_text(raw_line))
+            continue
+        k, v = raw_line.split("=", 1)
+        if k.strip() == "OSCAR_VERSION" and v.strip():
+            configured_ver = v.strip()
+        if is_sensitive_key(k) or "SECRET" in k.upper() or "KEY" in k.upper() and "BACKUP_MODE" not in k.upper():
+            if v.strip():
+                stats["keyValueSecretsRedacted"] += 1
+                env_lines.append(f"{k}={REDACTED}")
+            else:
+                env_lines.append(f"{k}=")
+        else:
+            env_lines.append(f"{k}={redact_text(v)}")
+    entries["host/env.redacted.txt"] = ("\n".join(env_lines) + "\n").encode("utf-8")
+
+init_state = raw_dir / "host" / "init-state.txt"
+if init_state.is_file():
+    add_text_entry("host/init-state.txt", init_state.read_text(encoding="utf-8", errors="replace"))
+
+cert_info = raw_dir / "tls" / "certificate-info.txt"
+if cert_info.is_file():
+    add_text_entry("tls/certificate-info.txt", cert_info.read_text(encoding="utf-8", errors="replace"))
+
+for dfile in ("compose-ps.txt", "volumes.txt"):
+    p = raw_dir / "docker" / dfile
+    if p.is_file():
+        add_text_entry(f"docker/{dfile}", p.read_text(encoding="utf-8", errors="replace"))
+
+container_summaries = []
+inspect_raw = raw_dir / "docker" / "inspect.raw.json"
+if inspect_raw.is_file():
+    try:
+        parsed_inspect = json.loads(inspect_raw.read_text(encoding="utf-8", errors="replace"))
+        sanitized_inspect = []
+        for item in parsed_inspect if isinstance(parsed_inspect, list) else []:
+            if not isinstance(item, dict):
+                continue
+            cfg = item.get("Config") or {}
+            if "Env" in cfg and cfg["Env"]:
+                stats["containerEnvStripped"] += len(cfg["Env"])
+            state = item.get("State") or {}
+            summary_obj = {
+                "name": (item.get("Name") or "").lstrip("/"),
+                "image": cfg.get("Image"),
+                "created": item.get("Created"),
+                "status": state.get("Status"),
+                "running": state.get("Running"),
+                "restarting": state.get("Restarting"),
+                "oomKilled": state.get("OOMKilled"),
+                "exitCode": state.get("ExitCode"),
+                "error": redact_text(str(state.get("Error") or "")),
+                "startedAt": state.get("StartedAt"),
+                "finishedAt": state.get("FinishedAt"),
+                "restartCount": item.get("RestartCount"),
+                "health": redact_json(state.get("Health")) if state.get("Health") else None,
+                "mounts": [
+                    {
+                        "type": m.get("Type"),
+                        "name": m.get("Name"),
+                        "destination": m.get("Destination"),
+                        "rw": m.get("RW"),
+                    }
+                    for m in (item.get("Mounts") or [])
+                    if isinstance(m, dict) and not str(m.get("Destination") or "").startswith("/run/secrets")
+                ],
+            }
+            container_summaries.append(summary_obj)
+            sanitized_inspect.append(summary_obj)
+        entries["docker/inspect.redacted.json"] = (json.dumps(sanitized_inspect, indent=2) + "\n").encode("utf-8")
+    except Exception as exc:
+        add_text_entry("docker/inspect.error.txt", str(exc))
+
+logs_dir = raw_dir / "logs"
+if logs_dir.is_dir():
+    for lf in sorted(logs_dir.glob("*.log")):
+        add_text_entry(f"logs/{lf.name}", lf.read_text(encoding="utf-8", errors="replace"), scan_highlights=True)
+
+vol_root = (raw_dir / "volume").resolve()
+extracted_b64 = vol_root / "extracted.b64"
+if extracted_b64.is_file():
+    for raw_b64_line in extracted_b64.read_text(encoding="ascii", errors="ignore").splitlines():
+        if not raw_b64_line.startswith("FILE:"):
+            continue
+        parts = raw_b64_line.split(":", 2)
+        if len(parts) != 3:
+            continue
+        rel_name, b64_payload = parts[1], parts[2]
+        dest = (vol_root / rel_name).resolve()
+        if vol_root not in dest.parents and dest != vol_root:
+            continue
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(base64.b64decode(b64_payload))
+        except Exception:
+            pass
+
+vol_cfg = raw_dir / "volume" / "config.raw.json"
+if vol_cfg.is_file():
+    try:
+        cfg_parsed = json.loads(vol_cfg.read_text(encoding="utf-8", errors="replace"))
+        entries["volume/config.redacted.json"] = (json.dumps(redact_json(cfg_parsed), indent=2) + "\n").encode("utf-8")
+    except Exception as exc:
+        add_text_entry("volume/config.error.txt", str(exc))
+
+vol_log = raw_dir / "volume" / "oscar.log"
+if vol_log.is_file():
+    add_text_entry("volume/oscar.log", vol_log.read_text(encoding="utf-8", errors="replace"), scan_highlights=True)
+
+mod_logs_dir = raw_dir / "volume" / "module-logs"
+if mod_logs_dir.is_dir():
+    for mf in sorted(mod_logs_dir.glob("*.log")):
+        add_text_entry(f"volume/module-logs/{mf.name}", mf.read_text(encoding="utf-8", errors="replace"), scan_highlights=True)
+
+arch_status = raw_dir / "archive" / "status.txt"
+if arch_status.is_file() and arch_status.stat().st_size > 0:
+    add_text_entry("archive/status.txt", arch_status.read_text(encoding="utf-8", errors="replace"))
+
+total_redactions = sum(stats.values())
+redaction_report = {
+    "schemaVersion": 1,
+    "generatedAt": generated_at,
+    "policy": "automatic-edge-redaction",
+    "bundleSource": "host-cli",
+    "neverCollected": ["secrets/*", "/run/secrets/*", "tls/*.key", ".keystore/*", "hivemq-data/*"],
+    "counts": {**stats, "totalRedactions": total_redactions},
+}
+summary = {
+    "schemaVersion": 1,
+    "bundleType": "oscar-support-bundle",
+    "bundleSource": "host-cli",
+    "platform": "linux",
+    "generatedAt": generated_at,
+    "releaseVersion": release_ver,
+    "configuredVersion": configured_ver or release_ver,
+    "tailLinesRequested": tail_lines,
+    "containers": container_summaries,
+    "logs": {
+        "errorLineCount": error_lines,
+        "warnLineCount": warn_lines,
+        "recentHighlights": highlights,
+    },
+    "redaction": {
+        "applied": True,
+        "totalRedactions": total_redactions,
+    },
+}
+
+tmp_zip = target_zip.with_name(target_zip.name + ".tmp")
+with zipfile.ZipFile(tmp_zip, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+    zf.writestr("summary.json", json.dumps(summary, indent=2) + "\n")
+    zf.writestr("redaction-report.json", json.dumps(redaction_report, indent=2) + "\n")
+    for name, payload in entries.items():
+        if tmp_zip.stat().st_size + len(payload) // 2 > MAX_ZIP_BYTES - 65536:
+            break
+        zf.writestr(name, payload)
+
+os.chmod(tmp_zip, 0o600)
+os.replace(tmp_zip, target_zip)
+PY
+
+    chmod 0600 "$target_zip"
+    if [[ ${EUID:-$(id -u)} -eq 0 && -n ${SUDO_UID:-} && -n ${SUDO_GID:-} && ${SUDO_UID} != 0 ]]; then
+        chown "${SUDO_UID}:${SUDO_GID}" "$target_zip" 2>/dev/null || true
+    fi
+    cleanup_support_stage
+    trap - EXIT HUP INT TERM
+    printf 'Support bundle written to: %s\n' "$target_zip"
+}
+
 case "$command_name" in
     help) usage ;;
     check)
@@ -1123,6 +1595,9 @@ case "$command_name" in
         $log_follow && log_args+=(--follow)
         [[ $log_service == all ]] || log_args+=("$log_service")
         compose "${log_args[@]}"
+        ;;
+    support-bundle)
+        export_host_support_bundle
         ;;
     upgrade)
         require_admin

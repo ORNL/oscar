@@ -92,7 +92,7 @@ if ! rm -f -- "${native_exec_probe}"; then
     exit 1
 fi
 
-for directory in db files hivemq-config hivemq-data .moduledata; do
+for directory in db files logs hivemq-config hivemq-data .moduledata; do
     mkdir -p "${STATE_DIR}/${directory}"
 done
 
@@ -152,6 +152,7 @@ exec java ${JAVA_OPTS:-} \
     -Djava.io.tmpdir="${NATIVE_TMP_DIR}" \
     -Dorg.bytedeco.javacpp.cachedir="${NATIVE_TMP_DIR}/javacpp" \
     -Doscar.data.tmpdir=/tmp \
+    -DOSCAR_LOG_DIR="${STATE_DIR}/logs" \
     -Dlogback.configurationFile=/opt/oscar/logback.xml \
     -cp '/opt/oscar/lib/*' \
     -Djava.system.class.loader=org.sensorhub.utils.NativeClassLoader \

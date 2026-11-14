@@ -48,6 +48,7 @@ echo   restart
 echo   status
 echo   logs -Service oscar -Tail 200
 echo   logs -Service postgres -Follow
+echo   support-bundle
 echo   check
 echo   host-check
 echo   prepare-host

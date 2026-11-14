@@ -353,6 +353,23 @@ launcher and storage commands wait for this stronger health signal automatically
 result means at least one required module failed to complete startup; inspect the OSCAR container
 logs for that module.
 
+### Troubleshooting support bundles (Viewer UI and host CLI)
+
+OSCAR writes bounded rolling server logs inside `oscar_oscar_state` at `/var/lib/oscar/logs/oscar.log` (`10 MB` per file, `5` rotated archives, `50 MB` total cap) and provides two redacted `.zip` export paths so operators and administrators can collect diagnostics whether the web console is healthy or the stack cannot start:
+
+1. **In-UI 1-click export (`Help (?) -> Export Support Bundle`):** Signed-in operators with `reports` read permission can select **Help (`?`)** in the OSCAR Viewer navigation bar and click **Export Support Bundle** (also available on the **Troubleshooting & FAQ** tab). The browser merges its bounded flight-recorder ring buffer (`client/client-diagnostics.json` — recent warnings/errors, uncaught exceptions, failed or slow `>= 2500 ms` `fetch` timings, and node connectivity summary) with `/sensorhub/buckets/reports/support-bundle` (`backend/oscar.log`, `backend/module-logs/*.log`, `backend/modules.json` including nested lane/RPM/camera driver states and stack traces, `backend/jvm-diagnostics.json`, `backend/storage-summary.json`, and `backend/config.redacted.json`) into `oscar-support-<UTC>.zip` (`<= 15 MB`). If the backend is unreachable, the Viewer automatically downloads `oscar-client-support-<UTC>.zip` with host CLI instructions.
+2. **External host CLI (`support-bundle`):** Even if `.env` is incomplete or containers are stopped or crash-looping, run:
+
+```powershell
+.\oscar.bat support-bundle [-Tail 2500] [-Destination PATH]
+```
+
+```sh
+sudo bash oscar.sh support-bundle [--tail 2500] [--output PATH]
+```
+
+   The CLI collects host OS/memory/disk/WSL 2 metadata (`host/system-info.txt`), redacted `.env` (`host/env.redacted.txt`), public X.509 certificate dates/SANs/SHA-256 fingerprint (`tls/certificate-info.txt`), `docker/compose-ps.txt`, `docker/volumes.txt`, sanitized `docker/inspect.redacted.json` (with `Config.Env` and `/run/secrets` mounts stripped), `logs/*.log`, read-only `oscar_oscar_state` volume logs and redacted `config.json` (`volume/*`), `archive/status.txt` when configured, `summary.json`, and `redaction-report.json` into `oscar-host-support-<UTC>.zip` (`<= 25 MB`, written outside the release directory by default so offline `SHA256SUMS` inventories remain untouched). Both export paths automatically mask passwords, tokens, URI credentials, `Authorization`/`Cookie` headers, query secrets, PEM private keys, and email addresses, and never collect `secrets/*`, `/run/secrets/*`, `tls/*.key`, or `.keystore/*`.
+
 ## Security verification
 
 After startup:
