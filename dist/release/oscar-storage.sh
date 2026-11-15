@@ -1762,7 +1762,7 @@ create_backup() (
          done
          tar --exclude="./archive" --exclude="./backups" --exclude="./duckdb-tmp" --exclude="./lib" --exclude="./web" \
              --exclude="./rules" --exclude="./models" --exclude="./documentation" --exclude="./trusted_certificates" \
-             --exclude="./config" --exclude="./logback.xml" -C /state -czf /output.tar.gz .'
+             --exclude="./config" --exclude="./logback.xml" --exclude="./.cache" -C /state -czf /output.tar.gz .'
     docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
         --user 10001:10001 --entrypoint sh --volume "$archive_dir:/archive:ro" \
         --volume "$work/archive.tar.gz:/output.tar.gz" "$image" -eu -c \

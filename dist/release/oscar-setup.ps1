@@ -1314,7 +1314,7 @@ function Invoke-BootstrapSql([string]$Sql) {
     $normalizedSql = $Sql.Replace("`r`n", "`n").Replace("`r", "`n").TrimEnd([char[]]@([char]10))
     do { $delimiter = 'OSCAR_SQL_' + [Guid]::NewGuid().ToString('N') }
     while ($normalizedSql -match "(?m)^$([Regex]::Escape($delimiter))$")
-    $wrapper = 'PGPASSWORD=$(cat /run/secrets/postgres_bootstrap_password); export PGPASSWORD; exec psql --set=ON_ERROR_STOP=1 --username oscar_bootstrap --dbname gis --tuples-only --no-align --file=-'
+    $wrapper = 'PGPASSWORD=$(dd if=/run/secrets/postgres_bootstrap_password bs=4096 status=none); export PGPASSWORD; exec psql --set=ON_ERROR_STOP=1 --username oscar_bootstrap --dbname gis --tuples-only --no-align --file=-'
     $shellInput = "$wrapper <<'$delimiter'`n$normalizedSql`n$delimiter"
     $output = Get-ComposeShellInputOutput $shellInput @('exec', '-T', 'postgres', 'sh', '-seu')
     return (($output -join "`n").Trim())

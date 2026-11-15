@@ -1243,7 +1243,7 @@ function New-PsqlShellInput([string]$Sql, [switch]$Table) {
     do { $delimiter = 'OSCAR_SQL_' + [Guid]::NewGuid().ToString('N') }
     while ($normalizedSql -match "(?m)^$([Regex]::Escape($delimiter))$")
     $psqlFlags = if ($Table) { '' } else { ' --quiet --tuples-only --no-align' }
-    $command = 'PGPASSWORD=$(cat /run/secrets/postgres_bootstrap_password); PGOPTIONS=-csearch_path=oscar,public; export PGPASSWORD PGOPTIONS; exec psql --set=ON_ERROR_STOP=1 --username oscar_bootstrap --dbname gis' + $psqlFlags + ' --file=-'
+    $command = 'PGPASSWORD=$(dd if=/run/secrets/postgres_bootstrap_password bs=4096 status=none); PGOPTIONS=-csearch_path=oscar,public; export PGPASSWORD PGOPTIONS; exec psql --set=ON_ERROR_STOP=1 --username oscar_bootstrap --dbname gis' + $psqlFlags + ' --file=-'
     return "$command <<'$delimiter'`n$normalizedSql`n$delimiter"
 }
 
@@ -1850,7 +1850,7 @@ function Write-Checksums([string]$Root) {
 }
 
 function Get-ChecksumHmac([string]$Root, [string]$Image, [switch]$ReadOnly) {
-    $script = 'key=$(cat /backup-key.txt); openssl dgst -sha256 -hmac "$key" -binary /backup/SHA256SUMS | openssl base64 -A'
+    $script = 'key=$(dd if=/backup-key.txt bs=4096 status=none); openssl dgst -sha256 -hmac "$key" -binary /backup/SHA256SUMS | openssl base64 -A'
     $output = Get-DockerShellInputOutput $script @('run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--workdir', '/', '--user', '0', '--entrypoint', 'sh', '--volume', "${Root}:/backup:ro", '--volume', "${BackupKeyFile}:/backup-key.txt:ro", $Image, '-seu')
     $tag = (($output -join '').Trim())
     if ($tag -notmatch '^[A-Za-z0-9+/]{43}=$') { Fail 'Could not calculate a valid backup authentication tag.' }
@@ -1921,7 +1921,7 @@ function Get-JournalConfirmationHmac([string]$ReceiptPath, [string]$Image) {
     if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
         Fail 'Journal-confirmation receipt payload is missing or unsafe.'
     }
-    $script = 'key=$(cat /backup-key.txt); head -n 4 /journal-confirmation | openssl dgst -sha256 -hmac "$key" -binary | openssl base64 -A'
+    $script = 'key=$(dd if=/backup-key.txt bs=4096 status=none); head -n 4 /journal-confirmation | openssl dgst -sha256 -hmac "$key" -binary | openssl base64 -A'
     $output = Get-DockerShellInputOutput $script @(
         'run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL',
         '--security-opt', 'no-new-privileges', '--workdir', '/', '--user', '0', '--entrypoint', 'sh',
@@ -1994,7 +1994,7 @@ function Get-CurrentPointerHmac([string]$PointerPath, [string]$Image) {
     if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
         Fail 'CURRENT pointer payload is missing or unsafe.'
     }
-    $script = 'key=$(cat /backup-key.txt); head -n 3 /current | openssl dgst -sha256 -hmac "$key" -binary | openssl base64 -A'
+    $script = 'key=$(dd if=/backup-key.txt bs=4096 status=none); head -n 3 /current | openssl dgst -sha256 -hmac "$key" -binary | openssl base64 -A'
     $output = Get-DockerShellInputOutput $script @(
         'run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
         '--workdir', '/', '--user', '0', '--entrypoint', 'sh', '--volume', "${PointerPath}:/current:ro",
@@ -2308,7 +2308,7 @@ function New-Backup {
             Fail 'Could not resolve the running PostgreSQL container for pg_basebackup.'
         }
         $postgresContainer = $postgresContainers[0]
-        $basebackup = 'PGPASSWORD=$(cat /run/secrets/postgres_bootstrap_password); export PGPASSWORD; exec pg_basebackup --pgdata=/backup --username=oscar_bootstrap --dbname="host=127.0.0.1 port=5432 dbname=gis" --format=plain --wal-method=stream --checkpoint=fast'
+        $basebackup = 'PGPASSWORD=$(dd if=/run/secrets/postgres_bootstrap_password bs=4096 status=none); export PGPASSWORD; exec pg_basebackup --pgdata=/backup --username=oscar_bootstrap --dbname="host=127.0.0.1 port=5432 dbname=gis" --format=plain --wal-method=stream --checkpoint=fast'
         Invoke-DockerShellInput $basebackup @('run', '--rm', '--network', "container:$postgresContainer", '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--tmpfs', '/tmp:rw,noexec,nosuid,nodev', '--user', '999:999', '--entrypoint', 'sh', '--volume', "$(Join-Path $work 'postgres'):/backup", '--volume', "$(Join-Path $ScriptRoot 'secrets/postgres-bootstrap-password.txt'):/run/secrets/postgres_bootstrap_password:ro", $postgresImage, '-seu')
         Invoke-Compose @('stop', 'postgres')
         $stateArchive = @'
@@ -2319,7 +2319,7 @@ for entry in lib web rules models documentation trusted_certificates config logb
         echo "Reserved OSCAR image-owned state path is not the expected symlink: $entry" >&2; exit 1
     fi
 done
-tar --exclude='./archive' --exclude='./backups' --exclude='./duckdb-tmp' --exclude='./lib' --exclude='./web' --exclude='./rules' --exclude='./models' --exclude='./documentation' --exclude='./trusted_certificates' --exclude='./config' --exclude='./logback.xml' -C /state -czf /output.tar.gz .
+tar --exclude='./archive' --exclude='./backups' --exclude='./duckdb-tmp' --exclude='./lib' --exclude='./web' --exclude='./rules' --exclude='./models' --exclude='./documentation' --exclude='./trusted_certificates' --exclude='./config' --exclude='./logback.xml' --exclude='./.cache' -C /state -czf /output.tar.gz .
 '@
         Invoke-DockerShellInput $stateArchive @('run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--user', '10001:10001', '--entrypoint', 'sh', '--volume', 'oscar_oscar_state:/state:ro', '--volume', "$(Join-Path $work 'oscar-state.tar.gz'):/output.tar.gz", $image, '-seu')
         Invoke-DockerShellInput "tar --exclude='./.oscar-storage-root' -C /archive -czf /output.tar.gz ." @('run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--user', '10001:10001', '--entrypoint', 'sh', '--volume', "${ArchiveDirectory}:/archive:ro", '--volume', "$(Join-Path $work 'archive.tar.gz'):/output.tar.gz", $image, '-seu')
