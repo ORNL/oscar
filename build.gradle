@@ -197,6 +197,14 @@ distributions{
             into("osh-node-oscar/web") {
                 from 'web/oscar-viewer/web'
             }
+            into("osh-node-oscar/web/video-guides") {
+                from('docs/video-guides') {
+                    include 'index.html'
+                    include 'videos/*.mp4'
+                    include 'captions/*.vtt'
+                    include 'captions/*.srt'
+                }
+            }
             into("osh-node-oscar/") {
                 from 'README.md'
                 from 'changelog.md'

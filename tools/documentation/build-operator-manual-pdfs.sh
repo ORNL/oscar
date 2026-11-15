@@ -146,6 +146,9 @@ text = "\n".join(lines).lstrip()
 # heading prefixes in the PDF-only copy (for example #8-operate... becomes
 # #operate...). The generated Pandoc table of contents uses the same targets.
 text = re.sub(r"\]\(#\d+-", "](#", text)
+# Interactive HTML5 <video> disclosures render in SensorHub Admin's README panel;
+# strip them from the printable PDF source so static print layout stays clean.
+text = re.sub(r"<details class=\"oscar-video-guide\">[\s\S]*?</details>\n?", "", text)
 text = text.replace(raw_prefix, image_dir.as_uri() + "/")
 destination.write_text(text, encoding="utf-8")
 PY

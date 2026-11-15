@@ -14,7 +14,11 @@ Every module starts immediately at `00:00` with the workflow action, runs under 
 | Resolution & Framerate | `1920x1080` (`1080p`) capped at `30 FPS` peak variable framerate (VFR) |
 | Accessibility | Embedded MP4 `mov_text` soft captions + standalone `.vtt` and `.srt` files + 3-to-4-step Markdown blocks |
 
-> **Interactive HTML5 Player with Closed Captions:** In a source checkout with submodules initialized, open `docs/video-guides/index.html` in any browser to watch all 18 modules with synchronized closed captions enabled by default.
+> **Interactive HTML5 Player & In-App Contextual Video Assistance:**
+> - **Source checkouts:** With submodules initialized, open `docs/video-guides/index.html` in any browser to watch all 18 modules with synchronized closed captions enabled by default.
+> - **Running OSCAR 3.11.0 deployments (offline-ready):** All 18 MP4 recordings and WebVTT/SRT captions are bundled directly in the OSCAR web root (`osh-node-oscar/web/video-guides/`) and served over TLS with HTTP byte-range streaming and zero idle network load:
+>   - **OSCAR Viewer (`?` Help Dialog):** Click `?` on any console page to watch route-matched workflow videos inline with closed captions, trigger per-card/per-glossary video walkthroughs, or open the full local catalog at `/video-guides/index.html`.
+>   - **SensorHub Admin (`/sensorhub/admin`):** Open any supported module's **README** tab (`OSCAR Service`, `Lane Sensor System`, `Rapiscan RPM`, `FFmpeg Video`, or `Durable Daily File Journal`) and expand the collapsed `Video guide (#XX)` disclosures on demand.
 
 ## Workflow Catalog
 

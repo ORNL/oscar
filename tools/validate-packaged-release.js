@@ -204,6 +204,9 @@ if (offline) {
 } else if (!fs.existsSync(standardConfigPath)) {
     fail('missing osh-node-oscar/config.json');
 } else {
+    if (!fs.existsSync(path.join(root, 'osh-node-oscar', 'web', 'video-guides', 'index.html'))) {
+        fail('missing bundled in-app video guides at osh-node-oscar/web/video-guides/index.html');
+    }
     let standardConfig;
     try {
         standardConfig = JSON.parse(fs.readFileSync(standardConfigPath, 'utf8'));
