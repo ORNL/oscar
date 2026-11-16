@@ -628,7 +628,7 @@ fi
 # Every tar-validator container is otherwise read-only and must receive the
 # same bounded, private scratch mount. Keep TMPDIR pinned so a future image
 # environment cannot redirect validator writes outside that mount.
-validator_tmpfs_spec='/tmp:rw,noexec,nosuid,nodev,size=256m,mode=0700,uid=0,gid=0'
+validator_tmpfs_spec='/tmp:rw,noexec,nosuid,nodev,size=1024m,mode=0700,uid=0,gid=0'
 [[ $(grep -Fxc "readonly validator_scratch_tmpfs=$validator_tmpfs_spec" "$shell_script") == 1 &&
    $(grep -F -- '--tmpfs "$validator_scratch_tmpfs" --env TMPDIR=/tmp --workdir / --user 0 --entrypoint sh' "$shell_script" | wc -l | tr -d ' ') == 3 ]] || {
     printf 'Bash tar-validator launches do not all use the exact bounded scratch tmpfs.\n' >&2

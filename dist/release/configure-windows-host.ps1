@@ -13,6 +13,8 @@ param(
     [int]$WslMemoryGb = 0,
     [ValidateRange(0, 512)]
     [int]$WslProcessors = 0,
+    [ValidateSet('', 'nat', 'mirrored')]
+    [string]$WslNetworkingMode = '',
     [switch]$ForceWslConfig,
     [switch]$SkipWslConfig,
     [switch]$Json,
@@ -47,33 +49,43 @@ $SettingPciExpressAspmGuid = 'ee12f906-d277-404b-b6da-e5fa1a576df5'
 $SubWirelessGuid = '19cbb8fa-5279-450e-9fac-8a3d5fedd0c1'
 $SettingWirelessPowerGuid = '12bbebe6-58d6-4636-95bb-3217ef867c1a'
 
+$SubProcessorGuid = '54533251-82be-4824-96c1-47b60b740d00'
+$SettingProcThrottleMinGuid = '893dee8e-2bef-41e0-89c6-b55d0929964c'
+$SettingProcThrottleMaxGuid = 'bc5038f7-23e0-4960-96da-33abaf5935ec'
+$SettingProcPerfEppGuid = '36687f9e-e3a5-4dbf-b1dc-15eb381c6863'
+$SettingProcPerfEpp1Guid = '36687f9e-e3a5-4dbf-b1dc-15eb381c6864'
+$SettingProcPerfBoostGuid = 'be337238-0d82-4146-a960-4f3749d470c7'
+
 function Show-HostPrepHelp {
     @'
 OSCAR Windows 11 unattended server preparation
 
   .\configure-windows-host.ps1 [-Mode check|apply] [-Strict] [-Json]
       [-ConfigureLanHttpsFirewall] [-AllowDhcpAddress]
-      [-WslMemoryGb INT] [-WslProcessors INT] [-ForceWslConfig] [-SkipWslConfig]
+      [-WslMemoryGb INT] [-WslProcessors INT] [-WslNetworkingMode nat|mirrored]
+      [-ForceWslConfig] [-SkipWslConfig]
       [-MonitorTimeoutMinutesAc 0] [-KeepHibernate]
       [-AuthorizeSshPublicKey KEY[,KEY...]] [-AuthorizeSshPublicKeyFile FILE]
 
 Modes:
   check   Read-only audit of sleep, S0 Modern Standby display-off guard,
-          hibernate, disk spin-down, USB selective suspend, PnP USB/NIC power
-          saving, PCIe ASPM, kernel crash auto-reboot, OpenSSH Server, Windows
-          Time, Windows Update auto-restart guard, Win32 long paths, primary
-          LAN IPv4 address stability, wired LAN firewall profile, bounded WSL 2
-          resource caps (.wslconfig), and pre-login/ARSO Docker Engine startup.
+          AC processor performance/EPP policy, hibernate, disk spin-down,
+          USB selective suspend, PnP USB/NIC power saving, PCIe ASPM, kernel
+          crash auto-reboot, OpenSSH Server, Windows Time, Windows Update
+          auto-restart guard, Win32 long paths, primary LAN IPv4 address
+          stability, wired LAN firewall profile, bounded WSL 2 resource caps
+          (.wslconfig), and pre-login/ARSO Docker Engine startup.
   apply   Requires an Administrator Windows PowerShell 5.1 session. Applies
-          24/7 unattended server settings without resetting active network
-          links, enables Win32 long paths and kernel crash auto-reboot, writes
-          a hardware-proportional %USERPROFILE%\.wslconfig if none exists,
-          registers both pre-login Session-0 (S4U) and ARSO AtLogOn Docker
-          startup tasks, optionally configures Private wired LAN + scoped HTTPS
-          firewall access (-ConfigureLanHttpsFirewall), optionally enrolls SSH
-          public keys with strict administrators_authorized_keys ACLs, and
-          re-verifies state. Site IPv4 assignment remains governed by the
-          local network (static NIC config or router DHCP reservation).
+          24/7 unattended server settings and AC low-latency processor EPP
+          scheduling without resetting active network links, enables Win32 long
+          paths and kernel crash auto-reboot, writes a hardware-proportional
+          %USERPROFILE%\.wslconfig if none exists, registers both pre-login
+          Session-0 (S4U) and ARSO AtLogOn Docker startup tasks, optionally
+          configures Private wired LAN + scoped HTTPS firewall access
+          (-ConfigureLanHttpsFirewall), optionally enrolls SSH public keys with
+          strict administrators_authorized_keys ACLs, and re-verifies state.
+          Site IPv4 assignment remains governed by the local network (static
+          NIC config or router DHCP reservation).
 '@ | Write-Host
 }
 
@@ -244,6 +256,19 @@ function Set-PowerCfgSettingBoth([string]$SubGroupGuid, [string]$SettingGuid, [i
         & powercfg.exe /setdcvalueindex SCHEME_CURRENT $SubGroupGuid $SettingGuid $DcValue *> $null
         $dcExit = $LASTEXITCODE
         return ($acExit -eq 0 -and $dcExit -eq 0)
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+}
+
+function Set-PowerCfgSettingAcOnly([string]$SubGroupGuid, [string]$SettingGuid, [int]$AcValue) {
+    $existing = Get-PowerCfgSettingValues $SubGroupGuid $SettingGuid
+    if ($null -eq $existing) { return $false }
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & powercfg.exe /setacvalueindex SCHEME_CURRENT $SubGroupGuid $SettingGuid $AcValue *> $null
+        return ($LASTEXITCODE -eq 0)
     } finally {
         $ErrorActionPreference = $previousPreference
     }
@@ -494,6 +519,7 @@ function Get-WslConfigSectionValues([string]$Content) {
     $memoryVal = ''
     $processorsVal = ''
     $swapVal = ''
+    $networkingModeVal = ''
     if (-not [string]::IsNullOrWhiteSpace($Content)) {
         foreach ($rawLine in ($Content -split '\r?\n')) {
             $line = $rawLine.Trim()
@@ -514,6 +540,7 @@ function Get-WslConfigSectionValues([string]$Content) {
                         'memory' { $memoryVal = $val }
                         'processors' { $processorsVal = $val }
                         'swap' { $swapVal = $val }
+                        'networkingmode' { $networkingModeVal = $val }
                     }
                 }
             }
@@ -524,6 +551,7 @@ function Get-WslConfigSectionValues([string]$Content) {
         Memory = $memoryVal
         Processors = $processorsVal
         Swap = $swapVal
+        NetworkingMode = $networkingModeVal
     }
 }
 
@@ -561,8 +589,9 @@ function Ensure-BoundedWslConfig([bool]$ApplyChanges, [string]$ExplicitPath = ''
     Assert-NoReparseScriptPath $targetPath
     $exists = Test-Path -LiteralPath $targetPath -PathType Leaf
     $wroteFile = $false
+    $existingParsed = if ($exists) { Get-WslConfigSectionValues ([IO.File]::ReadAllText($targetPath)) } else { $null }
     $shouldWrite = $ApplyChanges -and (-not $SkipWslConfig) -and (
-        (-not $exists) -or $ForceWslConfig -or $WslMemoryGb -gt 0 -or $WslProcessors -gt 0
+        (-not $exists) -or $ForceWslConfig -or $WslMemoryGb -gt 0 -or $WslProcessors -gt 0 -or (-not [string]::IsNullOrWhiteSpace($WslNetworkingMode))
     )
     if ($shouldWrite) {
         $parentDir = Split-Path -Parent $targetPath
@@ -572,14 +601,32 @@ function Ensure-BoundedWslConfig([bool]$ApplyChanges, [string]$ExplicitPath = ''
         Assert-NoReparseScriptPath $targetPath
         $capacity = Get-HostHardwareCapacity
         $recommended = Get-RecommendedWslResourceLimits $capacity.TotalMemoryGiB $capacity.LogicalProcessors
-        $effectiveMemoryGb = if ($WslMemoryGb -gt 0) { $WslMemoryGb } else { $recommended.MemoryGb }
-        $effectiveProcessors = if ($WslProcessors -gt 0) { $WslProcessors } else { $recommended.Processors }
+        $existingMemGb = 0
+        if ($null -ne $existingParsed -and $existingParsed.Memory -match '^(\d+)\s*GB$' -and -not $ForceWslConfig -and $WslMemoryGb -le 0) {
+            $existingMemGb = [int]$Matches[1]
+        }
+        $existingProcs = 0
+        if ($null -ne $existingParsed -and $existingParsed.Processors -match '^(\d+)$' -and -not $ForceWslConfig -and $WslProcessors -le 0) {
+            $existingProcs = [int]$Matches[1]
+        }
+        $effectiveMemoryGb = if ($WslMemoryGb -gt 0) { $WslMemoryGb } elseif ($existingMemGb -gt 0) { $existingMemGb } else { $recommended.MemoryGb }
+        $effectiveProcessors = if ($WslProcessors -gt 0) { $WslProcessors } elseif ($existingProcs -gt 0) { $existingProcs } else { $recommended.Processors }
+        $effectiveNetMode = if (-not [string]::IsNullOrWhiteSpace($WslNetworkingMode)) {
+            $WslNetworkingMode.ToLowerInvariant()
+        } elseif ($null -ne $existingParsed -and -not [string]::IsNullOrWhiteSpace($existingParsed.NetworkingMode) -and -not $ForceWslConfig) {
+            $existingParsed.NetworkingMode
+        } else {
+            ''
+        }
         $wslLines = @(
             '[wsl2]',
             "memory=${effectiveMemoryGb}GB",
             "processors=$effectiveProcessors",
             "swap=$($recommended.SwapGb)GB"
         )
+        if (-not [string]::IsNullOrWhiteSpace($effectiveNetMode)) {
+            $wslLines += "networkingMode=$effectiveNetMode"
+        }
         [IO.File]::WriteAllText($targetPath, (($wslLines -join "`r`n") + "`r`n"), $Utf8NoBom)
         $exists = $true
         $wroteFile = $true
@@ -592,19 +639,21 @@ function Ensure-BoundedWslConfig([bool]$ApplyChanges, [string]$ExplicitPath = ''
             WroteFile = $false
             Memory = ''
             Processors = ''
+            NetworkingMode = ''
             Detail = '.wslconfig is not present; vmmemWSL has no explicit host RAM/CPU reservation'
         }
     }
     $parsed = Get-WslConfigSectionValues ([IO.File]::ReadAllText($targetPath))
     $bounded = (-not [string]::IsNullOrWhiteSpace($parsed.Memory) -and -not [string]::IsNullOrWhiteSpace($parsed.Processors))
+    $netSuffix = if (-not [string]::IsNullOrWhiteSpace($parsed.NetworkingMode)) { ", networkingMode=$($parsed.NetworkingMode)" } else { '' }
     $detail = if ($bounded) {
-        "memory=$($parsed.Memory), processors=$($parsed.Processors)" + $(if (-not [string]::IsNullOrWhiteSpace($parsed.Swap)) { ", swap=$($parsed.Swap)" } else { '' })
+        "memory=$($parsed.Memory), processors=$($parsed.Processors)" + $(if (-not [string]::IsNullOrWhiteSpace($parsed.Swap)) { ", swap=$($parsed.Swap)" } else { '' }) + $netSuffix
     } elseif (-not [string]::IsNullOrWhiteSpace($parsed.Memory)) {
-        ".wslconfig sets memory=$($parsed.Memory) without processors= cap"
+        ".wslconfig sets memory=$($parsed.Memory) without processors= cap$netSuffix"
     } elseif (-not [string]::IsNullOrWhiteSpace($parsed.Processors)) {
-        ".wslconfig sets processors=$($parsed.Processors) without memory= cap"
+        ".wslconfig sets processors=$($parsed.Processors) without memory= cap$netSuffix"
     } else {
-        '.wslconfig has no [wsl2] memory= and processors= limits'
+        '.wslconfig has no [wsl2] memory= and processors= limits' + $netSuffix
     }
     return [pscustomobject]@{
         Applicable = $true
@@ -613,6 +662,7 @@ function Ensure-BoundedWslConfig([bool]$ApplyChanges, [string]$ExplicitPath = ''
         WroteFile = $wroteFile
         Memory = $parsed.Memory
         Processors = $parsed.Processors
+        NetworkingMode = $parsed.NetworkingMode
         Detail = $detail
     }
 }
@@ -982,6 +1032,14 @@ function Invoke-WindowsHostApply([string[]]$ResolvedSshKeys) {
     [void](Set-PowerCfgSettingBoth $SubUsbGuid $SettingUsb3LinkPowerGuid 0 0)
     [void](Set-PowerCfgSettingBoth $SubPciExpressGuid $SettingPciExpressAspmGuid 0 0)
     [void](Set-PowerCfgSettingBoth $SubWirelessGuid $SettingWirelessPowerGuid 0 0)
+    [void](Set-PowerCfgSettingAcOnly $SubProcessorGuid $SettingProcThrottleMinGuid 100)
+    [void](Set-PowerCfgSettingAcOnly $SubProcessorGuid $SettingProcThrottleMaxGuid 100)
+    [void](Set-PowerCfgSettingAcOnly $SubProcessorGuid $SettingProcPerfEppGuid 0)
+    [void](Set-PowerCfgSettingAcOnly $SubProcessorGuid $SettingProcPerfEpp1Guid 0)
+    $existingBoost = Get-PowerCfgSettingValues $SubProcessorGuid $SettingProcPerfBoostGuid
+    if ($null -ne $existingBoost -and $existingBoost.AcValue -eq 0) {
+        [void](Set-PowerCfgSettingAcOnly $SubProcessorGuid $SettingProcPerfBoostGuid 2)
+    }
     & powercfg.exe /setactive SCHEME_CURRENT *> $null
 
     if (-not $KeepHibernate) {
@@ -1219,6 +1277,25 @@ function Get-WindowsHostReadinessReport {
         & $addCheck 'pcie-aspm' 'PASS' 'PCIe Link State Power Management is Off (0) on AC and DC'
     } else {
         & $addCheck 'pcie-aspm' 'WARN' "PCIe ASPM AC=$($pcieAspm.AcValue), DC=$($pcieAspm.DcValue) (expected 0=Off)"
+    }
+
+    $procMax = Get-PowerCfgSettingValues $SubProcessorGuid $SettingProcThrottleMaxGuid
+    $procEpp = Get-PowerCfgSettingValues $SubProcessorGuid $SettingProcPerfEppGuid
+    $procBoost = Get-PowerCfgSettingValues $SubProcessorGuid $SettingProcPerfBoostGuid
+    if ($null -eq $procMax -and $null -eq $procEpp) {
+        & $addCheck 'ac-processor-performance' 'PASS' 'Processor P-state/EPP controls not exposed on this platform'
+    } else {
+        $maxOk = ($null -eq $procMax -or $procMax.AcValue -eq 100)
+        $eppOk = ($null -eq $procEpp -or $procEpp.AcValue -eq 0)
+        $boostOk = ($null -eq $procBoost -or $procBoost.AcValue -ne 0)
+        $maxLabel = if ($null -ne $procMax) { "$($procMax.AcValue)%" } else { 'n/a' }
+        $eppLabel = if ($null -ne $procEpp) { [string]$procEpp.AcValue } else { 'n/a' }
+        $boostLabel = if ($null -ne $procBoost) { [string]$procBoost.AcValue } else { 'n/a' }
+        if ($maxOk -and $eppOk -and $boostOk) {
+            & $addCheck 'ac-processor-performance' 'PASS' "AC max=$maxLabel, EPP=$eppLabel, boost=$boostLabel (low-latency AC server scheduling)"
+        } else {
+            & $addCheck 'ac-processor-performance' 'WARN' "AC max=$maxLabel, EPP=$eppLabel, boost=$boostLabel (expected AC max=100%, EPP=0, boost!=0; run -Mode apply)"
+        }
     }
 
     if (Test-HostAdministrator) {

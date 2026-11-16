@@ -1415,6 +1415,14 @@ SELECT 'single quote '' and $dollar';
     } finally {
         $ForceWslConfig = $false
     }
+    $WslNetworkingMode = 'mirrored'
+    try {
+        $mirroredWslCfg = Ensure-BoundedWslConfig $true $wslFixturePath
+        Assert-True ($mirroredWslCfg.Bounded -and $mirroredWslCfg.WroteFile -and $mirroredWslCfg.NetworkingMode -ceq 'mirrored') `
+            "Ensure-BoundedWslConfig did not apply explicit -WslNetworkingMode mirrored: $($mirroredWslCfg.Detail)"
+    } finally {
+        $WslNetworkingMode = ''
+    }
     $wslReparseLink = Join-Path $temporaryRoot 'wsl-profile-junction'
     New-Item -ItemType Junction -Path $wslReparseLink -Target $wslFixtureDir | Out-Null
     $rejectedReparseWsl = $false

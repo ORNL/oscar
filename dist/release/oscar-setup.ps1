@@ -54,6 +54,8 @@ param(
     [int]$WslMemoryGb = 0,
     [ValidateRange(0, 512)]
     [int]$WslProcessors = 0,
+    [ValidateSet('', 'nat', 'mirrored')]
+    [string]$WslNetworkingMode = '',
     [switch]$ForceWslConfig,
     [switch]$SkipWslConfig,
     [switch]$Json,
@@ -2123,6 +2125,7 @@ try {
             if ($AllowDhcpAddress) { $hostPrepArgs += '-AllowDhcpAddress' }
             if ($WslMemoryGb -gt 0) { $hostPrepArgs += @('-WslMemoryGb', [string]$WslMemoryGb) }
             if ($WslProcessors -gt 0) { $hostPrepArgs += @('-WslProcessors', [string]$WslProcessors) }
+            if (-not [string]::IsNullOrWhiteSpace($WslNetworkingMode)) { $hostPrepArgs += @('-WslNetworkingMode', $WslNetworkingMode) }
             if ($ForceWslConfig) { $hostPrepArgs += '-ForceWslConfig' }
             if ($SkipWslConfig) { $hostPrepArgs += '-SkipWslConfig' }
             if ($Json) { $hostPrepArgs += '-Json' }

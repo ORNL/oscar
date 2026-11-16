@@ -17,7 +17,8 @@ development.
 ### Windows 11 unattended server preparation
 
 Windows 11 desktops and mobile workstations ship with `Balanced` power defaults that can suspend
-idle sessions, trigger S0 Low Power Idle (Modern Standby) when the display turns off, suspend
+idle sessions, trigger S0 Low Power Idle (Modern Standby) when the display turns off, throttle AC
+processor Energy Performance Preference (`PERFEPP > 0`), suspend
 close-lid laptops, power down USB 3 buses/USB Gigabit Ethernet adapters/external USB SSDs, and
 allow unbounded `vmmemWSL` memory/CPU growth. Before initializing a 24/7 OSCAR deployment on
 Windows 11, assign the host's network-governed static IPv4 address (or configure a site router DHCP
@@ -31,7 +32,8 @@ PowerShell 5.1 window:
 ```
 
 Standalone invocation supports JSON output, strict non-zero audit exit codes, explicit `.wslconfig`
-overrides, DHCP-reservation acknowledgement (`-AllowDhcpAddress`), and idempotent OpenSSH
+overrides (including opt-in `-WslNetworkingMode mirrored` on dedicated site LAN hosts without
+conflicting corporate VPNs/Hyper-V switches), DHCP-reservation acknowledgement (`-AllowDhcpAddress`), and idempotent OpenSSH
 `administrators_authorized_keys` public-key enrollment with `SYSTEM` + `Administrators` ACLs
 (inheritance disabled):
 
@@ -42,7 +44,8 @@ overrides, DHCP-reservation acknowledgement (`-AllowDhcpAddress`), and idempoten
 
 `-Mode apply` sets AC and DC sleep, unattended-sleep, hibernate, disk spin-down, and display-idle
 timeouts to `0` (Never — preventing Windows S0 Modern Standby `Kernel-Power 506` entry on display
-power-off), disables hibernation and Fast Startup unless `-KeepHibernate` is requested, sets laptop
+power-off), sets AC-only processor scheduling (`PROCTHROTTLEMIN=100%`, `PROCTHROTTLEMAX=100%`,
+`PERFEPP=0` Maximum Performance, and boost enabled while leaving DC battery profiles untouched), disables hibernation and Fast Startup unless `-KeepHibernate` is requested, sets laptop
 lid-close action to `Do nothing`, disables USB selective suspend and USB 3 Link Power Management,
 turns off PCIe Link State Power Management (ASPM), clears WMI `MSPower_DeviceEnable` power-off flags
 across USB controllers/storage/network devices, disables physical network-adapter power saving with
@@ -51,9 +54,10 @@ kernel/automatic crash dump retention (`CrashDumpEnabled=7` if disabled), config
 `w32time` for `Automatic` startup, sets `NoAutoRebootWithLoggedOnUsers=1`,
 `AlwaysAutoRebootAtScheduledTime=0`, and `AUOptions=3` for Windows Update, sets Win32
 `LongPathsEnabled=1` for tools that inspect deep retained-media paths, writes a hardware-proportional
-`%USERPROFILE%\.wslconfig` (`memory`, `processors`, `swap=4GB`) when none exists so `vmmemWSL`
+`%USERPROFILE%\.wslconfig` (`memory`, `processors`, `swap=4GB`, plus optional `networkingMode` when
+`-WslNetworkingMode` is explicitly passed) when none exists so `vmmemWSL`
 reserves CPU and RAM headroom for Windows/Hyper-V/drivers (existing `.wslconfig` files are preserved
-unless `-ForceWslConfig`, `-WslMemoryGb`, or `-WslProcessors` is supplied), disables Docker Desktop
+unless `-ForceWslConfig`, `-WslMemoryGb`, `-WslProcessors`, or `-WslNetworkingMode` is supplied), disables Docker Desktop
 idle Resource Saver (`UseResourceSaver=false`), and registers two Scheduled Tasks alongside
 `AutoStart=true`:
 
@@ -289,7 +293,7 @@ tls/server.key
 
 Docker Compose mounts secrets read-only. On Ubuntu, the setup CLI makes `secrets` and `tls` mode `0700`, with contained files readable by the deliberately non-root services. On Windows, it restricts the directories to the installing administrator and `SYSTEM` while preserving container-readable, read-only mounts.
 
-The application configuration is copied into the `oscar_state` volume on first startup. Runtime configuration saves update only that persistent copy. Application libraries and viewer assets remain read-only in the image. PostgreSQL data is stored in the `postgres_data` volume. OSCAR 3.11.0 uses a long-lived host bind for the primary Parquet cold tier (`OSCAR_ARCHIVE_DIR`). PostgreSQL runs with `archive_mode=off`, no external archive command, and no WAL bind. An existing `OSCAR_WAL_ARCHIVE_DIR` is preserved only to avoid deleting legacy data; current schema-v1/v2 restore does not use it. Fresh deployments set `OSCAR_BACKUP_MODE=disabled`; after explicit `single` opt-in, `OSCAR_BACKUP_DIR` is an operator-selected safe absolute host path that does not overlap the release or archive roots and is never mounted into a long-running service. A separate physical drive is recommended for failure isolation but is not required. A Docker named-volume backup or Parquet copy alone is incomplete.
+The application configuration is copied into the `oscar_state` volume on first startup. Runtime configuration saves update only that persistent copy. Application libraries and viewer assets remain read-only in the image. PostgreSQL data is stored in the `postgres_data` volume. OSCAR 3.11.0 uses a long-lived host bind for the primary Parquet cold tier (`OSCAR_ARCHIVE_DIR`) so multi-year archives can reside on a dedicated host volume, survive `docker compose down -v` or Docker Desktop resets, and undergo direct host-side ACL, `.oscar-storage-root`, and offline backup verification; on Windows WSL 2 `9p`/`drvfs` mounts, OSCAR automatically caches SHA-256-verified Parquet generations inside a disk-proportional (`2–8 GiB`, excluded from backups) native `ext4` cache (`/var/lib/oscar/.cache/oscar-9p-parquet-cache`) so repeat historical queries avoid cross-VM `9p` read amplification without giving up host-bind durability. Keep `OSCAR_JAVA_OPTS` aligned with `.env.example` rather than forcing oversized `ForkJoinPool.common.parallelism` values on 4–8 core hosts. PostgreSQL runs with `archive_mode=off`, no external archive command, and no WAL bind. An existing `OSCAR_WAL_ARCHIVE_DIR` is preserved only to avoid deleting legacy data; current schema-v1/v2 restore does not use it. Fresh deployments set `OSCAR_BACKUP_MODE=disabled`; after explicit `single` opt-in, `OSCAR_BACKUP_DIR` is an operator-selected safe absolute host path that does not overlap the release or archive roots and is never mounted into a long-running service. A separate physical drive is recommended for failure isolation but is not required. A Docker named-volume backup or Parquet copy alone is incomplete.
 
 The OSCAR service keeps the general-purpose `/tmp` tmpfs `noexec`. Embedded Java native libraries,
 including DuckDB JDBC and JavaCPP/FFmpeg, are extracted instead to a separate 256 MiB tmpfs at

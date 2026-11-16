@@ -95,7 +95,7 @@ if ($RequiredReleaseVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:[.-][0-9A-Za-z.
 $MaxBackupArchiveGenerationIds = 1000000
 $MaxBackupArchiveGenerationInventoryBytes = 37000000
 $ArchiveAuditSortChunkLines = 4096
-$ValidatorScratchTmpfs = '/tmp:rw,noexec,nosuid,nodev,size=256m,mode=0700,uid=0,gid=0'
+$ValidatorScratchTmpfs = '/tmp:rw,noexec,nosuid,nodev,size=1024m,mode=0700,uid=0,gid=0'
 $script:StorageAdminLock = $null
 
 function Initialize-NativeStorageMethods {
@@ -2319,15 +2319,19 @@ for entry in lib web rules models documentation trusted_certificates config logb
         echo "Reserved OSCAR image-owned state path is not the expected symlink: $entry" >&2; exit 1
     fi
 done
-tar --exclude='./archive' --exclude='./backups' --exclude='./duckdb-tmp' --exclude='./lib' --exclude='./web' --exclude='./rules' --exclude='./models' --exclude='./documentation' --exclude='./trusted_certificates' --exclude='./config' --exclude='./logback.xml' --exclude='./.cache' -C /state -czf /output.tar.gz .
+tar --exclude='./archive' --exclude='./backups' --exclude='./duckdb-tmp' --exclude='./lib' --exclude='./web' --exclude='./rules' --exclude='./models' --exclude='./documentation' --exclude='./trusted_certificates' --exclude='./config' --exclude='./logback.xml' --exclude='./.cache' -C /state -I 'gzip -1' -cf /output.tar.gz .
 '@
         Invoke-DockerShellInput $stateArchive @('run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--user', '10001:10001', '--entrypoint', 'sh', '--volume', 'oscar_oscar_state:/state:ro', '--volume', "$(Join-Path $work 'oscar-state.tar.gz'):/output.tar.gz", $image, '-seu')
-        Invoke-DockerShellInput "tar --exclude='./.oscar-storage-root' -C /archive -czf /output.tar.gz ." @('run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--user', '10001:10001', '--entrypoint', 'sh', '--volume', "${ArchiveDirectory}:/archive:ro", '--volume', "$(Join-Path $work 'archive.tar.gz'):/output.tar.gz", $image, '-seu')
+        Invoke-DockerShellInput "tar --exclude='./.oscar-storage-root' -C /archive -I 'gzip -1' -cf /output.tar.gz ." @('run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--user', '10001:10001', '--entrypoint', 'sh', '--volume', "${ArchiveDirectory}:/archive:ro", '--volume', "$(Join-Path $work 'archive.tar.gz'):/output.tar.gz", $image, '-seu')
 
     $encryptedSecrets = Join-Path $work 'deployment-secrets.tar.gz.enc'
     [IO.File]::WriteAllBytes($encryptedSecrets, [byte[]]@())
-    $encryptSecrets = 'tar -C /deployment -czf - .env secrets tls | openssl enc -aes-256-cbc -pbkdf2 -salt -pass file:/backup-key.txt -out /deployment-secrets.tar.gz.enc'
-    Invoke-DockerShellInput $encryptSecrets @('run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--workdir', '/', '--user', '0', '--entrypoint', 'sh', '--volume', "${ScriptRoot}:/deployment:ro", '--volume', "${encryptedSecrets}:/deployment-secrets.tar.gz.enc", '--volume', "${BackupKeyFile}:/backup-key.txt:ro", $image, '-seu')
+    $encryptSecrets = @'
+tar -C /deployment --no-recursion -czf /tmp/secrets.tar.gz .env secrets secrets/backup-key.txt secrets/oscar-admin-password.txt secrets/oscar-db-password.txt secrets/postgres-bootstrap-password.txt tls tls/server.crt tls/server.key
+openssl enc -aes-256-cbc -pbkdf2 -salt -pass file:/backup-key.txt -in /tmp/secrets.tar.gz -out /deployment-secrets.tar.gz.enc
+rm -f /tmp/secrets.tar.gz
+'@
+    Invoke-DockerShellInput $encryptSecrets @('run', '--rm', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--cap-add', 'DAC_READ_SEARCH', '--tmpfs', '/tmp:rw,noexec,nosuid,nodev,size=16m', '--workdir', '/', '--user', '0', '--entrypoint', 'sh', '--volume', "${ScriptRoot}:/deployment:ro", '--volume', "${encryptedSecrets}:/deployment-secrets.tar.gz.enc", '--volume', "${BackupKeyFile}:/backup-key.txt:ro", $image, '-seu')
     $releaseConfigFiles = @(
         '.dockerignore', '.env.example', 'DEPLOYMENT.md', 'QUICKSTART.md', 'compose.yaml',
         'docker/gateway/default.conf', 'docker/oscar/archive-object-helper.sh', 'docker/oscar/atomic-publish.c', 'docker/oscar/Dockerfile', 'docker/oscar/entrypoint.sh',
@@ -2345,8 +2349,9 @@ tar --exclude='./archive' --exclude='./backups' --exclude='./duckdb-tmp' --exclu
     }
     [IO.File]::WriteAllText((Join-Path $work 'epoch.json'), ($epoch | ConvertTo-Json) + "`n", $Utf8NoBom)
     Write-ImageInventory $work
-    $oscarStateSha256 = (Get-FileHash -LiteralPath (Join-Path $work 'oscar-state.tar.gz') -Algorithm SHA256).Hash.ToLowerInvariant()
     Write-Checksums $work
+    $oscarStateSha256 = (Get-Content -LiteralPath (Join-Path $work 'SHA256SUMS') | Where-Object { $_ -match '^([0-9a-f]{64})  \./oscar-state\.tar\.gz$' } | ForEach-Object { $Matches[1] } | Select-Object -First 1)
+    if ($oscarStateSha256 -notmatch '^[0-9a-f]{64}$') { Fail 'Could not resolve authenticated oscar-state.tar.gz checksum.' }
     Write-ChecksumHmac $work $image
     Confirm-Backup $id -ReadOnly -RootOverride $work
     Protect-DockerStorageDirectory $work 'ReadOnly'

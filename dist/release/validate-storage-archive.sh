@@ -39,17 +39,23 @@ validate_storage_archive() (
         return 1
     }
     tar -tzf "$archive" >"$names"
-    tar -tvzf "$archive" >"$details"
-    [ -s "$names" ] && [ -s "$details" ] || {
+    tv_status=$work/tv.status
+    # Stream only the leading member-type column while preserving tar -tvzf's
+    # exact exit status so multi-million-member state backups stay well within
+    # the bounded validator scratch tmpfs without materializing full verbose rows.
+    (
+        if tar -tvzf "$archive"; then
+            echo 0 >"$tv_status"
+        else
+            echo "$?" >"$tv_status"
+        fi
+    ) | cut -c1 >"$types"
+    [ -f "$tv_status" ] && [ "$(cat "$tv_status")" = 0 ] || return 1
+    rm -f -- "$tv_status"
+    [ -s "$names" ] && [ -s "$types" ] || {
         echo "$label archive has no members" >&2
         return 1
     }
-
-    # Extract only the leading member-type column and drop the verbose listing
-    # immediately so multi-hundred-thousand-member state backups stay well
-    # within the bounded 256 MiB validator scratch tmpfs.
-    cut -c1 "$details" >"$types"
-    rm -f -- "$details"
 
     if LC_ALL=C grep -q '[[:cntrl:]]' "$names"; then
         echo "$label archive contains a control character in a member name" >&2

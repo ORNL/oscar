@@ -135,7 +135,7 @@ required_release_version=$(awk -F= '$1 == "OSCAR_VERSION" { print substr($0, ind
 readonly required_release_version
 readonly max_backup_archive_generation_ids=1000000
 readonly max_backup_archive_generation_inventory_bytes=37000000
-readonly validator_scratch_tmpfs=/tmp:rw,noexec,nosuid,nodev,size=256m,mode=0700,uid=0,gid=0
+readonly validator_scratch_tmpfs=/tmp:rw,noexec,nosuid,nodev,size=1024m,mode=0700,uid=0,gid=0
 
 valid_deployment_id() {
     [[ $1 =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]
@@ -1762,18 +1762,21 @@ create_backup() (
          done
          tar --exclude="./archive" --exclude="./backups" --exclude="./duckdb-tmp" --exclude="./lib" --exclude="./web" \
              --exclude="./rules" --exclude="./models" --exclude="./documentation" --exclude="./trusted_certificates" \
-             --exclude="./config" --exclude="./logback.xml" --exclude="./.cache" -C /state -czf /output.tar.gz .'
+             --exclude="./config" --exclude="./logback.xml" --exclude="./.cache" -C /state -I "gzip -1" -cf /output.tar.gz .'
     docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
         --user 10001:10001 --entrypoint sh --volume "$archive_dir:/archive:ro" \
         --volume "$work/archive.tar.gz:/output.tar.gz" "$image" -eu -c \
-        "tar --exclude='./.oscar-storage-root' -C /archive -czf /output.tar.gz ."
+        "tar --exclude='./.oscar-storage-root' -C /archive -I 'gzip -1' -cf /output.tar.gz ."
     : >"$work/deployment-secrets.tar.gz.enc"
     chmod 0600 "$work/deployment-secrets.tar.gz.enc"
     docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+        --cap-add DAC_READ_SEARCH --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m \
         --workdir / --user 0 --entrypoint sh --volume "$script_dir:/deployment:ro" \
         --volume "$work/deployment-secrets.tar.gz.enc:/deployment-secrets.tar.gz.enc" --volume "$backup_key_file:/backup-key.txt:ro" \
         "$image" -eu -c \
-        'tar -C /deployment -czf - .env secrets tls | openssl enc -aes-256-cbc -pbkdf2 -salt -pass file:/backup-key.txt -out /deployment-secrets.tar.gz.enc'
+        'tar -C /deployment --no-recursion -czf /tmp/secrets.tar.gz .env secrets secrets/backup-key.txt secrets/oscar-admin-password.txt secrets/oscar-db-password.txt secrets/postgres-bootstrap-password.txt tls tls/server.crt tls/server.key
+         openssl enc -aes-256-cbc -pbkdf2 -salt -pass file:/backup-key.txt -in /tmp/secrets.tar.gz -out /deployment-secrets.tar.gz.enc
+         rm -f /tmp/secrets.tar.gz'
     release_config_files=(
         .dockerignore .env.example DEPLOYMENT.md QUICKSTART.md compose.yaml
         docker/gateway/default.conf docker/oscar/archive-object-helper.sh docker/oscar/atomic-publish.c docker/oscar/Dockerfile docker/oscar/entrypoint.sh
@@ -1799,8 +1802,6 @@ create_backup() (
 
     write_image_inventory "$work"
 
-    oscar_state_sha=$(sha256_file "$work/oscar-state.tar.gz")
-
     (
         cd "$work"
         find . -type f ! -name SHA256SUMS ! -name SHA256SUMS.hmac -print0 | sort -z |
@@ -1808,6 +1809,8 @@ create_backup() (
                 if command -v sha256sum >/dev/null 2>&1; then sha256sum "$file"; else shasum --algorithm 256 "$file"; fi
             done >SHA256SUMS
     )
+    oscar_state_sha=$(awk '$2 == "./oscar-state.tar.gz" { print $1; exit }' "$work/SHA256SUMS")
+    [[ $oscar_state_sha =~ ^[0-9a-f]{64}$ ]] || fail 'Could not resolve authenticated oscar-state.tar.gz checksum.'
     write_checksum_hmac "$work" "$image"
     chown -R 0:0 "$work"
     find "$work" -type d -exec chmod 0700 {} +
