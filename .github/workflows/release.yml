@@ -321,9 +321,9 @@ jobs:
           # interrupted mid-unpack, failing over across official GPG-verified Ubuntu mirrors.
           downloaded=false
           for mirror in \
-            "https://mirrors.edge.kernel.org/ubuntu" \
             "http://archive.ubuntu.com/ubuntu" \
-            "http://us.archive.ubuntu.com/ubuntu"
+            "http://us.archive.ubuntu.com/ubuntu" \
+            "https://mirrors.edge.kernel.org/ubuntu"
           do
             echo "Staging PDF documentation packages via ${mirror}..."
             if [ -f /etc/apt/apt-mirrors.txt ]; then

@@ -44,7 +44,10 @@ git clone --depth 1 --branch "$suite_ref" "$suite_repo_url" "$suite_dir"
 (
     cd "$suite_dir"
     npm ci
-    npx playwright install --with-deps chromium
+    npx playwright install chromium
+    if ! node -e 'import("playwright").then(async ({chromium}) => { const b = await chromium.launch({headless: true}); await b.close(); })' >/dev/null 2>&1; then
+        npx playwright install-deps chromium
+    fi
     npm run check
     npm test
     npm run build
