@@ -190,6 +190,7 @@ const viewerRoutes = [
     ['/alarm-transfer', 'Alarm Transfer'],
     ['/map', 'Map'],
     ['/national-view', 'National'],
+    ['/users', 'Users, Passkeys & Access Control'],
     ['/servers', 'Nodes'],
 ];
 const browser = await chromium.launch({ headless: true });
@@ -218,7 +219,7 @@ try {
         await page.getByLabel('Password').fill(password);
         await Promise.all([
             page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 20000 }),
-            page.getByRole('button', { name: 'Sign in' }).click(),
+            page.getByRole('button', { name: 'Sign in', exact: true }).click(),
         ]);
     }
     const sessionRes = await context.request.get('https://oscar.local/session');

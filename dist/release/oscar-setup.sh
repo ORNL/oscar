@@ -11,6 +11,9 @@ case "$command_name" in
     backup|backup-verify|backup-prune|restore|archive)
         exec bash "$script_dir/oscar-storage.sh" "$command_name" "$@"
         ;;
+    remote-access)
+        exec bash "$script_dir/oscar-remote-access.sh" "$@"
+        ;;
 esac
 
 hostname_value=''
@@ -919,6 +922,9 @@ stop_application_tier_ordered() {
     # database available while OSCAR drains its writers and completes its
     # module shutdown. The service stop_grace_period values in compose.yaml
     # remain the authoritative per-service deadlines.
+    if [[ -f $script_dir/oscar-remote-access.sh ]]; then
+        bash "$script_dir/oscar-remote-access.sh" stop-if-enabled || true
+    fi
     compose stop gateway
     compose stop oscar
 }
@@ -1424,7 +1430,7 @@ redaction_report = {
     "generatedAt": generated_at,
     "policy": "automatic-edge-redaction",
     "bundleSource": "host-cli",
-    "neverCollected": ["secrets/*", "/run/secrets/*", "tls/*.key", ".keystore/*", "hivemq-data/*"],
+    "neverCollected": ["secrets/*", "/run/secrets/*", "tls/*.key", ".keystore/*", "hivemq-data/*", ".moduledata/oscar-identity.json", "remote-access/*"],
     "counts": {**stats, "totalRedactions": total_redactions},
 }
 summary = {
@@ -1553,6 +1559,10 @@ case "$command_name" in
             compose up --detach --no-build --pull never --wait --wait-timeout 240
             ensure_storage_database_features
             finalize_pending_fresh_init
+            if [[ ${OSCAR_KEEP_BOOTSTRAP_SECRET:-false} != true ]]; then
+                write_secret "$script_dir/secrets/oscar-admin-password.txt" '# CONSUMED_AT_INIT: Initial bootstrap password hashed into OSCAR state; manage accounts in OSCAR Viewer -> Users & Access.'
+                protect_deployment_files
+            fi
         fi
         printf '\nOSCAR setup complete: https://%s:%s/sensorhub/admin\n' "$hostname_value" "$port_value"
         print_client_access_instructions
@@ -1564,6 +1574,7 @@ case "$command_name" in
         compose up --detach --no-build --pull never --wait --wait-timeout 240
         ensure_storage_database_features
         finalize_pending_fresh_init
+        [[ ! -f $script_dir/oscar-remote-access.sh ]] || bash "$script_dir/oscar-remote-access.sh" sync
         ;;
     stop)
         require_admin; require_docker; configured || fail 'Run init before stopping OSCAR.'
@@ -1578,6 +1589,7 @@ case "$command_name" in
         compose up --detach --no-build --pull never --wait --wait-timeout 240
         ensure_storage_database_features
         finalize_pending_fresh_init
+        [[ ! -f $script_dir/oscar-remote-access.sh ]] || bash "$script_dir/oscar-remote-access.sh" sync
         ;;
     status)
         require_docker; compose ps
@@ -1585,6 +1597,7 @@ case "$command_name" in
             local_hostname=$(awk -F= '$1 == "OSCAR_HOSTNAME" { print substr($0, index($0, "=") + 1); exit }' "$script_dir/.env")
             local_port=$(awk -F= '$1 == "OSCAR_HTTPS_PORT" { print substr($0, index($0, "=") + 1); exit }' "$script_dir/.env")
             printf 'OSCAR URL: https://%s:%s/sensorhub/admin\n' "${local_hostname:-oscar.local}" "${local_port:-443}"
+            [[ ! -f $script_dir/oscar-remote-access.sh ]] || bash "$script_dir/oscar-remote-access.sh" status || true
         fi
         ;;
     logs)
@@ -1641,6 +1654,13 @@ case "$command_name" in
         bash "$script_dir/oscar-storage.sh" upgrade-state
         ensure_storage_database_features
         finalize_pending_fresh_init
+        if [[ -f $script_dir/oscar-remote-access.sh ]]; then
+            if [[ -f $script_dir/offline-images.tar ]]; then
+                bash "$script_dir/oscar-remote-access.sh" sync
+            else
+                bash "$script_dir/oscar-remote-access.sh" sync --rebuild
+            fi
+        fi
         printf 'Upgrade deployment completed. Persistent OSCAR and PostgreSQL volumes were retained.\n'
         ;;
     *) fail "Unknown command: $command_name" ;;

@@ -1,0 +1,49 @@
+services:
+  tunnel:
+    build:
+      context: .
+      dockerfile: docker/tunnel/Dockerfile
+      args:
+        OSCAR_VERSION: "${OSCAR_VERSION:-local}"
+    image: "oscar-tunnel:${OSCAR_VERSION:-local}"
+    restart: unless-stopped
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks:
+      - frontend
+    environment:
+      TZ: "${OSCAR_TIMEZONE:-UTC}"
+      OCTELIUM_DOMAIN: "${OCTELIUM_DOMAIN:?OCTELIUM_DOMAIN is required}"
+      OCTELIUM_SERVICE: "${OCTELIUM_SERVICE:?OCTELIUM_SERVICE is required}"
+      OCTELIUM_INSECURE_TLS: "${OCTELIUM_INSECURE_TLS:-false}"
+      OCTELIUM_TUNNEL_MODE: "${OCTELIUM_TUNNEL_MODE:-wg}"
+      OCTELIUM_IMPLEMENTATION: "${OCTELIUM_IMPLEMENTATION:-gvisor}"
+      OCTELIUM_IP_MODE: "${OCTELIUM_IP_MODE:-v4}"
+      OCTELIUM_SCOPE: "${OCTELIUM_SCOPE:-}"
+    secrets:
+      - source: octelium_auth_token
+        target: octelium_auth_token
+    read_only: true
+    tmpfs:
+      - /tmp/octelium:rw,noexec,nosuid,nodev,size=64m,mode=0700,uid=10002,gid=10002
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pidof octelium >/dev/null 2>&1"]
+      start_period: 20s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+secrets:
+  octelium_auth_token:
+    file: "${OCTELIUM_TOKEN_FILE:?OCTELIUM_TOKEN_FILE is required}"

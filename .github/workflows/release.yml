@@ -522,9 +522,12 @@ jobs:
               DEPLOYMENT.md
               QUICKSTART.md
               SHA256SUMS
+              compose.octelium.yaml
               compose.yaml
               configure-windows-host.ps1
               offline-images.tar
+              oscar-remote-access.ps1
+              oscar-remote-access.sh
               oscar-setup.ps1
               oscar-setup.sh
               oscar-storage.ps1
@@ -561,6 +564,8 @@ jobs:
               docker/oscar/atomic-publish.c
               docker/oscar/Dockerfile
               docker/oscar/entrypoint.sh
+              docker/tunnel/Dockerfile
+              docker/tunnel/entrypoint.sh
               postgis/Dockerfile
               postgis/archive-wal.sh
               postgis/merge-wal-restore.sh
@@ -595,11 +600,14 @@ jobs:
                 DEPLOYMENT.md \
                 QUICKSTART.md \
                 SHA256SUMS \
+                compose.octelium.yaml \
                 compose.yaml \
                 configure-windows-host.ps1 \
                 docker \
                 documentation \
                 offline-images.tar \
+                oscar-remote-access.ps1 \
+                oscar-remote-access.sh \
                 oscar-setup.ps1 \
                 oscar-setup.sh \
                 oscar-storage.ps1 \

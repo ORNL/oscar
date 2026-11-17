@@ -1769,12 +1769,36 @@ create_backup() (
         "tar --exclude='./.oscar-storage-root' -C /archive -I 'gzip -1' -cf /output.tar.gz ."
     : >"$work/deployment-secrets.tar.gz.enc"
     chmod 0600 "$work/deployment-secrets.tar.gz.enc"
+    local remote_access_src
+    local -a secret_volumes=(
+        --volume "$script_dir:/deployment:ro"
+        --volume "$work/deployment-secrets.tar.gz.enc:/deployment-secrets.tar.gz.enc"
+        --volume "$backup_key_file:/backup-key.txt:ro"
+    )
+    remote_access_src="$(dirname "$archive_dir")/remote-access"
+    if [[ -d $remote_access_src && ! -L $remote_access_src && -f $remote_access_src/octelium.env && ! -L $remote_access_src/octelium.env ]]; then
+        secret_volumes+=(--volume "$remote_access_src:/remote-access-src:ro")
+    fi
     docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
         --cap-add DAC_READ_SEARCH --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m \
-        --workdir / --user 0 --entrypoint sh --volume "$script_dir:/deployment:ro" \
-        --volume "$work/deployment-secrets.tar.gz.enc:/deployment-secrets.tar.gz.enc" --volume "$backup_key_file:/backup-key.txt:ro" \
+        --workdir / --user 0 --entrypoint sh "${secret_volumes[@]}" \
         "$image" -eu -c \
-        'tar -C /deployment --no-recursion -czf /tmp/secrets.tar.gz .env secrets secrets/backup-key.txt secrets/oscar-admin-password.txt secrets/oscar-db-password.txt secrets/postgres-bootstrap-password.txt tls tls/server.crt tls/server.key
+        'if [ -d /remote-access-src ] && [ -f /remote-access-src/octelium.env ] && [ ! -L /remote-access-src/octelium.env ]; then
+             mkdir -p /tmp/secret-stage/secrets /tmp/secret-stage/tls /tmp/secret-stage/remote-access
+             cp /deployment/.env /tmp/secret-stage/.env
+             cp /deployment/secrets/backup-key.txt /deployment/secrets/oscar-admin-password.txt /deployment/secrets/oscar-db-password.txt /deployment/secrets/postgres-bootstrap-password.txt /tmp/secret-stage/secrets/
+             cp /deployment/tls/server.crt /deployment/tls/server.key /tmp/secret-stage/tls/
+             cp /remote-access-src/octelium.env /tmp/secret-stage/remote-access/octelium.env
+             if [ -f /remote-access-src/octelium-token.txt ] && [ ! -L /remote-access-src/octelium-token.txt ]; then
+                 cp /remote-access-src/octelium-token.txt /tmp/secret-stage/remote-access/octelium-token.txt
+                 tar -C /tmp/secret-stage --no-recursion -czf /tmp/secrets.tar.gz .env secrets secrets/backup-key.txt secrets/oscar-admin-password.txt secrets/oscar-db-password.txt secrets/postgres-bootstrap-password.txt tls tls/server.crt tls/server.key remote-access remote-access/octelium.env remote-access/octelium-token.txt
+             else
+                 tar -C /tmp/secret-stage --no-recursion -czf /tmp/secrets.tar.gz .env secrets secrets/backup-key.txt secrets/oscar-admin-password.txt secrets/oscar-db-password.txt secrets/postgres-bootstrap-password.txt tls tls/server.crt tls/server.key remote-access remote-access/octelium.env
+             fi
+             rm -rf /tmp/secret-stage
+         else
+             tar -C /deployment --no-recursion -czf /tmp/secrets.tar.gz .env secrets secrets/backup-key.txt secrets/oscar-admin-password.txt secrets/oscar-db-password.txt secrets/postgres-bootstrap-password.txt tls tls/server.crt tls/server.key
+         fi
          openssl enc -aes-256-cbc -pbkdf2 -salt -pass file:/backup-key.txt -in /tmp/secrets.tar.gz -out /deployment-secrets.tar.gz.enc
          rm -f /tmp/secrets.tar.gz'
     release_config_files=(
@@ -2102,6 +2126,13 @@ validate_restored_credentials_exact() {
     if [[ -n $(find "$source/secrets" "$source/tls" \! -type d \! -type f -print -quit) ]]; then
         fail 'Restored credential trees contain a link or unsupported file type.'
     fi
+    if [[ -e $source/remote-access || -L $source/remote-access ]]; then
+        [[ -d $source/remote-access && ! -L $source/remote-access ]] ||
+            fail 'Restored remote-access entry is not a regular directory.'
+        if [[ -n $(find "$source/remote-access" \! -type d \! -type f -print -quit) ]]; then
+            fail 'Restored remote-access directory contains a link or unsupported file type.'
+        fi
+    fi
 }
 
 prepare_restored_credentials_exact() {
@@ -2130,6 +2161,20 @@ install_prepared_credentials_exact() {
     rm -rf -- "$destination/.env" "$destination/secrets" "$destination/tls"
     mv -- "$stage/.env" "$stage/secrets" "$stage/tls" "$destination/"
     rmdir "$stage"
+    if [[ -d $source/remote-access && -f $source/remote-access/octelium.env ]]; then
+        local target_ra_dir="$(dirname "$archive_dir")/remote-access"
+        install -d -m 0700 "$target_ra_dir"
+        if [[ -f $source/remote-access/octelium-token.txt ]]; then
+            cp "$source/remote-access/octelium-token.txt" "$target_ra_dir/octelium-token.txt"
+            chown 10002:10002 "$target_ra_dir/octelium-token.txt" 2>/dev/null || chmod 0644 "$target_ra_dir/octelium-token.txt"
+            chmod 0400 "$target_ra_dir/octelium-token.txt" 2>/dev/null || true
+        fi
+        awk -F= -v tok="$target_ra_dir/octelium-token.txt" '
+            $1 == "OCTELIUM_TOKEN_FILE" { print "OCTELIUM_TOKEN_FILE=" tok; next }
+            { print }
+        ' "$source/remote-access/octelium.env" >"$target_ra_dir/octelium.env"
+        chmod 0600 "$target_ra_dir/octelium.env"
+    fi
 }
 
 clear_restore_recovery_settings() {
@@ -2308,6 +2353,7 @@ restore_backup() (
     confirm_clean_restored_postgres_runtime "$restored_promoted_timeline" "$restore_epoch_id"
     restored_postgres_running=false
     compose up --detach --no-deps --no-build --pull never --wait --wait-timeout 300 oscar gateway
+    [[ ! -f $script_dir/oscar-remote-access.sh ]] || bash "$script_dir/oscar-remote-access.sh" sync || true
     trap - EXIT
     printf 'Restore complete. Pre-restore deployment credentials were preserved at %s\n' "$safety"
 )

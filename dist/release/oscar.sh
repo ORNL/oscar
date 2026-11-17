@@ -61,7 +61,7 @@ run_menu_command() {
     local command_name=${1:-}
     shift || true
     case "$command_name" in
-        init|verify|start|stop|restart|upgrade|backup|backup-verify|backup-prune|restore|archive|support-bundle)
+        init|verify|start|stop|restart|upgrade|backup|backup-verify|backup-prune|restore|archive|support-bundle|remote-access)
             if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
                 bash "$setup_script" "$command_name" "$@"
             else

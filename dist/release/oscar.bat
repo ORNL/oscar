@@ -26,7 +26,13 @@ if errorlevel 1 (
 goto menu
 
 :command
+if /I "%~1"=="remote-access" goto remote_access
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%OSCAR_SETUP%" %*
+exit /b %errorlevel%
+
+:remote_access
+shift
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0oscar-remote-access.ps1" %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %errorlevel%
 
 :menu

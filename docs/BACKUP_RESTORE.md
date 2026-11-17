@@ -23,9 +23,9 @@ The current snapshot is stored under `${OSCAR_BACKUP_DIR}/<backup-id>`, where th
 | Object | Contents |
 | --- | --- |
 | `postgres/` | Plain-format `pg_basebackup` of the complete PostgreSQL cluster, with required WAL streamed into the backup |
-| `oscar-state.tar.gz` | Mutable `/var/lib/oscar` application state, including saved SensorHub configuration, journal, daily files, videos/JPEGs, reports, and adjudication artifacts; excludes the separately captured archive path, reproducible transient DuckDB scratch at `/var/lib/oscar/duckdb-tmp`, any legacy embedded backup mountpoint, and the verified image-owned links (`lib`, `web`, `rules`, `documentation`, `trusted_certificates`, `config`, and `logback.xml`) that the restored image recreates |
+| `oscar-state.tar.gz` | Mutable `/var/lib/oscar` application state, including saved SensorHub configuration (`config.json` PBKDF2 user/role records), `.moduledata/oscar-identity.json` (WebAuthn Passkey public keys, user Operational View scopes, Federation Service Tokens, OIDC/tunnel policy, and SHA-256 persistent session digests), journal, daily files, videos/JPEGs, reports, and adjudication artifacts; excludes the separately captured archive path, reproducible transient DuckDB scratch at `/var/lib/oscar/duckdb-tmp`, any legacy embedded backup mountpoint, and the verified image-owned links (`lib`, `web`, `rules`, `documentation`, `trusted_certificates`, `config`, and `logback.xml`) that the restored image recreates |
 | `archive.tar.gz` | Complete configured `/var/lib/oscar/archive` data tree, excluding the host-local `.oscar-storage-root` identity |
-| `deployment-secrets.tar.gz.enc` | `.env`, `secrets/`, and `tls/`, encrypted with AES-256-CBC and PBKDF2 using the external backup key |
+| `deployment-secrets.tar.gz.enc` | `.env`, `secrets/`, `tls/`, and (when configured under the deployment storage root) `remote-access/` (`octelium.env` and `octelium-token.txt`), encrypted with AES-256-CBC and PBKDF2 using the external backup key |
 | `release-config.tar.gz` | Non-secret Compose, image-build, sample environment, and release documentation files |
 | `epoch.json` | Backup UUID, backup ID, UTC creation time, OSCAR version, PostgreSQL LSN, archive root, and creation state |
 | `archive-generation-ids.txt` | Canonically sorted, duplicate-free UUIDs for the exact active/sealed archive generations captured by this backup; validation is streaming and bounded at 1,000,000 entries/37,000,000 bytes |
@@ -463,7 +463,10 @@ The restore workflow:
     post-promotion write across checkpoint and clean restart while `archive_mode` remains off;
 12. removes the persisted one-time recovery settings, restarts PostgreSQL while OSCAR remains
     stopped, and requires the recovery GUCs to return to defaults with no pending restart; and
-13. starts OSCAR/gateway and waits for complete Compose health: top-level auto-start modules must be
+13. starts OSCAR/gateway (and, whenever the snapshot contains `remote-access/octelium.env` +
+    `octelium-token.txt`, restores `${OSCAR_STORAGE_ROOT}/remote-access/` with owner-only `0700`/`0600`
+    permissions and invokes `oscar-remote-access sync` so the Octelium Zero Trust tunnel reconnects
+    automatically on replacement hardware) and waits for complete Compose health: top-level auto-start modules must be
     started and nested lane devices must have completed their startup attempts, rather than merely
     accepting HTTP availability. A device may settle offline without hiding its status UI.
 

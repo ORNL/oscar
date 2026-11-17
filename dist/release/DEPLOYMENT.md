@@ -196,10 +196,70 @@ self-signed identity; it does not make an unlisted hostname or IP valid.
 - Windows client, from an elevated PowerShell window:
   `certutil -addstore -f Root .\server.crt`
 - Ubuntu client: copy it to `/usr/local/share/ca-certificates/oscar-site.crt`, then run
-  `sudo update-ca-certificates`. A browser configured with a separate certificate store must also
-  import the public certificate there.
-- macOS client: use Keychain Access to add `server.crt` to the System keychain and mark it trusted,
-  after verifying the fingerprint.
+  `sudo update-ca-certificates`. For Chrome or Chromium on Linux (which reads NSS `~/.pki/nssdb`
+  rather than `/etc/ssl/certs`), also import it once per desktop user:
+  `certutil -d "sql:$HOME/.pki/nssdb" -A -t "CT,C,C" -n "OSCAR Site" -i ./server.crt` (`libnss3-tools`).
+- macOS client: run
+  `sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ./server.crt`
+  (or use Keychain Access to add `server.crt` to the System keychain and mark it **Always Trust**),
+  after verifying the fingerprint. Note that Apple macOS and iOS enforce a maximum `825`-day
+  validity period on leaf TLS server certificates (`ERR_CERT_VALIDITY_TOO_LONG`); see the site
+  Root CA snippet below whenever macOS/iOS browsers or Touch ID / Face ID Passkeys are used on a LAN.
+
+### Enabling local and LAN WebAuthn Passkeys (multi-node hostnames, DNS/hosts & TLS trust)
+
+Browser WebAuthn Passkeys (`navigator.credentials.create` / `navigator.credentials.get`) enforce two
+strict browser-side prerequisites that do not apply to local PBKDF2 password sign-in:
+
+1. **A domain name (not a raw IP literal):** Opening `https://192.168.0.57/` continues to support
+   username + password sign-in (including phone-free facilities), but browsers disable WebAuthn on
+   IPv4/IPv6 literals. Always open OSCAR via a domain name such as `https://oscar.local`,
+   `https://oscar.ubuntu`, or `https://oscar.win`. When operating **multiple OSCAR servers on the
+   same LAN**, give each node its own distinct hostname during `init` (for example,
+   `sudo bash oscar.sh init --hostname oscar.ubuntu` on node 1 and
+   `.\oscar.bat init -Hostname oscar.win` on node 2) so host entries, TLS certificates, and Passkey
+   relying-party IDs (`rpId`) never collide.
+2. **A trusted HTTPS certificate without bypassed browser warnings:** Clicking past an untrusted
+   certificate warning puts Chrome, Edge, and Safari into a degraded TLS state that blocks Passkey
+   registration and sign-in. Complete the three steps below once per site so Passkeys work both
+   locally on the host and across every LAN workstation or phone:
+
+- **Step 1 — Resolve the node's domain name locally and across the LAN:**
+  - *On the OSCAR host itself (offline-ready):* `oscar init` automatically maps `127.0.0.1 <hostname>`
+    in `/etc/hosts` (`C:\Windows\System32\drivers\etc\hosts` on Windows) so local Passkey sign-in works
+    even when the LAN cable is unplugged.
+  - *Whole-LAN (recommended for multiple laptops and phones):* Add Local DNS (`A`) records on the site
+    router or internal DNS server mapping each node's hostname to its static LAN IP (for example,
+    `oscar.ubuntu -> 198.51.100.57` and `oscar.win -> 198.51.100.170`).
+  - *Per-workstation fallback (air-gapped LAN without router DNS access):* Map the hostname(s) in each
+    client workstation's `hosts` file:
+    - macOS / Linux: `printf '198.51.100.57\toscar.ubuntu\n198.51.100.170\toscar.win\n' | sudo tee -a /etc/hosts`
+    - Windows (elevated PowerShell):
+      `Add-Content -Path C:\Windows\System32\drivers\etc\hosts -Value "198.51.100.57`toscar.ubuntu"; ipconfig /flushdns`
+- **Step 2 — Issue an `<= 825`-day LAN Root-CA certificate when macOS/iOS clients or multiple nodes are present (optional on Windows/Linux-only single nodes):**
+  Generate a one-time site Root CA (`oscar-lan-root-ca.crt`), sign an `820`-day leaf certificate
+  containing all DNS and IP Subject Alternative Names (`SAN`s) for each node, and shred the Root CA
+  private key immediately so no extra secret needs to be stored:
+  ```sh
+  openssl req -x509 -newkey rsa:4096 -sha256 -nodes -days 3650 \
+    -subj "/O=OSCAR Local Deployment/CN=OSCAR Local LAN Root CA" \
+    -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
+    -addext "keyUsage=critical,keyCertSign,cRLSign" \
+    -keyout ca.key -out oscar-lan-root-ca.crt
+  openssl req -newkey rsa:3072 -nodes -subj "/CN=oscar.ubuntu" -keyout server.key -out server.csr
+  printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:oscar.ubuntu,DNS:oscar.local,DNS:localhost,IP:198.51.100.57,IP:127.0.0.1\n' > server.ext
+  openssl x509 -req -in server.csr -CA oscar-lan-root-ca.crt -CAkey ca.key -CAcreateserial \
+    -out leaf.crt -days 820 -sha256 -extfile server.ext
+  cat leaf.crt oscar-lan-root-ca.crt > server.crt
+  shred -u ca.key 2>/dev/null || rm -f ca.key
+  ```
+  Pass `--tls-mode import --certificate server.crt --private-key server.key` during `init`, or to
+  rename an **existing** deployment without re-initializing or losing data: update
+  `OSCAR_HOSTNAME=oscar.ubuntu` in `.env`, copy `server.crt` and `server.key` into `tls/`, update
+  `127.0.0.1 oscar.ubuntu` in the host's `hosts` file, and run
+  `docker compose up -d --force-recreate gateway`.
+- **Step 3 — Trust the public certificate (`oscar-lan-root-ca.crt` or `tls/server.crt`) once on each client device:**
+  Use `certutil -addstore -f Root .\oscar-lan-root-ca.crt` on Windows, `sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain oscar-lan-root-ca.crt` on macOS, or `update-ca-certificates` + `certutil -d "sql:$HOME/.pki/nssdb"` on Linux. One shared `oscar-lan-root-ca.crt` trusts every OSCAR node signed by that batch. Because WebAuthn scopes Passkeys to the exact domain (`rpId`), a Passkey enrolled at `https://oscar.ubuntu` signs in locally and across the LAN via `https://oscar.ubuntu`; if the same user also connects through a public Zero-Trust tunnel domain (`https://site.example.org`), they simply click **Add a Passkey or Security Key** once on that tunnel URL under the same OSCAR account.
 
 For ordinary LAN operation, create a site DNS record pointing the configured hostname at the
 OSCAR host's static address. A per-workstation hosts entry is an acceptable isolated-test fallback,
@@ -291,7 +351,18 @@ tls/server.crt
 tls/server.key
 ```
 
-Docker Compose mounts secrets read-only. On Ubuntu, the setup CLI makes `secrets` and `tls` mode `0700`, with contained files readable by the deliberately non-root services. On Windows, it restricts the directories to the installing administrator and `SYSTEM` while preserving container-readable, read-only mounts.
+Docker Compose mounts secrets read-only. On Ubuntu, the setup CLI makes `secrets` and `tls` mode `0700`, with contained files readable by the deliberately non-root services. On Windows, it restricts the directories to the installing administrator and `SYSTEM` while preserving container-readable, read-only mounts. During a fresh `init`, as soon as OSCAR hashes the initial administrator password into `/var/lib/oscar/config.json` (`PBKDF2WithHmacSHA256`, 310,000 iterations), setup overwrites `secrets/oscar-admin-password.txt` with a non-empty `# CONSUMED_AT_INIT: <UTC>` marker so the plaintext bootstrap password does not remain on disk (unless `OSCAR_KEEP_BOOTSTRAP_SECRET=true` is explicitly exported for automated test harnesses).
+
+### Authentication, offline Passkeys, persistent sessions, SSO & remote-access tunnel
+
+OSCAR 3.11.0 manages operator and service identities without requiring command-line edits or external internet access:
+
+1. **Persistent "Stay Signed In Until Logout" Sessions:** Fresh configurations default `idleTimeoutSeconds = 0`, `absoluteTimeoutSeconds = 0`, `persistSessions = true`, and `allowKeepSignedIn = true` (`persistentCookieMaxAgeSeconds = 31536000`). Only SHA-256 digests of active `OSCAR_SESSION` cookies are stored in `/var/lib/oscar/.moduledata/oscar-identity.json` (`0600`), allowing dedicated gatehouse workstations to stay signed in across browser restarts, host reboots, and `oscar upgrade` until the user clicks **Log Out** or an administrator disables/revokes the account. Shared shift kiosks can switch to timed sessions (for example, `30m` idle / `8h` max) in **Users & Access -> Sign-In & SSO Policy**.
+2. **Non-IT Users & Access Console (`/users` in OSCAR Viewer):**
+   - **Self-Service Account, Offline Passkeys & Passwords:** Every signed-in user can register phishing-resistant WebAuthn / FIDO2 Passkeys (`ES256` and `RS256` — Windows Hello, Touch ID, Face ID, or USB/NFC hardware security keys such as YubiKey) verified 100% locally by OSCAR with zero internet dependency, or update their local PBKDF2 password (`>= 12` characters) for phone-free facilities. WebAuthn requires opening OSCAR via a domain name (`https://oscar.local` or site DNS/Octelium hostname) rather than a raw IP address.
+   - **Users, Roles, Bulk CSV Enrollment & 1-Tap QR Startup Invites:** Administrators create, disable, reset, sign out, or delete individual `Administrator`, `Operator`, and read-only `Viewer` accounts (with last-admin lockout protection), or click **Bulk Enroll (CSV / Paste)** to upload or paste a roster (`username, role, display_name, views`) of up to 500 users at once. For every enrolled user, OSCAR generates a ready-to-send startup text message, a printable handout card, a single-use QR code & setup link (`/login/enroll?token=oscar_inv_...` — read-only on `GET` so SMS/chat link-preview bots never burn the invite, letting the user register a 1-tap Passkey or set their private password and land directly in their assigned Operational View), AND a readable fallback code for phone-free workstations (`/login/password-change`). `Operator` and `Viewer` accounts can be restricted to specific **Operational Views** (enforced both in `BasicSessionAuthenticator` for `/view/<slug>` and in OSCAR Viewer).
+   - **Scoped Federation Service Tokens (`oscar_fed_<shortId>_<secret>`):** Administrators mint revocable `Viewer` or `Operator` tokens in **Users & Access -> Federation Tokens** and paste them into **Nodes -> Add Server -> Federation Service Token** on remote OSCAR systems, authenticating both ConSys/Bucket HTTP `Bearer` requests and HiveMQ WebSocket MQTT (`svc-fed-<shortId>`) without sharing human passwords.
+   - **Optional Corporate OIDC + PKCE & Trusted Zero Trust Tunnel SSO:** Sites connected to an enterprise IdP (Entra ID, Okta, Keycloak) can enable OIDC + PKCE (`Sign in with Organization SSO` on `/login`, JWKS signature validation, and IdP group-to-role mapping) while keeping local Passkeys and passwords active whenever WAN connectivity drops. Deployments behind an authenticated Octelium Zero Trust tunnel (`oscar-remote-access.sh` / `oscar-remote-access.ps1`) can also enable Trusted Tunnel header SSO (`X-Octelium-User` gated by a `>= 16`-character `X-Oscar-Tunnel-Secret`). During `oscar upgrade`, setup automatically runs `oscar-remote-access sync --rebuild` whenever `$STORAGE_ROOT/remote-access/octelium.env` and `octelium-token.txt` are present so `oscar-tunnel:${OSCAR_VERSION}` is rebuilt and recreated in lockstep, and `oscar backup` / `oscar restore` encrypt and restore `remote-access/` alongside `secrets/` and `tls/`.
 
 The application configuration is copied into the `oscar_state` volume on first startup. Runtime configuration saves update only that persistent copy. Application libraries and viewer assets remain read-only in the image. PostgreSQL data is stored in the `postgres_data` volume. OSCAR 3.11.0 uses a long-lived host bind for the primary Parquet cold tier (`OSCAR_ARCHIVE_DIR`) so multi-year archives can reside on a dedicated host volume, survive `docker compose down -v` or Docker Desktop resets, and undergo direct host-side ACL, `.oscar-storage-root`, and offline backup verification; on Windows WSL 2 `9p`/`drvfs` mounts, OSCAR automatically caches SHA-256-verified Parquet generations inside a disk-proportional (`2–8 GiB`, excluded from backups) native `ext4` cache (`/var/lib/oscar/.cache/oscar-9p-parquet-cache`) so repeat historical queries avoid cross-VM `9p` read amplification without giving up host-bind durability. Keep `OSCAR_JAVA_OPTS` aligned with `.env.example` rather than forcing oversized `ForkJoinPool.common.parallelism` values on 4–8 core hosts. PostgreSQL runs with `archive_mode=off`, no external archive command, and no WAL bind. An existing `OSCAR_WAL_ARCHIVE_DIR` is preserved only to avoid deleting legacy data; current schema-v1/v2 restore does not use it. Fresh deployments set `OSCAR_BACKUP_MODE=disabled`; after explicit `single` opt-in, `OSCAR_BACKUP_DIR` is an operator-selected safe absolute host path that does not overlap the release or archive roots and is never mounted into a long-running service. A separate physical drive is recommended for failure isolation but is not required. A Docker named-volume backup or Parquet copy alone is incomplete.
 

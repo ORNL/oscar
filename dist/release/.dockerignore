@@ -1,6 +1,7 @@
 *
 !osh-node-oscar/**
 !docker/oscar/**
+!docker/tunnel/**
 **/*eml*.jar
 **/*EML*.jar
 **/EML-VM250*

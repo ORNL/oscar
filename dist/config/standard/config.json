@@ -2,8 +2,11 @@
   {
     "objClass": "org.sensorhub.impl.security.session.BasicSessionConfig",
     "cookieName": "OSCAR_SESSION",
-    "idleTimeoutSeconds": 1800,
-    "absoluteTimeoutSeconds": 28800,
+    "idleTimeoutSeconds": 0,
+    "absoluteTimeoutSeconds": 0,
+    "persistSessions": true,
+    "allowKeepSignedIn": true,
+    "persistentCookieMaxAgeSeconds": 31536000,
     "secureCookie": true,
     "sameSite": "Strict",
     "id": "5bb44b9e-e2d7-4a43-9a39-60abdf28e2f8",
@@ -49,10 +52,52 @@
       {
         "objClass": "org.sensorhub.impl.security.BasicSecurityRealmConfig$RoleConfig",
         "id": "admin",
+        "name": "Administrator",
+        "description": "Full access to OSCAR Viewer, Users & Access, and SensorHub Admin",
         "allow": [
           "*"
         ],
         "deny": []
+      },
+      {
+        "objClass": "org.sensorhub.impl.security.BasicSecurityRealmConfig$RoleConfig",
+        "id": "operator",
+        "name": "Operator",
+        "description": "Monitor lanes, acknowledge alarms, submit adjudications, and generate reports",
+        "allow": [
+          "*"
+        ],
+        "deny": [
+          "webadmin[*]",
+          "csapi[*]/delete",
+          "bucketservice[*]/delete/sitemap",
+          "bucketservice[*]/put/spreadsheets",
+          "bucketservice[*]/create/spreadsheets",
+          "bucketservice[*]/delete/spreadsheets"
+        ]
+      },
+      {
+        "objClass": "org.sensorhub.impl.security.BasicSecurityRealmConfig$RoleConfig",
+        "id": "viewer",
+        "name": "Viewer (Read-Only)",
+        "description": "Read-only access to live lanes, events, video/waveforms, and existing reports",
+        "allow": [
+          "fileserver[*]",
+          "csapi[*]/get",
+          "csapi[*]/list",
+          "csapi[*]/stream",
+          "bucketservice[*]/get",
+          "bucketservice[*]/list"
+        ],
+        "deny": [
+          "webadmin[*]",
+          "csapi[*]/create",
+          "csapi[*]/update",
+          "csapi[*]/delete",
+          "bucketservice[*]/put",
+          "bucketservice[*]/create",
+          "bucketservice[*]/delete"
+        ]
       }
     ],
     "id": "bd112969-8838-4f62-8d10-1edf1baa6669",

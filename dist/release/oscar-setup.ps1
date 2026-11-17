@@ -1178,6 +1178,10 @@ function Stop-ApplicationTierOrdered {
     # multi-service stop signals every container concurrently, which can take
     # PostgreSQL away while OSCAR is still draining writers. Preserve the
     # service stop_grace_period deadlines while enforcing dependency order.
+    $remoteAccessScript = Join-Path $ScriptRoot 'oscar-remote-access.ps1'
+    if (Test-Path -LiteralPath $remoteAccessScript) {
+        & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $remoteAccessScript stop-if-enabled *> $null
+    }
     Invoke-Compose @('stop', 'gateway')
     Invoke-Compose @('stop', 'oscar')
 }
@@ -1971,7 +1975,7 @@ fi
         generatedAt    = $generatedAt
         policy         = 'automatic-edge-redaction'
         bundleSource   = 'host-cli'
-        neverCollected = @('secrets/*', '/run/secrets/*', 'tls/*.key', '.keystore/*', 'hivemq-data/*')
+        neverCollected = @('secrets/*', '/run/secrets/*', 'tls/*.key', '.keystore/*', 'hivemq-data/*', '.moduledata/oscar-identity.json', 'remote-access/*')
         counts         = [ordered]@{
             jsonFieldsRedacted      = [int]$stats['jsonFieldsRedacted']
             uriCredentialsRedacted  = [int]$stats['uriCredentialsRedacted']
@@ -2201,6 +2205,10 @@ try {
                 Invoke-Compose @('up', '--detach', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', '240')
                 Enable-StorageDatabaseFeatures
                 Complete-PendingFreshInit
+                if ($env:OSCAR_KEEP_BOOTSTRAP_SECRET -cne 'true') {
+                    Write-SecretFile $adminSecretPath '# CONSUMED_AT_INIT: Initial bootstrap password hashed into OSCAR state; manage accounts in OSCAR Viewer -> Users & Access.'
+                    Protect-DeploymentFiles
+                }
             }
             Write-Host "`nOSCAR setup complete: https://${Hostname}:$Port/sensorhub/admin" -ForegroundColor Green
             Write-ClientAccessInstructions $resolvedTlsSans
@@ -2212,6 +2220,10 @@ try {
             Invoke-Compose @('up', '--detach', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', '240')
             Enable-StorageDatabaseFeatures
             Complete-PendingFreshInit
+            $remoteAccessScript = Join-Path $ScriptRoot 'oscar-remote-access.ps1'
+            if (Test-Path -LiteralPath $remoteAccessScript) {
+                & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $remoteAccessScript sync
+            }
         }
         'stop' {
             Assert-Administrator; Assert-Docker; Assert-Configured
@@ -2225,13 +2237,23 @@ try {
             Invoke-Compose @('up', '--detach', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', '240')
             Enable-StorageDatabaseFeatures
             Complete-PendingFreshInit
+            $remoteAccessScript = Join-Path $ScriptRoot 'oscar-remote-access.ps1'
+            if (Test-Path -LiteralPath $remoteAccessScript) {
+                & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $remoteAccessScript sync
+            }
         }
         'status' {
             Assert-Docker
             Invoke-Compose @('ps')
             $isConfigured = $true
             try { Assert-Configured } catch { $isConfigured = $false }
-            if ($isConfigured) { Write-Host "OSCAR URL: $(Get-ConfiguredEndpoint)" }
+            if ($isConfigured) {
+                Write-Host "OSCAR URL: $(Get-ConfiguredEndpoint)"
+                $remoteAccessScript = Join-Path $ScriptRoot 'oscar-remote-access.ps1'
+                if (Test-Path -LiteralPath $remoteAccessScript) {
+                    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $remoteAccessScript status
+                }
+            }
         }
         'logs' {
             Assert-Docker; Assert-Configured
@@ -2275,6 +2297,14 @@ try {
             Invoke-StorageCommand 'upgrade-state' $null
             Enable-StorageDatabaseFeatures
             Complete-PendingFreshInit
+            $remoteAccessScript = Join-Path $ScriptRoot 'oscar-remote-access.ps1'
+            if (Test-Path -LiteralPath $remoteAccessScript) {
+                if (Test-Path -LiteralPath (Join-Path $ScriptRoot 'offline-images.tar')) {
+                    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $remoteAccessScript sync
+                } else {
+                    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $remoteAccessScript sync -Rebuild
+                }
+            }
             Write-Host 'Upgrade deployment completed. Persistent OSCAR and PostgreSQL volumes were retained.' -ForegroundColor Green
         }
         'backup' { Invoke-StorageCommand 'backup' $null }

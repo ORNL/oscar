@@ -109,6 +109,10 @@ if [ ! -f "${CONFIG_FILE}" ]; then
         echo "ERROR: initial OSCAR administrator password secret is missing or empty" >&2
         exit 1
     fi
+    if grep -q '^# CONSUMED_AT_INIT' "${ADMIN_PASSWORD_FILE}"; then
+        echo "ERROR: secrets/oscar-admin-password.txt was already consumed by a prior init; write a fresh initial password before initializing an empty state volume" >&2
+        exit 1
+    fi
     if [ ! -s "${DB_PASSWORD_FILE}" ]; then
         echo "ERROR: OSCAR database password secret is missing or empty" >&2
         exit 1
