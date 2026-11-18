@@ -110,7 +110,7 @@ distributions{
                                 .replace('https://github.com/ORNL/osh-oakridge-modules/blob/main/docs/', '')
                         }
                     }
-                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md']) {
+                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md', 'LIVE_VIDEO.md']) {
                         filter { line ->
                             line.replace('../dist/release/', '')
                                 .replace('../include/osh-oakridge-modules/docs/', '')
@@ -163,7 +163,7 @@ distributions{
                                 .replace('https://github.com/ORNL/osh-oakridge-modules/blob/main/docs/', '')
                         }
                     }
-                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md']) {
+                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md', 'LIVE_VIDEO.md']) {
                         filter { line ->
                             line.replace('../dist/release/', '')
                                 .replace('../include/osh-oakridge-modules/docs/', '')
