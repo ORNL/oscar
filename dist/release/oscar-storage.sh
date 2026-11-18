@@ -2353,7 +2353,9 @@ restore_backup() (
     confirm_clean_restored_postgres_runtime "$restored_promoted_timeline" "$restore_epoch_id"
     restored_postgres_running=false
     compose up --detach --no-deps --no-build --pull never --wait --wait-timeout 300 oscar gateway
-    [[ ! -f $script_dir/oscar-remote-access.sh ]] || bash "$script_dir/oscar-remote-access.sh" sync || true
+    if [[ (${OSCAR_STORAGE_TEST_MODE:-0} != 1 || ${OSCAR_REMOTE_ACCESS_TEST_ALLOW:-0} == 1) && -f $script_dir/oscar-remote-access.sh ]]; then
+        bash "$script_dir/oscar-remote-access.sh" sync || true
+    fi
     trap - EXIT
     printf 'Restore complete. Pre-restore deployment credentials were preserved at %s\n' "$safety"
 )

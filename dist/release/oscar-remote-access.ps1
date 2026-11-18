@@ -126,6 +126,12 @@ function Invoke-TunnelCompose([string[]]$ComposeArgs) {
     }
 }
 
+if ($env:OSCAR_STORAGE_TEST_MODE -eq '1' -and $env:OSCAR_REMOTE_ACCESS_TEST_ALLOW -ne '1') {
+    if ($Subcommand.ToLowerInvariant() -in @('enable', 'rotate-token', 'disable', 'sync', 'stop-if-enabled')) {
+        exit 0
+    }
+}
+
 switch ($Subcommand.ToLowerInvariant()) {
     { $_ -in @('help', '--help', '-h') } {
         Write-Host @'
@@ -270,6 +276,11 @@ OSCAR Remote Access Administration (Octelium Zero Trust Sidecar)
         }
     }
     'stop-if-enabled' {
+        $raDir = Get-RemoteAccessDir
+        $cfgFile = Join-Path $raDir 'octelium.env'
+        if (-not (Test-Path -LiteralPath $cfgFile)) {
+            exit 0
+        }
         $prevEap = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
         try {

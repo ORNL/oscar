@@ -3244,7 +3244,7 @@ function Restore-Backup([string]$Id, [string]$Confirmation) {
         $restoredPostgresRunning = $false
         Invoke-Compose @('up', '--detach', '--no-deps', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', '300', 'oscar', 'gateway')
         $remoteAccessScript = Join-Path $ScriptRoot 'oscar-remote-access.ps1'
-        if (Test-Path -LiteralPath $remoteAccessScript) {
+        if (($env:OSCAR_STORAGE_TEST_MODE -ne '1' -or $env:OSCAR_REMOTE_ACCESS_TEST_ALLOW -eq '1') -and (Test-Path -LiteralPath $remoteAccessScript)) {
             try { & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $remoteAccessScript sync } catch { Write-Warning "Could not sync remote-access tunnel after restore: $($_.Exception.Message)" }
         }
     } catch {

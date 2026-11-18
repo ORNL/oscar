@@ -127,6 +127,14 @@ EOF
 subcommand=${1:-help}
 shift || true
 
+if [[ ${OSCAR_STORAGE_TEST_MODE:-0} == 1 && ${OSCAR_REMOTE_ACCESS_TEST_ALLOW:-0} != 1 ]]; then
+    case "$subcommand" in
+        enable|rotate-token|disable|sync|stop-if-enabled)
+            exit 0
+            ;;
+    esac
+fi
+
 case "$subcommand" in
     help|--help|-h)
         print_usage
@@ -280,6 +288,11 @@ EOF
         fi
         ;;
     stop-if-enabled)
+        ra_dir=$(resolve_remote_access_dir)
+        config_file="$ra_dir/octelium.env"
+        if [[ ! -f $config_file ]]; then
+            exit 0
+        fi
         if docker ps -q --filter "name=^/oscar-tunnel-1$" | grep -q .; then
             docker stop oscar-tunnel-1 >/dev/null
         fi

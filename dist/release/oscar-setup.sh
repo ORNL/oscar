@@ -916,15 +916,21 @@ compose() {
     )
 }
 
+invoke_remote_access_subcommand() {
+    if [[ ${OSCAR_STORAGE_TEST_MODE:-0} == 1 && ${OSCAR_REMOTE_ACCESS_TEST_ALLOW:-0} != 1 ]]; then
+        return 0
+    fi
+    [[ -f $script_dir/oscar-remote-access.sh ]] || return 0
+    bash "$script_dir/oscar-remote-access.sh" "$@"
+}
+
 stop_application_tier_ordered() {
     # Compose does not apply depends_on in reverse for `stop`/`restart` and a
     # multi-service stop signals every container concurrently. Keep the
     # database available while OSCAR drains its writers and completes its
     # module shutdown. The service stop_grace_period values in compose.yaml
     # remain the authoritative per-service deadlines.
-    if [[ -f $script_dir/oscar-remote-access.sh ]]; then
-        bash "$script_dir/oscar-remote-access.sh" stop-if-enabled || true
-    fi
+    invoke_remote_access_subcommand stop-if-enabled || true
     compose stop gateway
     compose stop oscar
 }
@@ -1574,7 +1580,7 @@ case "$command_name" in
         compose up --detach --no-build --pull never --wait --wait-timeout 240
         ensure_storage_database_features
         finalize_pending_fresh_init
-        [[ ! -f $script_dir/oscar-remote-access.sh ]] || bash "$script_dir/oscar-remote-access.sh" sync
+        invoke_remote_access_subcommand sync
         ;;
     stop)
         require_admin; require_docker; configured || fail 'Run init before stopping OSCAR.'
@@ -1589,7 +1595,7 @@ case "$command_name" in
         compose up --detach --no-build --pull never --wait --wait-timeout 240
         ensure_storage_database_features
         finalize_pending_fresh_init
-        [[ ! -f $script_dir/oscar-remote-access.sh ]] || bash "$script_dir/oscar-remote-access.sh" sync
+        invoke_remote_access_subcommand sync
         ;;
     status)
         require_docker; compose ps
@@ -1597,7 +1603,7 @@ case "$command_name" in
             local_hostname=$(awk -F= '$1 == "OSCAR_HOSTNAME" { print substr($0, index($0, "=") + 1); exit }' "$script_dir/.env")
             local_port=$(awk -F= '$1 == "OSCAR_HTTPS_PORT" { print substr($0, index($0, "=") + 1); exit }' "$script_dir/.env")
             printf 'OSCAR URL: https://%s:%s/sensorhub/admin\n' "${local_hostname:-oscar.local}" "${local_port:-443}"
-            [[ ! -f $script_dir/oscar-remote-access.sh ]] || bash "$script_dir/oscar-remote-access.sh" status || true
+            invoke_remote_access_subcommand status || true
         fi
         ;;
     logs)
@@ -1654,12 +1660,10 @@ case "$command_name" in
         bash "$script_dir/oscar-storage.sh" upgrade-state
         ensure_storage_database_features
         finalize_pending_fresh_init
-        if [[ -f $script_dir/oscar-remote-access.sh ]]; then
-            if [[ -f $script_dir/offline-images.tar ]]; then
-                bash "$script_dir/oscar-remote-access.sh" sync
-            else
-                bash "$script_dir/oscar-remote-access.sh" sync --rebuild
-            fi
+        if [[ -f $script_dir/offline-images.tar ]]; then
+            invoke_remote_access_subcommand sync
+        else
+            invoke_remote_access_subcommand sync --rebuild
         fi
         printf 'Upgrade deployment completed. Persistent OSCAR and PostgreSQL volumes were retained.\n'
         ;;

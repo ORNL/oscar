@@ -557,6 +557,27 @@ assert_not_contains '^[[:space:]]*compose stop([[:space:]]*$)' "$setup_shell_scr
 assert_not_contains "Invoke-Compose @\('restart'" "$setup_powershell_script"
 assert_not_contains "Invoke-Compose @\('stop', 'gateway', 'oscar', 'postgres'\)" "$powershell_script"
 
+# Guard against test-mode or unconfigured invocations ever calling real `docker stop oscar-tunnel-1` on a host daemon.
+tunnel_sentinel_bin="$test_root/tunnel-sentinel-bin"
+tunnel_sentinel_log="$test_root/tunnel-sentinel-docker.log"
+mkdir -p "$tunnel_sentinel_bin"
+cat >"$tunnel_sentinel_bin/docker" <<EOF
+#!/usr/bin/env bash
+printf 'invoked %s\n' "\$*" >>"$tunnel_sentinel_log"
+exit 99
+EOF
+chmod +x "$tunnel_sentinel_bin/docker"
+PATH="$tunnel_sentinel_bin:$PATH" OSCAR_STORAGE_TEST_MODE=1 bash "$repo_root/dist/release/oscar-remote-access.sh" stop-if-enabled
+PATH="$tunnel_sentinel_bin:$PATH" OSCAR_STORAGE_TEST_MODE=1 bash "$repo_root/dist/release/oscar-remote-access.sh" sync
+unconfigured_ra_dir="$test_root/unconfigured-release"
+mkdir -p "$unconfigured_ra_dir"
+cp "$repo_root/dist/release/oscar-remote-access.sh" "$repo_root/dist/release/.env.example" "$unconfigured_ra_dir/"
+PATH="$tunnel_sentinel_bin:$PATH" bash "$unconfigured_ra_dir/oscar-remote-access.sh" stop-if-enabled
+[[ ! -e $tunnel_sentinel_log ]] || {
+    printf 'Remote-access test mode or unconfigured stop-if-enabled leaked a docker call: %s\n' "$(cat "$tunnel_sentinel_log")" >&2
+    exit 1
+}
+
 # The release directory is part of every destructive containment decision.
 # Resolve directory aliases physically and reject a launcher-file alias before
 # reading deployment configuration.

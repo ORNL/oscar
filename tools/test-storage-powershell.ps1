@@ -1240,16 +1240,30 @@ SELECT 'single quote '' and $dollar';
     Assert-True $rejectedOversized 'PowerShell accepted an archive-generation inventory above 37,000,000 bytes.'
 
     . $setupScript -Command help | Out-Null
-    $setupStopOrder = & {
-        $captured = New-Object System.Collections.Generic.List[string]
-        function Invoke-Compose([string[]]$Arguments) {
-            [void]$captured.Add([string]::Join(' ', $Arguments))
+    $tunnelSentinelDir = Join-Path $temporaryRoot 'tunnel-sentinel-bin'
+    $tunnelSentinelLog = Join-Path $temporaryRoot 'tunnel-docker-invoked.log'
+    New-Item -ItemType Directory -Path $tunnelSentinelDir | Out-Null
+    Set-Content -LiteralPath (Join-Path $tunnelSentinelDir 'docker.cmd') -Encoding ASCII -Value "@echo invoked %*>>`"$tunnelSentinelLog`"`r`n@exit /b 99`r`n"
+    $savedPath = $env:PATH
+    try {
+        $env:PATH = "$tunnelSentinelDir;$savedPath"
+        $setupStopOrder = & {
+            $captured = New-Object System.Collections.Generic.List[string]
+            function Invoke-Compose([string[]]$Arguments) {
+                [void]$captured.Add([string]::Join(' ', $Arguments))
+            }
+            Stop-DeploymentOrdered
+            [string]::Join(';', $captured)
         }
-        Stop-DeploymentOrdered
-        [string]::Join(';', $captured)
+        Assert-True ($setupStopOrder -ceq 'stop gateway;stop oscar;stop postgres') `
+            'Windows setup stop/restart is not dependency ordered.'
+        & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path (Split-Path -Parent $setupScript) 'oscar-remote-access.ps1') stop-if-enabled
+        Assert-True ($LASTEXITCODE -eq 0) 'oscar-remote-access.ps1 stop-if-enabled failed under OSCAR_STORAGE_TEST_MODE=1.'
+        Assert-True (-not (Test-Path -LiteralPath $tunnelSentinelLog)) `
+            'Setup/remote-access test mode leaked a real docker invocation (risk of stopping live oscar-tunnel-1).'
+    } finally {
+        $env:PATH = $savedPath
     }
-    Assert-True ($setupStopOrder -ceq 'stop gateway;stop oscar;stop postgres') `
-        'Windows setup stop/restart is not dependency ordered.'
     Assert-True (-not (Test-FullyQualifiedDeploymentPath '\\server\share\archive')) 'Setup accepted a UNC storage root.'
 
     $wslCandidates = Join-Path $temporaryRoot 'wsl-candidates'
