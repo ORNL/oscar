@@ -218,13 +218,13 @@ tls
 tls/server.crt
 tls/server.key
 EOF
-        if grep -Fxq "$(printf 'd\tremote-access')" "$records"; then
-            grep -Fxq "$(printf -- '-\tremote-access/octelium.env')" "$records" || {
+        if grep -Fxq -- "$(printf 'd\tremote-access')" "$records"; then
+            grep -Fxq -- "$(printf -- '-\tremote-access/octelium.env')" "$records" || {
                 echo 'deployment-secrets remote-access directory must contain regular file octelium.env' >&2
                 return 1
             }
             printf 'remote-access\nremote-access/octelium.env\n' >>"$expected"
-            if grep -Fxq "$(printf -- '-\tremote-access/octelium-token.txt')" "$records"; then
+            if grep -Fxq -- "$(printf -- '-\tremote-access/octelium-token.txt')" "$records"; then
                 printf 'remote-access/octelium-token.txt\n' >>"$expected"
             fi
         fi

@@ -1936,6 +1936,24 @@ release_config_files=(
 tar -C "$repo_root/dist/release" -czf "$test_root/release-config-good.tar.gz" "${release_config_files[@]}"
 sh "$archive_validator" release-config "$test_root/release-config-good.tar.gz"
 
+mkdir -p "$test_root/secrets-with-ra/secrets" "$test_root/secrets-with-ra/tls" "$test_root/secrets-with-ra/remote-access"
+for secret_rel in .env secrets/backup-key.txt secrets/oscar-admin-password.txt secrets/oscar-db-password.txt secrets/postgres-bootstrap-password.txt tls/server.crt tls/server.key remote-access/octelium.env remote-access/octelium-token.txt; do
+    printf 'fixture\n' >"$test_root/secrets-with-ra/$secret_rel"
+done
+tar -C "$test_root/secrets-with-ra" --no-recursion -czf "$test_root/secrets-with-ra.tar.gz" \
+    .env secrets secrets/backup-key.txt secrets/oscar-admin-password.txt secrets/oscar-db-password.txt secrets/postgres-bootstrap-password.txt \
+    tls tls/server.crt tls/server.key remote-access remote-access/octelium.env remote-access/octelium-token.txt
+sh "$archive_validator" deployment-secrets "$test_root/secrets-with-ra.tar.gz"
+
+rm -f "$test_root/secrets-with-ra/remote-access/octelium.env"
+tar -C "$test_root/secrets-with-ra" --no-recursion -czf "$test_root/secrets-missing-octelium-env.tar.gz" \
+    .env secrets secrets/backup-key.txt secrets/oscar-admin-password.txt secrets/oscar-db-password.txt secrets/postgres-bootstrap-password.txt \
+    tls tls/server.crt tls/server.key remote-access remote-access/octelium-token.txt
+if sh "$archive_validator" deployment-secrets "$test_root/secrets-missing-octelium-env.tar.gz" >/dev/null 2>&1; then
+    printf 'Deployment-secrets validator accepted remote-access without octelium.env.\n' >&2
+    exit 1
+fi
+
 mkdir -p "$test_root/release-config-fixture/postgis/pgdata"
 for relative in "${release_config_files[@]}"; do
     parent=${relative%/*}
