@@ -25,16 +25,20 @@ supported OSCAR restart and verify that the live Lane, RPM, and camera modules r
 lane UIDs in historical database results alone is not a persistence check. If Apply Changes and
 Save are omitted, the uploaded runtime modules are not an accepted durable configuration.
 
-## Open a view
+## Open or switch a view
 
-Use either URL form, replacing `north-gate` with the configured key:
+Operators and administrators can switch views directly from the **Scoped View** dropdown in the top navigation bar (showing **All Lanes** and each configured view with its lane count), or open a view URL directly by replacing `north-gate` with the configured key:
 
 ```text
 https://oscar.example/?view=north-gate
 https://oscar.example/view/north-gate
 ```
 
-The gateway redirects the second form to the first. OSCAR keeps the view parameter while navigating, opening event details, using the map, and handling alarm notifications.
+The gateway redirects the second form to the first. OSCAR keeps the view parameter while navigating, opening event details, using the map, and handling alarm notifications:
+
+- **Unrestricted accounts (`Administrator`, or `Operator`/`Viewer` accounts with no `allowedViews` restriction in `/users`):** When at least one Operational View is configured on the node (or `?view=` is present in the URL), the top bar displays the **Scoped View** dropdown containing **All Lanes** plus every configured view key and its assigned lane count. Deployments with zero configured Operational Views hide the dropdown automatically to keep the header uncluttered.
+- **View-restricted accounts (`allowedViews` assigned in `/users` or via federated tunnel group policy):** **All Lanes** is omitted, and the control displays only the user's permitted views (rendering a compact read-only badge when assigned a single view, or a dropdown limited strictly to their assigned views when granted two or more).
+- **Safe route transitions:** Selecting a different view from `/lane-view` or `/event-details` automatically returns the browser to the scoped Dashboard (`/?view=<key>`) or Event Log (`/event-log?view=<key>`) and clears any open preview drawer so the operator is never stranded on a lane or event outside the newly selected view.
 
 Event UUID searches and copied Event Details links also retain the active view. A canonical link includes the encoded observation ID and source node, for example `event-details?eventId=<id>&nodeId=<node>&view=north-gate`. The Viewer resolves that ID only against occupancy streams belonging to lanes visible in the active view; a UUID from another view fails closed instead of revealing the event.
 

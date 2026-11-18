@@ -14,6 +14,41 @@ release's tested bind-root ownership and recovery-media isolation contract. Use 
 for initialization and operation; a Mac may still be used for source inspection or non-deployment
 development.
 
+### Recommended hardware and capacity sizing
+
+OSCAR resource consumption divides into **baseline steady-state ingest** and **simultaneous occupancy bursts**:
+
+- **Steady-state RPM & H.264 camera ingest (network + sequential disk I/O bound):** Each RPM streams `5 Hz` radiation telemetry (`~10–30 Kbps` per lane), while RTSP cameras are ingested through the built-in loopback `mediamtx` proxy using **H.264 packet stream-copy (`-c copy`)** without CPU video re-encoding during monitoring or occupancy MP4 clip recording. Baseline camera load therefore scales primarily with **total camera bitrate and sequential NVMe write throughput**.
+- **Simultaneous occupancy & operator review bursts (CPU + RAM bound):** CPU cores and memory headroom are consumed when multiple lanes enter occupancy concurrently (triggering asynchronous two-pass five-JPEG keyframe extraction in `VideoRetention`, `30`-minute `PARQUET_PRIMARY` ZSTD archive exports, active shared live HLS viewer streams, and optional per-lane `960px -> 1600px` ONNX PP-OCRv3 container/license-plate recognition).
+
+#### Scenario hardware sizing matrix
+
+| Deployment Scenario | RPM Count | H.264 Camera Count & Stream Profile | Recommended Host OS | CPU (Physical x86-64 Cores) | System RAM | Primary Storage (OS + Archive) | Sensor Network |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **Small / Single-Gate** | `1–4` RPMs | `2–8` cameras (`720p` or `1080p` @ `15 fps`) | Ubuntu Server 24.04 LTS or Windows 11 + WSL 2 | `4+` cores (`8+` threads) | `16 GB` (`8–10 GB` WSL 2 cap on Windows) | `512 GB` NVMe SSD | `1 GbE` |
+| **Medium Site** | `5–20` RPMs | `10–40` cameras (`720p` or `1080p` @ `15 fps`) | Ubuntu Server 24.04 LTS (preferred) or Windows 11 + WSL 2 | `8+` cores (`16+` threads) | `32 GB` (`16–20 GB` WSL 2 cap on Windows) | `1–2 TB` TLC / enterprise NVMe SSD | Dedicated `1 GbE` sensor VLAN |
+| **Large / High-Density Portal** | `25–50` RPMs | `50–100` cameras (`720p` @ `15 fps` or `1080p` @ `15–30 fps`) | **Ubuntu Server 24.04 LTS bare-metal strongly recommended** *(see OS comparison below)* | `12–16+` physical P-cores | `32–64 GB` | `2–4 TB` high-endurance NVMe SSD (separate physical drive recommended if `OSCAR_BACKUP_MODE=single`) | `1–2.5 GbE`+ dedicated sensor NIC |
+| **Add-On: Per-Lane Container / Plate OCR (`ocrConfig`)** | Per OCR-enabled portal | `1080p` @ `15–30 fps` (`1–2 s` closed GOP) on OCR-designated cameras | Ubuntu Server 24.04 LTS recommended when `> 8` lanes run OCR | `+4` physical cores above base tier | `+4 GB` RAM above base tier | Uses bounded `< 100 MiB` FIFO crop cache (`2,000` JPEGs max) | Unchanged |
+| **Optional Central Federation Hub ([`ORNL/oscar-federation-hub`](https://github.com/ORNL/oscar-federation-hub))** | Multi-site Zero-Trust tunnel + SSO | Outbound HTTPS `443` from site `oscar-tunnel` connectors | Ubuntu 24.04 LTS VM (cloud or on-prem, public DNS + `443`) | `2+ vCPUs` | **`8 GB` RAM** for Mode A (`--with-authentik` browser SSO console; ~`2.8 GiB` active RSS); **`4 GB` RAM** for CLI-only Mode B | `40+ GB` SSD | Public IPv4 (`TCP 80/443`, `UDP 443`) |
+
+#### Camera H.264 resolution, frame rate, and GOP recommendations
+
+| Camera Stream Profile | Typical H.264 Bitrate (per Camera) | Aggregate Ingress (`50` Cameras / `100` Cameras) | Operational Guidance |
+| --- | --- | --- | --- |
+| **`1280×720` (`720p`) @ `15 fps`**, `1–2 s` closed GOP | `~1.0–2.0 Mbps` | `~50–100 Mbps` / `~100–200 Mbps` | **Recommended baseline for general situational-awareness cameras** at `25–50`-lane portals; minimizes NVMe write amplification and five-JPEG decode CPU while supporting up to `8` cameras per lane. |
+| **`1920×1080` (`1080p`) @ `15 fps`**, `1–2 s` closed GOP | `~2.5–4.0 Mbps` | `~125–200 Mbps` / `~250–400 Mbps` | **Recommended sweet spot for Container & License Plate OCR cameras** and primary evidentiary angles; preserves sharp stenciled ISO 6346 check digits without doubling packet rate. Supports up to `8` cameras per lane. |
+| **`1920×1080` (`1080p`) @ `30 fps`**, `1–2 s` closed GOP | `~4.0–8.0 Mbps` | `~200–400 Mbps` / `~400–800 Mbps` | Use only on high-speed free-flow lanes where `15 fps` introduces motion blur; roughly doubles RTSP packet rate, temporary MP4 clip size, and two-pass JPEG decode work. |
+| **`3840×2160` (`4K`) @ `15–30 fps`** | `~12–25+ Mbps` | Not recommended above `8–16` total cameras | Supported (`writeQueueSize: 4096`), capped at `2` cameras per lane by the `120 MP` per-event gallery ceiling. On multi-lane sites, point OSCAR at a `720p` or `1080p` H.264 sub-stream instead of a `4K` main stream. |
+
+Always configure **H.264 (`Main` or `High` profile, CBR or capped VBR)** with a **`1–2` second closed GOP** (`I-frame` interval of `15–30` frames at `15 fps`) and disable camera Dynamic FPS / Smart Codec GOP stretching (`10+ s` keyframe gaps delay live HLS startup and short-occupancy keyframe capture). When `ocrConfig` is enabled on undersized hardware, `OcrResourceGovernor` automatically sheds OCR inference above `85%` host CPU load or `< 15%` free JVM heap so radiation alarm capture and adjudication are never starved.
+
+#### Native Ubuntu Server 24.04 LTS vs. Windows 11 + WSL 2 at scale
+
+Under sustained **50-lane + 100-camera** `PARQUET_PRIMARY` operation, the `oscar` container holds steady at `~5.4–5.6 GiB` RSS and `postgres` at `~0.8–1.0 GiB` RSS (plus WSL 2 page cache and `Local9pParquetCache`'s bounded `2–8 GiB` native `ext4` Parquet cache on Windows). Both host platforms pass full functional and endurance validation, with an important architectural difference at high lane counts:
+
+- **Ubuntu Server 24.04 LTS (native Linux Docker bridge + native `ext4` NVMe):** Delivers metronome-steady `200 ms` (`5 Hz`) RPM sample ingestion across all `50` lanes with zero TCP reader bunching (`load average ~3.5–4.8` on desktop/server multi-core CPUs) and sub-millisecond hot-tier queries. **Choose Ubuntu Server 24.04 bare-metal for `25–50+` lane portals, `50–100` camera deployments, or multi-lane OCR.**
+- **Windows 11 + Docker Desktop / WSL 2:** Routes inbound sensor TCP streams through Docker Desktop's user-space network proxy and virtualized Hyper-V storage/network layers. At `50`-lane + `100`-camera concurrency on laptop/workstation hardware, brief (`0.4–1.0 s`) host I/O or proxy scheduling pauses can bunch `2–5` consecutive `5 Hz` RPM samples into micro-bursts on live detector plots without dropping samples or delaying alarms. If Windows 11 is required above `20` lanes, use a desktop/workstation CPU with `8–12+` physical performance cores, `32–64 GB` host RAM (`20–32 GB` assigned to `%USERPROFILE%\.wslconfig`), dedicated internal NVMe storage (never external USB drives for active volumes), and run `.\oscar.bat prepare-host`.
+
 ### Windows 11 unattended server preparation
 
 Windows 11 desktops and mobile workstations ship with `Balanced` power defaults that can suspend

@@ -3,7 +3,10 @@
 OSCAR 3.11.0 deployment and storage operation are supported only on Windows 11 x86-64 with Docker
 Desktop/WSL 2 and Ubuntu Server 24.04 x86-64 with Docker Engine/Compose. macOS is limited to source
 inspection and non-deployment development; initialization, start, restart, upgrade, and storage
-operations fail closed there.
+operations fail closed there. Before sizing a host or configuring camera H.264 resolution, frame
+rate, and keyframe intervals for `1–50` RPMs and `2–100` cameras (or optional per-lane OCR and
+federation hub VMs), review *Recommended hardware and capacity sizing* in
+[`DEPLOYMENT.md`](DEPLOYMENT.md#recommended-hardware-and-capacity-sizing).
 
 > **Companion Video Guide:** Watch [Module 01 — Initialize OSCAR Deployment, Admin Credentials & TLS (`01-deployment-init-and-credentials.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/01-deployment-init-and-credentials.mp4) ([WebVTT captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/01-deployment-init-and-credentials.vtt)), or browse all 19 captioned workflow guides in [`docs/VIDEO_GUIDES.md`](https://github.com/ORNL/oscar/blob/main/docs/VIDEO_GUIDES.md).
 
