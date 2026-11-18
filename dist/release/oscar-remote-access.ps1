@@ -211,7 +211,15 @@ OSCAR Remote Access Administration (Octelium Zero Trust Sidecar)
         }
         $raDir = Get-RemoteAccessDir
         $cfgFile = Join-Path $raDir 'octelium.env'
-        & docker rm -f oscar-tunnel-1 *> $null
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $existingId = (& docker ps -a -q --filter 'name=^/oscar-tunnel-1$' 2>$null)
+            if ($existingId) { & docker rm -f oscar-tunnel-1 *> $null }
+            $global:LASTEXITCODE = 0
+        } finally {
+            $ErrorActionPreference = $prevEap
+        }
         if (Test-Path -LiteralPath $cfgFile) {
             $lines = [System.IO.File]::ReadAllLines($cfgFile) | ForEach-Object {
                 if ($_ -match '^OCTELIUM_ENABLED=') { 'OCTELIUM_ENABLED=false' } else { $_ }
@@ -262,7 +270,15 @@ OSCAR Remote Access Administration (Octelium Zero Trust Sidecar)
         }
     }
     'stop-if-enabled' {
-        & docker stop oscar-tunnel-1 *> $null
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $runningId = (& docker ps -q --filter 'name=^/oscar-tunnel-1$' 2>$null)
+            if ($runningId) { & docker stop oscar-tunnel-1 *> $null }
+            $global:LASTEXITCODE = 0
+        } finally {
+            $ErrorActionPreference = $prevEap
+        }
     }
     default {
         Fail "Unknown remote-access subcommand: $Subcommand"

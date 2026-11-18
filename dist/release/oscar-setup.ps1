@@ -1180,7 +1180,14 @@ function Stop-ApplicationTierOrdered {
     # service stop_grace_period deadlines while enforcing dependency order.
     $remoteAccessScript = Join-Path $ScriptRoot 'oscar-remote-access.ps1'
     if (Test-Path -LiteralPath $remoteAccessScript) {
-        & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $remoteAccessScript stop-if-enabled *> $null
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $remoteAccessScript stop-if-enabled *> $null
+            $global:LASTEXITCODE = 0
+        } finally {
+            $ErrorActionPreference = $prevEap
+        }
     }
     Invoke-Compose @('stop', 'gateway')
     Invoke-Compose @('stop', 'oscar')
