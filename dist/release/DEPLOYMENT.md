@@ -19,35 +19,50 @@ development.
 OSCAR resource consumption divides into **baseline steady-state ingest** and **simultaneous occupancy bursts**:
 
 - **Steady-state RPM & H.264 camera ingest (network + sequential disk I/O bound):** Each RPM streams `5 Hz` radiation telemetry (`~10–30 Kbps` per lane), while RTSP cameras are ingested through the built-in loopback `mediamtx` proxy using **H.264 packet stream-copy (`-c copy`)** without CPU video re-encoding during monitoring or occupancy MP4 clip recording. Baseline camera load therefore scales primarily with **total camera bitrate and sequential NVMe write throughput**.
-- **Simultaneous occupancy & operator review bursts (CPU + RAM bound):** CPU cores and memory headroom are consumed when multiple lanes enter occupancy concurrently (triggering asynchronous two-pass five-JPEG keyframe extraction in `VideoRetention`, `30`-minute `PARQUET_PRIMARY` ZSTD archive exports, active shared live HLS viewer streams, and optional per-lane `960px -> 1600px` ONNX PP-OCRv3 container/license-plate recognition).
+- **Simultaneous occupancy & operator review bursts (CPU + RAM bound):** CPU cores and memory headroom are consumed when multiple lanes enter occupancy concurrently (triggering asynchronous two-pass five-JPEG keyframe extraction in `VideoRetention`, `30`-minute `PARQUET_PRIMARY` ZSTD archive exports, active shared live HLS viewer streams, and optional per-lane Tier-0 oriented `CenterNet` ROI + native-frame deskew + `PP-OCRv3` CTC / INT8 `PARSeq` + Tier-1/2 `960px -> 1600px` DBNet container/license-plate OCR at `~1.13 s` mean clip latency).
 
-#### Scenario hardware sizing matrix
+#### Baseline reference hardware & scenario sizing matrix
 
-| Deployment Scenario | RPM Count | H.264 Camera Count & Stream Profile | Recommended Host OS | CPU (Physical x86-64 Cores) | System RAM | Primary Storage (OS + Archive) | Sensor Network |
+A **Baseline Field Server** (`8` physical x86-64 cores / `16` threads, `32 GB` RAM, `1–2 TB` TLC/enterprise NVMe SSD, dual `1 GbE` NICs for operator LAN + dedicated sensor VLAN) supports a **5-lane OCR portal** on either Ubuntu Server 24.04 LTS or Windows 11 + WSL 2 with wide headroom, and scales to a **50-lane portal** on bare-metal Ubuntu Server 24.04 LTS (`12–16` physical P-cores recommended when all `50` lanes run continual OCR):
+
+| Deployment Profile | RPM Count | Recommended Camera & OCR Stream Pairing (`2` Cameras/Lane Default) | Recommended Host OS | CPU (Physical x86-64 Cores) | System RAM | Primary Storage (OS + Multi-Year Archive) | Sensor Network |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| **Small / Single-Gate** | `1–4` RPMs | `2–8` cameras (`720p` or `1080p` @ `15 fps`) | Ubuntu Server 24.04 LTS or Windows 11 + WSL 2 | `4+` cores (`8+` threads) | `16 GB` (`8–10 GB` WSL 2 cap on Windows) | `512 GB` NVMe SSD | `1 GbE` |
-| **Medium Site** | `5–20` RPMs | `10–40` cameras (`720p` or `1080p` @ `15 fps`) | Ubuntu Server 24.04 LTS (preferred) or Windows 11 + WSL 2 | `8+` cores (`16+` threads) | `32 GB` (`16–20 GB` WSL 2 cap on Windows) | `1–2 TB` TLC / enterprise NVMe SSD | Dedicated `1 GbE` sensor VLAN |
-| **Large / High-Density Portal** | `25–50` RPMs | `50–100` cameras (`720p` @ `15 fps` or `1080p` @ `15–30 fps`) | **Ubuntu Server 24.04 LTS bare-metal strongly recommended** *(see OS comparison below)* | `12–16+` physical P-cores | `32–64 GB` | `2–4 TB` high-endurance NVMe SSD (separate physical drive recommended if `OSCAR_BACKUP_MODE=single`) | `1–2.5 GbE`+ dedicated sensor NIC |
-| **Add-On: Per-Lane Container / Plate OCR (`ocrConfig`)** | Per OCR-enabled portal | `1080p` @ `15–30 fps` (`1–2 s` closed GOP) on OCR-designated cameras | Ubuntu Server 24.04 LTS recommended when `> 8` lanes run OCR | `+4` physical cores above base tier | `+4 GB` RAM above base tier | Uses bounded `< 100 MiB` FIFO crop cache (`2,000` JPEGs max) | Unchanged |
+| **Type A — 5-Lane Gate / Regional Portal** *(covers `1–8` lanes @ `100%` OCR)* | `5` RPMs (`1–8` range) | `10` cameras: `5× 1080p @ 15 fps` (`1 s` GOP, OCR angle) + `5× 720p @ 15 fps` (overview) — or `10× 1080p @ 15 fps` (`~18–35 Mbps` ingress) | Ubuntu Server 24.04 LTS or Windows 11 Pro + WSL 2 | `8` cores (`16` threads) baseline (`4` cores / `8` threads min) | `32 GB` baseline (`16 GB` min; `12–16 GB` `.wslconfig` cap on Windows) | `1 TB` NVMe SSD (`512 GB` min; `5`-lane 10-yr archive uses `~72–92 GiB`) | `1 GbE` dedicated sensor VLAN |
+| **Intermediate / Medium Portal** | `9–24` RPMs | `18–48` cameras (`1× 1080p @ 15 fps` OCR + `1× 720p @ 15 fps` overview per lane) | Ubuntu Server 24.04 LTS (preferred; required when `> 8` lanes run OCR) | `8–12` physical cores (`16–24` threads) | `32 GB` | `1–2 TB` TLC / enterprise NVMe SSD | Dedicated `1 GbE` sensor VLAN |
+| **Type B — 50-Lane Major Port of Entry** *(covers `25–50` lanes @ `100%` OCR)* | `50` RPMs (`25–50` range) | `100` cameras: `50× 1080p @ 15 fps` (`1 s` GOP, OCR angle) + `50× 720p @ 15 fps` (overview) (`~175–300 Mbps` ingress) | **Ubuntu Server 24.04 LTS bare-metal strongly recommended** *(see OS comparison below)* | `12–16+` physical P-cores (`8` cores min for alarm-only OCR) | `32–64 GB` | `2–4 TB` high-endurance NVMe SSD (`50`-lane 10-yr archive uses `~695–915 GiB`; separate physical drive recommended if `OSCAR_BACKUP_MODE=single`) | `1–2.5 GbE`+ dedicated sensor NIC |
 | **Optional Central Federation Hub ([`ORNL/oscar-federation-hub`](https://github.com/ORNL/oscar-federation-hub))** | Multi-site Zero-Trust tunnel + SSO | Outbound HTTPS `443` from site `oscar-tunnel` connectors | Ubuntu 24.04 LTS VM (cloud or on-prem, public DNS + `443`) | `2+ vCPUs` | **`8 GB` RAM** for Mode A (`--with-authentik` browser SSO console; ~`2.8 GiB` active RSS); **`4 GB` RAM** for CLI-only Mode B | `40+ GB` SSD | Public IPv4 (`TCP 80/443`, `UDP 443`) |
 
-#### Camera H.264 resolution, frame rate, and GOP recommendations
+#### Camera H.264 resolution, frame rate, GOP, and OCR optical framing recommendations
 
-| Camera Stream Profile | Typical H.264 Bitrate (per Camera) | Aggregate Ingress (`50` Cameras / `100` Cameras) | Operational Guidance |
+Because the settled hybrid OCR pipeline (`sensorhub-process-ocr`) detects oriented stencil/plate boxes at `640×384` and then **extracts and `AffineTransform`-deskews crops directly from the native camera frame** before `48px` CTC / `32×128` `PARSeq` recognition and split/boxed check-digit recovery (with Tier-2 full-frame DBNet capped at `1600px`), **`1920×1080` (`1080p`) @ `15 fps` with a `1 s` closed GOP** is the optimal OCR camera stream profile, paired with **`1280×720` (`720p`) @ `15 fps`** on non-OCR situational-awareness cameras:
+
+| Camera Stream Profile | Typical H.264 Bitrate (per Camera) | Aggregate Ingress (`5` Lanes = `10` Cams / `50` Lanes = `100` Cams) | Operational & OCR Guidance |
 | --- | --- | --- | --- |
-| **`1280×720` (`720p`) @ `15 fps`**, `1–2 s` closed GOP | `~1.0–2.0 Mbps` | `~50–100 Mbps` / `~100–200 Mbps` | **Recommended baseline for general situational-awareness cameras** at `25–50`-lane portals; minimizes NVMe write amplification and five-JPEG decode CPU while supporting up to `8` cameras per lane. |
-| **`1920×1080` (`1080p`) @ `15 fps`**, `1–2 s` closed GOP | `~2.5–4.0 Mbps` | `~125–200 Mbps` / `~250–400 Mbps` | **Recommended sweet spot for Container & License Plate OCR cameras** and primary evidentiary angles; preserves sharp stenciled ISO 6346 check digits without doubling packet rate. Supports up to `8` cameras per lane. |
-| **`1920×1080` (`1080p`) @ `30 fps`**, `1–2 s` closed GOP | `~4.0–8.0 Mbps` | `~200–400 Mbps` / `~400–800 Mbps` | Use only on high-speed free-flow lanes where `15 fps` introduces motion blur; roughly doubles RTSP packet rate, temporary MP4 clip size, and two-pass JPEG decode work. |
-| **`3840×2160` (`4K`) @ `15–30 fps`** | `~12–25+ Mbps` | Not recommended above `8–16` total cameras | Supported (`writeQueueSize: 4096`), capped at `2` cameras per lane by the `120 MP` per-event gallery ceiling. On multi-lane sites, point OSCAR at a `720p` or `1080p` H.264 sub-stream instead of a `4K` main stream. |
+| **`1920×1080` (`1080p`) @ `15 fps`**, **`1 s` (`15`-frame) closed GOP** | `~2.5–4.0 Mbps` | `~25–40 Mbps` / `~250–400 Mbps` | **Recommended standard for all Container & License Plate OCR cameras** and primary evidentiary angles. Frame lens zoom so ISO 6346 owner/serial/boxed check-digit stencils measure **`>= 24–32 px` tall** (`>= 18–24 px` for license plates) with max exposure **`<= 1/500 s`** (`<= 2 ms`) to eliminate motion blur without doubling packet rate. Supports up to `8` cameras per lane. |
+| **`1280×720` (`720p`) @ `15 fps`**, `1–2 s` closed GOP | `~1.0–2.0 Mbps` | `~10–20 Mbps` / `~100–200 Mbps` | **Recommended companion stream for non-OCR overview / side-profile cameras.** Pairing `1× 1080p @ 15 fps` (OCR) + `1× 720p @ 15 fps` (overview) per lane holds 50-lane/100-camera ingress to `~175–300 Mbps` (`< 30%` of `1 GbE`) and keeps average retained JPEG size near `~90–100 KiB/frame`. |
+| **`1920×1080` (`1080p`) @ `30 fps`**, `1 s` (`30`-frame) closed GOP | `~4.0–8.0 Mbps` | `~40–80 Mbps` / `~400–800 Mbps` | Reserve for un-gated high-speed (`> 25 mph / 40 km/h`) free-flow OCR lanes; roughly doubles RTSP packet rate, 24-hour MP4 grace storage, and two-pass JPEG decode work compared to `15 fps`. |
+| **`2560×1440` (`1440p`) @ `15 fps`**, `1 s` closed GOP | `~4.0–6.0 Mbps` | `~40–60 Mbps` / `~400–600 Mbps` | Optional wide-FOV OCR alternative when a single distant mast camera must cover both the upper container rear stencil and lower bumper plate while keeping character height `>= 24 px`. |
+| **`3840×2160` (`4K`) @ `15–30 fps`** | `~12–25+ Mbps` | Not recommended above `8–16` total cameras | Supported (`writeQueueSize: 4096`), capped at `2` cameras per lane by the `120 MP` per-event gallery ceiling. Because Tier-2 DBNet downscales full frames above `1600px`, `4K` adds `4×` decode/disk cost without improving OCR over a properly framed `1080p` sub-stream. |
 
-Always configure **H.264 (`Main` or `High` profile, CBR or capped VBR)** with a **`1–2` second closed GOP** (`I-frame` interval of `15–30` frames at `15 fps`) and disable camera Dynamic FPS / Smart Codec GOP stretching (`10+ s` keyframe gaps delay live HLS startup and short-occupancy keyframe capture). When `ocrConfig` is enabled on undersized hardware, `OcrResourceGovernor` automatically sheds OCR inference above `85%` host CPU load or `< 15%` free JVM heap so radiation alarm capture and adjudication are never starved.
+Always configure **H.264 (`Main` or `High` profile, CBR or capped VBR)** with a **`1–2` second closed GOP** (`1 s` / `15` frames recommended on OCR cameras) and disable camera Dynamic FPS / Smart Codec GOP stretching (`10+ s` keyframe gaps delay live HLS startup and short-occupancy keyframe capture). When `ocrConfig` is enabled on undersized hardware, `OcrResourceGovernor` automatically defers or sheds OCR inference above `85%` host CPU load or `< 15%` free JVM heap so radiation alarm capture and adjudication are never starved.
+
+#### Projected multi-year storage & query latency (`5` Lanes vs. `50` Lanes, OCR enabled)
+
+Under realistic portal traffic (`100` occupancies/lane/day, `5%–10%` radiation alarm rate, `1× 1080p @ 15 fps` OCR camera + `1× 720p @ 15 fps` overview camera per lane, `PARQUET_PRIMARY`, 24-hour MP4 grace, `secondaryFrameRetentionDays = 30` pruning 4 of 5 JPEGs so only `frame-03.jpg` persists long-term, and `ocrCropRetentionDays = 365`):
+
+| Reference Deployment | Steady `oscar` `anon` RAM / `postgres` RSS | Steady PostgreSQL Disk (Logical / Physical+WAL) | Net Annual Cold Growth (`Parquet + frame-03.jpg + CSVs`) | **Year 1** Total Disk | **Year 5** Total Disk | **Year 10** Total Disk | Bounded Hot/Cold Query Latency (Year 1 → Year 10) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **Type A — 5 Lanes / 10 Cameras (`5/5` OCR)** | `~1.4–2.0 GiB` / `~0.5–0.7 GiB` | `~0.35 GiB` / `~0.8 GiB` | **`~7.0–9.0 GiB / yr`** (`~4.8 GiB` Parquet + `~1.8–3.6 GiB` JPEGs + `~0.4 GiB` CSV/meta) | **`~9–11 GiB`** | **`~37–47 GiB`** | **`~72–92 GiB`** | **`25–140 ms`** (Ubuntu) / **`95–450 ms`** (Win 11 WSL 2); `365d` report `< 1–2 s` |
+| **Type B — 50 Lanes / 100 Cameras (`50/50` OCR)** | `~1.8–2.3 GiB` / `~0.8–1.1 GiB` | `~0.63 GiB` / `~1.5 GiB` | **`~68–90 GiB / yr`** (`~45–50 GiB` Parquet + `~18–36 GiB` JPEGs + `~3.5 GiB` CSV/meta) | **`~81–105 GiB`** | **`~353–465 GiB`** | **`~693–915 GiB`** | **`40–185 ms`** (Ubuntu bounded windows & 15d SQL summaries); `365d` report `~2–5 s/yr` |
+
+*(See [`docs/RELEASE_NOTES_AND_UPGRADE_GUIDE.md`](../../docs/RELEASE_NOTES_AND_UPGRADE_GUIDE.md#3-multi-year-system-resources--performance-projections-5-lane--50-lane-reference-deployments-with-hybrid-ocr) for the full Day 1 → Year 10 subsystem breakdown.)*
 
 #### Native Ubuntu Server 24.04 LTS vs. Windows 11 + WSL 2 at scale
 
-Under sustained **50-lane + 100-camera** `PARQUET_PRIMARY` operation, the `oscar` container holds steady at `~5.4–5.6 GiB` RSS and `postgres` at `~0.8–1.0 GiB` RSS (plus WSL 2 page cache and `Local9pParquetCache`'s bounded `2–8 GiB` native `ext4` Parquet cache on Windows). Both host platforms pass full functional and endurance validation, with an important architectural difference at high lane counts:
+Under sustained **50-lane + 100-camera + 50-lane OCR** `PARQUET_PRIMARY` operation, `cgroup v2` telemetry (`memory.stat`) shows the `oscar` container holds steady at **`~1.95–2.24 GiB` of true anonymous process memory (`anon` JVM heap + ONNX Runtime + FFmpeg/MediaMTX)** and `postgres` at **`~0.65–0.95 GiB` RSS**. Raw `docker stats` `MemUsage` typically displays `~5.2–6.2 GiB` because Linux accounts `~3.0–4.3 GiB` of clean, kernel-reclaimable filesystem page cache (`file`) alongside `anon` memory (plus `Local9pParquetCache`'s bounded `2–8 GiB` native `ext4` Parquet disk cache on Windows WSL 2). Both host platforms pass full functional and endurance validation, with an important architectural difference at high lane counts:
 
-- **Ubuntu Server 24.04 LTS (native Linux Docker bridge + native `ext4` NVMe):** Delivers metronome-steady `200 ms` (`5 Hz`) RPM sample ingestion across all `50` lanes with zero TCP reader bunching (`load average ~3.5–4.8` on desktop/server multi-core CPUs) and sub-millisecond hot-tier queries. **Choose Ubuntu Server 24.04 bare-metal for `25–50+` lane portals, `50–100` camera deployments, or multi-lane OCR.**
-- **Windows 11 + Docker Desktop / WSL 2:** Routes inbound sensor TCP streams through Docker Desktop's user-space network proxy and virtualized Hyper-V storage/network layers. At `50`-lane + `100`-camera concurrency on laptop/workstation hardware, brief (`0.4–1.0 s`) host I/O or proxy scheduling pauses can bunch `2–5` consecutive `5 Hz` RPM samples into micro-bursts on live detector plots without dropping samples or delaying alarms. **When enabling `100%` per-lane Container & License Plate OCR (`ocrConfig.enabled = true`) on Windows 11 + WSL 2, size the deployment to `1–8` lanes (for example, `6` lanes @ `100%` OCR, validated with zero `5 Hz` RPM sample bunching and `~1.9 GiB` container RSS)** and federate higher-density portals onto an Ubuntu Server 24.04 bare-metal HQ node (`25–50` lanes @ `100%` OCR). If Windows 11 is required above `20` non-OCR lanes, use a desktop/workstation CPU with `8–12+` physical performance cores, `32–64 GB` host RAM (`20–32 GB` assigned to `%USERPROFILE%\.wslconfig`), dedicated internal NVMe storage (never external USB drives for active volumes), and run `.\oscar.bat prepare-host`.
+- **Ubuntu Server 24.04 LTS (native Linux Docker bridge + native `ext4` NVMe):** Delivers metronome-steady `200 ms` (`5 Hz`) RPM sample ingestion across all `50` lanes with zero TCP reader bunching (`~23%` 7-day mean CPU on `8` threads, `40.7 ms` archived `resultTime=latest`, and `140–147 ms` cold/mixed Parquet queries). **Choose Ubuntu Server 24.04 bare-metal for `25–50+` lane portals, `50–100` camera deployments, or `> 8` OCR lanes.**
+- **Windows 11 + Docker Desktop / WSL 2:** Routes inbound sensor TCP streams through Docker Desktop's user-space network proxy and virtualized Hyper-V/`9p` storage layers (`~2.5–3×` higher cold-query latency than native `ext4`). At `50`-lane + `100`-camera concurrency on compact workstation hardware, brief (`0.4–1.0 s`) host I/O or proxy scheduling pauses can bunch `2–5` consecutive `5 Hz` RPM samples into micro-bursts on live detector plots without dropping samples or delaying alarms. **Windows 11 + WSL 2 is well-suited for Type A (`1–8` lane, e.g. `5–6` lane) portals with `100%` per-lane OCR (`~1.95 GiB` `anon` RAM, `~6%` PostgreSQL CPU, and zero `5 Hz` RPM sample bunching)** while federating higher-density portals onto an Ubuntu Server 24.04 bare-metal HQ node (`25–50` lanes @ `100%` OCR). If Windows 11 is required above `20` non-OCR lanes, use a desktop/workstation CPU with `8–12+` physical performance cores, `32–64 GB` host RAM (`20–32 GB` assigned to `%USERPROFILE%\.wslconfig`), dedicated internal NVMe storage (never external USB drives for active volumes), and run `.\oscar.bat prepare-host`.
 
 ### Windows 11 unattended server preparation
 
@@ -211,7 +226,7 @@ Windows self-signed LAN/Tailscale example with additional stable names:
 
 ```powershell
 .\oscar.bat init -Hostname oscar-site.example.org -Port 443 `
-    -TlsSan 192.168.0.61,oscar-site.example-tailnet.ts.net
+    -TlsSan 198.51.100.20,oscar-site.example-tailnet.ts.net
 ```
 
 Ubuntu equivalent:
@@ -226,7 +241,7 @@ Ubuntu self-signed LAN/Tailscale example with additional stable names:
 
 ```sh
 sudo bash oscar.sh init --hostname oscar-site.example.org --port 443 \
-    --tls-san 192.168.0.57 \
+    --tls-san 198.51.100.10 \
     --tls-san oscar-site.example-tailnet.ts.net
 ```
 
@@ -270,7 +285,7 @@ self-signed identity; it does not make an unlisted hostname or IP valid.
 Browser WebAuthn Passkeys (`navigator.credentials.create` / `navigator.credentials.get`) enforce two
 strict browser-side prerequisites that do not apply to local PBKDF2 password sign-in:
 
-1. **A domain name (not a raw IP literal):** Opening `https://192.168.0.57/` continues to support
+1. **A domain name (not a raw IP literal):** Opening `https://198.51.100.10/` continues to support
    username + password sign-in (including phone-free facilities), but browsers disable WebAuthn on
    IPv4/IPv6 literals. Always open OSCAR via a domain name such as `https://oscar.local`,
    `https://oscar.ubuntu`, or `https://oscar.win`. When operating **multiple OSCAR servers on the
@@ -289,12 +304,12 @@ strict browser-side prerequisites that do not apply to local PBKDF2 password sig
     even when the LAN cable is unplugged.
   - *Whole-LAN (recommended for multiple laptops and phones):* Add Local DNS (`A`) records on the site
     router or internal DNS server mapping each node's hostname to its static LAN IP (for example,
-    `oscar.ubuntu -> 198.51.100.57` and `oscar.win -> 198.51.100.170`).
+    `oscar.ubuntu -> 198.51.100.10` and `oscar.win -> 198.51.100.20`).
   - *Per-workstation fallback (air-gapped LAN without router DNS access):* Map the hostname(s) in each
     client workstation's `hosts` file:
-    - macOS / Linux: `printf '198.51.100.57\toscar.ubuntu\n198.51.100.170\toscar.win\n' | sudo tee -a /etc/hosts`
+    - macOS / Linux: `printf '198.51.100.10\toscar.ubuntu\n198.51.100.20\toscar.win\n' | sudo tee -a /etc/hosts`
     - Windows (elevated PowerShell):
-      `Add-Content -Path C:\Windows\System32\drivers\etc\hosts -Value "198.51.100.57`toscar.ubuntu"; ipconfig /flushdns`
+      `Add-Content -Path C:\Windows\System32\drivers\etc\hosts -Value "198.51.100.10`toscar.ubuntu"; ipconfig /flushdns`
 - **Step 2 — Issue an `<= 825`-day LAN Root-CA certificate when macOS/iOS clients or multiple nodes are present (optional on Windows/Linux-only single nodes):**
   Generate a one-time site Root CA (`oscar-lan-root-ca.crt`), sign an `820`-day leaf certificate
   containing all DNS and IP Subject Alternative Names (`SAN`s) for each node, and shred the Root CA
@@ -306,7 +321,7 @@ strict browser-side prerequisites that do not apply to local PBKDF2 password sig
     -addext "keyUsage=critical,keyCertSign,cRLSign" \
     -keyout ca.key -out oscar-lan-root-ca.crt
   openssl req -newkey rsa:3072 -nodes -subj "/CN=oscar.ubuntu" -keyout server.key -out server.csr
-  printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:oscar.ubuntu,DNS:oscar.local,DNS:localhost,IP:198.51.100.57,IP:127.0.0.1\n' > server.ext
+  printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:oscar.ubuntu,DNS:oscar.local,DNS:localhost,IP:198.51.100.10,IP:127.0.0.1\n' > server.ext
   openssl x509 -req -in server.csr -CA oscar-lan-root-ca.crt -CAkey ca.key -CAcreateserial \
     -out leaf.crt -days 820 -sha256 -extfile server.ext
   cat leaf.crt oscar-lan-root-ca.crt > server.crt
@@ -323,7 +338,7 @@ strict browser-side prerequisites that do not apply to local PBKDF2 password sig
 For ordinary LAN operation, create a site DNS record pointing the configured hostname at the
 OSCAR host's static address. A per-workstation hosts entry is an acceptable isolated-test fallback,
 but it does not scale and must map the same hostname that appears in the certificate. Direct access
-such as `https://192.168.0.57/` requires that exact IP SAN; accepting a warning for a certificate
+such as `https://198.51.100.10/` requires that exact IP SAN; accepting a warning for a certificate
 issued only to `oscar.local` is not a supported substitute.
 
 The gateway publishes the configured HTTPS port on the host interfaces by default. Scope the host
