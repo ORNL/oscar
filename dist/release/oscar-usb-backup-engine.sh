@@ -187,41 +187,56 @@ EOF
     chmod 0755 "$usb_root/copy-to-another-drive.sh" 2>/dev/null || true
 }
 
-# Coalesce multiple sub-day state delta packs for a completed UTC day (or >= 4
-# small sub-day packs for today) so 5-year pack count stays <= ~2,000 files.
+# Coalesce trailing small (< 128 MiB) sub-day state delta packs using pure
+# sequential `tar --concatenate` (zero /tmp tmpfs extraction, zero NTFS MFT
+# directory/inode churn, and never rewriting >= 128 MiB base packs).
 coalesce_state_packs_if_needed() {
     local state_packs_dir=$1 catalog_file=$2 today_utc=$3 scratch=$4
     [[ -f $catalog_file ]] || return 0
 
-    local day count merged_name merged_path extract_dir
-    local -a day_packs=()
+    rm -rf -- "$state_packs_dir"/.coalesce-* "$state_packs_dir"/*.coalesce.tmp 2>/dev/null || true
+    local day count merged_path p sz idx total_bytes
+    local -a all_day_packs=() rev_small=() small_packs=()
     for day in $(find "$state_packs_dir" -maxdepth 1 -type f -name 'pack-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-*.tar' \
         -printf '%f\n' 2>/dev/null | cut -c6-15 | sort -u); do
-        mapfile -t day_packs < <(find "$state_packs_dir" -maxdepth 1 -type f -name "pack-${day}-*.tar" -printf '%f\n' | sort)
-        count=${#day_packs[@]}
+        mapfile -t all_day_packs < <(find "$state_packs_dir" -maxdepth 1 -type f -name "pack-${day}-*.tar" -printf '%f\n' | LC_ALL=C sort)
+        rev_small=()
+        total_bytes=0
+        for ((idx = ${#all_day_packs[@]} - 1; idx >= 0; idx--)); do
+            p=${all_day_packs[$idx]}
+            sz=$(stat -c '%s' "$state_packs_dir/$p" 2>/dev/null || printf '0')
+            if ((sz < 134217728 && total_bytes + sz < 536870912)); then
+                rev_small+=("$p")
+                total_bytes=$((total_bytes + sz))
+            else
+                break
+            fi
+        done
+        small_packs=()
+        for ((idx = ${#rev_small[@]} - 1; idx >= 0; idx--)); do
+            small_packs+=("${rev_small[$idx]}")
+        done
+        count=${#small_packs[@]}
         if [[ $day != "$today_utc" && $count -gt 1 ]] || [[ $day == "$today_utc" && $count -ge 6 ]]; then
-            extract_dir="$scratch/coalesce-$day"
-            rm -rf -- "$extract_dir"
-            mkdir -p "$extract_dir"
-            local p
-            for p in "${day_packs[@]}"; do
-                tar -C "$extract_dir" --no-same-owner -xf "$state_packs_dir/$p"
+            local final_pack=${small_packs[$((count - 1))]}
+            merged_path="$state_packs_dir/${final_pack}.coalesce.tmp"
+            rm -f -- "$merged_path"
+            cp -f -- "$state_packs_dir/${small_packs[0]}" "$merged_path"
+            for ((idx = 1; idx < count; idx++)); do
+                tar --concatenate --file="$merged_path" "$state_packs_dir/${small_packs[$idx]}"
             done
-            merged_name="pack-${day}-000000.tar.tmp"
-            merged_path="$state_packs_dir/$merged_name"
-            (cd "$extract_dir" && tar -cf "$merged_path" .)
-            rm -rf -- "$extract_dir"
-            local final_pack="pack-${day}-000000.tar"
-            for p in "${day_packs[@]}"; do
+            printf '%s\n' "${small_packs[@]}" >"$scratch/merged_small_packs.list"
+            mv -f -- "$merged_path" "$state_packs_dir/$final_pack"
+            printf '%s  %s\n' "$(sha256_file "$state_packs_dir/$final_pack")" "$final_pack" >"$state_packs_dir/$final_pack.sha256"
+            for p in "${small_packs[@]}"; do
                 [[ $p == "$final_pack" ]] && continue
                 rm -f -- "$state_packs_dir/$p" "$state_packs_dir/$p.sha256"
             done
-            mv -f -- "$merged_path" "$state_packs_dir/$final_pack"
-            printf '%s  %s\n' "$(sha256_file "$state_packs_dir/$final_pack")" "$final_pack" >"$state_packs_dir/$final_pack.sha256"
-            awk -F'\t' -v OFS='\t' -v d="pack-${day}-" -v target="$final_pack" '
-                index($4, d) == 1 { $4 = target }
+            awk -F'\t' -v OFS='\t' -v target="$final_pack" '
+                FILENAME == ARGV[1] { merged[$0] = 1; next }
+                ($4 in merged) { $4 = target }
                 { print }
-            ' "$catalog_file" >"$scratch/catalog.updated"
+            ' "$scratch/merged_small_packs.list" "$catalog_file" >"$scratch/catalog.updated"
             mv -f -- "$scratch/catalog.updated" "$catalog_file"
         fi
     done
@@ -303,7 +318,7 @@ cmd_pack_sync() {
         tar -cf "$work/archive-recent.tar" --files-from /dev/null
     fi
 
-    # 2. Incremental State Immutable Media / DailyFiles / Crops / Reports Sync:
+    # 2. Incremental State Immutable Media / DailyFiles / Crops / Reports / Offline Maps Sync:
     local -a imm_roots=(
         "files/dailyfiles"
         "files/.dailyfile-journal/segments"
@@ -311,6 +326,7 @@ cmd_pack_sync() {
         "files/ocr/crops"
         "files/adjudication"
         "files/reports"
+        "extensions/maps-storage"
     )
     : >"$scratch/live.tsv"
     local rel_root
@@ -405,6 +421,7 @@ cmd_pack_sync() {
             --exclude='./files/ocr/crops' \
             --exclude='./files/adjudication' \
             --exclude='./files/reports' \
+            --exclude='./extensions/maps-storage' \
             -cf "$work/mutable-state.tar" .
     ) || {
         local mrc=$?
@@ -607,11 +624,11 @@ cmd_extract_restore() {
         esac
     done < <(grep '  packs/state/' "$snap_dir/pack-index.txt" | LC_ALL=C sort -k2,2 || true)
 
-    # Prune any immutable files that were unlinked (e.g. Day-30 secondary JPEGs) prior to snapshot
+    # Prune any immutable files that were unlinked (e.g. Day-30 secondary JPEGs or deleted maps) prior to snapshot
     gzip -dc "$snap_dir/live-immutable-paths.txt.gz" | LC_ALL=C sort -u >"$scratch/live.expected"
     : >"$scratch/live.extracted"
     local rel_root
-    for rel_root in "files/dailyfiles" "files/.dailyfile-journal/segments" "files/videos/retained-media/v1/events" "files/ocr/crops" "files/adjudication" "files/reports"; do
+    for rel_root in "files/dailyfiles" "files/.dailyfile-journal/segments" "files/videos/retained-media/v1/events" "files/ocr/crops" "files/adjudication" "files/reports" "extensions/maps-storage"; do
         if [[ -d "/state/$rel_root" ]]; then
             (cd /state && find "$rel_root" -type f -printf '%p\n' 2>/dev/null) >>"$scratch/live.extracted" || true
         fi

@@ -74,14 +74,14 @@ Whenever you unpack and deploy a new OSCAR 3.11.0 build into a clean versioned f
 
 ---
 
-## 3. Execution Profiles & All 23 Functional Scenarios
+## 3. Execution Profiles & All 24 Functional Scenarios
 
 ### Profile Reference
 
 | Profile | Command | When to Use |
 | --- | --- | --- |
-| **`smoke`** | `npm run test:smoke` *(or `./scripts/run-regression.sh smoke`)* | Fast, non-fault-injecting verification across all 13 read-only, reporting, QR camera-scan, and `storage-health` scenarios |
-| **`full`** | `npm run test:full` *(or `./scripts/run-regression.sh full`)* | Complete 23-scenario regression: runs `smoke` plus reserved-lane disconnect, detector/tamper faults, alarms, UUID, adjudication, EML, Vehicle OCR, `>= 150 s` extended occupancy, and natural `PARQUET_PRIMARY` partition retirement |
+| **`smoke`** | `npm run test:smoke` *(or `./scripts/run-regression.sh smoke`)* | Fast, non-fault-injecting verification across all 14 read-only, reporting, QR camera-scan, `runtime-extensions`, and `storage-health` scenarios |
+| **`full`** | `npm run test:full` *(or `./scripts/run-regression.sh full`)* | Complete 24-scenario regression: runs `smoke` plus reserved-lane disconnect, detector/tamper faults, alarms, UUID, adjudication, EML, Vehicle OCR, `>= 150 s` extended occupancy, and natural `PARQUET_PRIMARY` partition retirement |
 | **`3.11.0-release`** | `npm run test:3.11.0-release` | Strict unfiltered release certification gate (rejects `--scenario` filters, skipped required workflows, or mismatched `OSCAR_BUILD_LABEL`) |
 | **`restore-drill`** | `OSCAR_BACKUP_MODE=single STORAGE_WORKFLOW=required STORAGE_BACKUP_WORKFLOW=required npm run test:restore-drill` | Destructive isolated single-snapshot backup, database/state/archive canary mutation, streamed-WAL base-backup restore, and timeline-promotion proof (requires the 4 `OSCAR_RESTORE_*_ACK` interlocks) |
 | **`ui-endurance`** | `./scripts/run-ui-endurance.sh` | Continuous never-reloaded 24/7 Wallboard Watcher + PWA Service Worker notification + scoped/unscoped adjudication soak loop |
@@ -112,6 +112,7 @@ npm run test:full -- --scenario rpm-faults,vehicle-ocr,adjudication
 | Smoke | `reporting` | `RDS_SITE`, `LANE`, `EVENT`, `VEHICLE_INCIDENT`, `ADJUDICATION`, and `ADJUDICATION_DETAILS` in `PDF`/`CSV`/`JSON`/`XLSX` |
 | Smoke | `alarm-transfer` | Signed `.oscar-alarm.json` export, `SHA-256` verification, chart redraw, and re-download fidelity |
 | Smoke | `alarm-transfer-camera` | Synthetic `640x480` QR Version 23 camera scan, track cleanup, and camera permission recovery |
+| Smoke | `runtime-extensions` | `/extensions` tabs, starter templates, regional OCR rules, PMTiles v3 `HTTP 206` map serving, spectroscopy library, CA X.509 trust (with private-key `HTTP 400` rejection), policy pack export, and 1-click reset to shipped defaults |
 | Smoke | `storage-health` | 5-JPEG manifest/decode audit, atomic publisher check, `archive_mode=off`, OCI labels, and backup-mode gate |
 | Full | `rpm-connection` | Reserved RPM TCP disconnect detection and clean reconnect recovery |
 | Full | `rpm-faults` | `gamma-high`, `gamma-low`, `neutron-high`, and `tamper` fault transitions with valid ISO timestamps |

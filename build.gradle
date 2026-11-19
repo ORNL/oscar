@@ -108,13 +108,14 @@ distributions{
                     include 'REGRESSION_AND_RELEASE_CERTIFICATION.md'
                     include 'UBUNTU_FIELD_SETUP_GUIDE.md'
                     include 'CONTINUAL_AND_USB_BACKUP_GUIDE.md'
+                    include 'PLUGGABLE_EXTENSIONS_GUIDE.md'
                     filesMatching('STORAGE_ARCHITECTURE.md') {
                         filter { line ->
                             line.replace('../include/osh-oakridge-modules/docs/', '')
                                 .replace('https://github.com/ORNL/osh-oakridge-modules/blob/main/docs/', '')
                         }
                     }
-                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md', 'LIVE_VIDEO.md', 'UBUNTU_FIELD_SETUP_GUIDE.md', 'CONTINUAL_AND_USB_BACKUP_GUIDE.md']) {
+                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md', 'LIVE_VIDEO.md', 'UBUNTU_FIELD_SETUP_GUIDE.md', 'CONTINUAL_AND_USB_BACKUP_GUIDE.md', 'PLUGGABLE_EXTENSIONS_GUIDE.md']) {
                         filter { line ->
                             line.replace('../dist/release/ubuntu/', '../../ubuntu/')
                                 .replace('../dist/release/', '')
@@ -166,13 +167,14 @@ distributions{
                     include 'REGRESSION_AND_RELEASE_CERTIFICATION.md'
                     include 'UBUNTU_FIELD_SETUP_GUIDE.md'
                     include 'CONTINUAL_AND_USB_BACKUP_GUIDE.md'
+                    include 'PLUGGABLE_EXTENSIONS_GUIDE.md'
                     filesMatching('STORAGE_ARCHITECTURE.md') {
                         filter { line ->
                             line.replace('../include/osh-oakridge-modules/docs/', '')
                                 .replace('https://github.com/ORNL/osh-oakridge-modules/blob/main/docs/', '')
                         }
                     }
-                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md', 'LIVE_VIDEO.md', 'UBUNTU_FIELD_SETUP_GUIDE.md', 'CONTINUAL_AND_USB_BACKUP_GUIDE.md']) {
+                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md', 'LIVE_VIDEO.md', 'UBUNTU_FIELD_SETUP_GUIDE.md', 'CONTINUAL_AND_USB_BACKUP_GUIDE.md', 'PLUGGABLE_EXTENSIONS_GUIDE.md']) {
                         filter { line ->
                             line.replace('../dist/release/ubuntu/', '../ubuntu/')
                                 .replace('../dist/release/', '')

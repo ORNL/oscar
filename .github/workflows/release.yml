@@ -414,10 +414,15 @@ jobs:
             documentation/BACKUP_RESTORE.md \
             documentation/STORAGE_OPERATIONS.md \
             documentation/UBUNTU_FIELD_SETUP_GUIDE.md \
+            documentation/CONTINUAL_AND_USB_BACKUP_GUIDE.md \
+            documentation/PLUGGABLE_EXTENSIONS_GUIDE.md \
             documentation/daily-file-journal-v1.md \
             documentation/retained-media-v1.md \
             oscar-storage.sh \
             oscar-storage.ps1 \
+            oscar-usb-backup.sh \
+            oscar-usb-backup.ps1 \
+            oscar-usb-backup-engine.sh \
             configure-ubuntu-host.sh \
             configure-windows-host.ps1 \
             validate-storage-archive.sh \
@@ -544,6 +549,9 @@ jobs:
               oscar-setup.sh
               oscar-storage.ps1
               oscar-storage.sh
+              oscar-usb-backup-engine.sh
+              oscar-usb-backup.ps1
+              oscar-usb-backup.sh
               oscar.bat
               oscar.sh
               validate-storage-archive.sh
@@ -562,6 +570,8 @@ jobs:
               documentation/BACKUP_RESTORE.md
               documentation/STORAGE_OPERATIONS.md
               documentation/UBUNTU_FIELD_SETUP_GUIDE.md
+              documentation/CONTINUAL_AND_USB_BACKUP_GUIDE.md
+              documentation/PLUGGABLE_EXTENSIONS_GUIDE.md
               documentation/daily-file-journal-v1.md
               documentation/retained-media-v1.md
               documentation/operator-manual/README.md
@@ -626,6 +636,9 @@ jobs:
                 oscar-setup.sh \
                 oscar-storage.ps1 \
                 oscar-storage.sh \
+                oscar-usb-backup-engine.sh \
+                oscar-usb-backup.ps1 \
+                oscar-usb-backup.sh \
                 oscar.bat \
                 oscar.sh \
                 postgis \

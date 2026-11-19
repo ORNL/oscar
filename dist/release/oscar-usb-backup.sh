@@ -467,7 +467,7 @@ EOF
 
     ensure_backup_key >/dev/null
     local img="oscar:$(oscar_version)"
-    docker run --rm --network none --read-only --security-opt no-new-privileges \
+    docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --security-opt no-new-privileges \
         --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \
         --user 0:0 --entrypoint bash \
         --volume "$engine_script:/engine.sh:ro" \
@@ -626,7 +626,7 @@ cmd_sync() {
 
     # Query current LSN & UUID and stream online self-contained pg_basebackup (zero portal downtime!)
     local meta_line
-    meta_line=$(docker run --rm --network "container:$pg_cid" --read-only --cap-drop ALL \
+    meta_line=$(docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network "container:$pg_cid" --read-only --cap-drop ALL \
         --security-opt no-new-privileges --user 999:999 --entrypoint sh \
         --volume "$script_dir/secrets/postgres-bootstrap-password.txt:/run/secrets/pg_pass:ro" \
         "$pg_img" -eu -c '
@@ -640,9 +640,9 @@ cmd_sync() {
 
     local pg_stage_vol="oscar_usb_pgstage_${rand}"
     docker volume create "$pg_stage_vol" >/dev/null
-    docker run --rm --network none --user 0:0 --entrypoint sh \
+    docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --user 0:0 --entrypoint sh \
         --volume "${pg_stage_vol}:/pgbackup" "$pg_img" -eu -c 'rm -rf /pgbackup/* && chown 999:999 /pgbackup && chmod 0700 /pgbackup'
-    docker run --rm --network "container:$pg_cid" --read-only --cap-drop ALL \
+    docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network "container:$pg_cid" --read-only --cap-drop ALL \
         --cpus=1 --cpu-shares=128 \
         --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,nodev \
         --user 999:999 --entrypoint sh \
@@ -656,12 +656,12 @@ cmd_sync() {
             --wal-method=stream --checkpoint=fast
     '
     # Verify PostgreSQL base backup integrity immediately while in volume staging
-    docker run --rm --network none --read-only --cap-drop ALL --cap-add DAC_READ_SEARCH \
+    docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --cap-drop ALL --cap-add DAC_READ_SEARCH \
         --cpus=1 --cpu-shares=128 \
         --security-opt no-new-privileges --user 999:999 --entrypoint pg_verifybackup \
         --volume "${pg_stage_vol}:/pgbackup:ro" \
         "$pg_img" --quiet /pgbackup
-    docker run --rm --network none --read-only --security-opt no-new-privileges \
+    docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --security-opt no-new-privileges \
         --cpus=1 --cpu-shares=128 \
         --user 0:0 --entrypoint sh \
         --volume "${pg_stage_vol}:/pgbackup:ro" \
@@ -675,7 +675,7 @@ cmd_sync() {
         extra_vols+=(--volume "$ra_dir:/remote-access-src:ro")
     fi
 
-    docker run --rm --network none --read-only --security-opt no-new-privileges \
+    docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --security-opt no-new-privileges \
         --cpus=1 --cpu-shares=128 \
         --tmpfs /tmp:rw,noexec,nosuid,nodev,size=512m \
         --user 0:0 --entrypoint bash \
@@ -690,7 +690,7 @@ cmd_sync() {
 
     mv -- "$work" "$mount_path/OSCAR-Backup/snapshots/$snap_id"
 
-    docker run --rm --network none --read-only --security-opt no-new-privileges \
+    docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --security-opt no-new-privileges \
         --cpus=1 --cpu-shares=128 \
         --tmpfs /tmp:rw,noexec,nosuid,nodev,size=128m \
         --user 0:0 --entrypoint bash \
@@ -700,7 +700,7 @@ cmd_sync() {
         "$img" /engine.sh commit-latest "$snap_id" "$ts_iso"
 
     # Verify committed snapshot HMAC + manifest digests
-    docker run --rm --network none --read-only --security-opt no-new-privileges \
+    docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --security-opt no-new-privileges \
         --cpus=1 --cpu-shares=128 \
         --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m \
         --user 0:0 --entrypoint bash \
@@ -879,7 +879,7 @@ cmd_verify() {
     img="oscar:$ver"
     pg_img="oscar-postgis:$ver"
 
-    snap_id=$(docker run --rm --network none --read-only --security-opt no-new-privileges \
+    snap_id=$(docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --security-opt no-new-privileges \
         --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m \
         --user 0:0 --entrypoint bash \
         --volume "$engine_script:/engine.sh:ro" \
@@ -889,12 +889,12 @@ cmd_verify() {
 
     local pg_verify_vol="oscar_usb_pgverify_${snap_id//[^a-zA-Z0-9]/}"
     docker volume create "$pg_verify_vol" >/dev/null
-    docker run --rm --network none --read-only --security-opt no-new-privileges \
+    docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --security-opt no-new-privileges \
         --user 0:0 --entrypoint sh \
         --volume "$(realpath -- "$from_path"):/backup:ro" \
         --volume "${pg_verify_vol}:/pgbackup" \
         "$img" -eu -c "tar -C /pgbackup --no-same-owner -xf '/backup/OSCAR-Backup/snapshots/$snap_id/postgres.tar' && chown -R 999:999 /pgbackup"
-    docker run --rm --network none --read-only --cap-drop ALL --cap-add DAC_READ_SEARCH \
+    docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --cap-drop ALL --cap-add DAC_READ_SEARCH \
         --security-opt no-new-privileges --user 999:999 --entrypoint pg_verifybackup \
         --volume "${pg_verify_vol}:/pgbackup:ro" \
         "$pg_img" --quiet /pgbackup
@@ -947,7 +947,7 @@ cmd_restore() {
     trap 'rm -rf -- "${RESTORE_CREDS_STAGE:-}"' EXIT HUP INT TERM
     local creds_stage=$RESTORE_CREDS_STAGE
 
-    docker run --rm --network none --read-only --security-opt no-new-privileges \
+    docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --security-opt no-new-privileges \
         --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \
         --user "$(id -u):$(id -g)" --entrypoint bash \
         --volume "$engine_script:/engine.sh:ro" \
@@ -1043,7 +1043,7 @@ EOF
     chmod 0600 "$target_archive/.oscar-storage-root"
 
     heading 'Step 3/5 — Extracting cold Parquet archive packs & OSCAR application state'
-    docker run --rm --network none --read-only --security-opt no-new-privileges \
+    docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --security-opt no-new-privileges \
         --tmpfs /tmp:rw,noexec,nosuid,nodev,size=512m \
         --user 0:0 --entrypoint bash \
         --volume "$engine_script:/engine.sh:ro" \
@@ -1053,13 +1053,13 @@ EOF
         "oscar:$ver" /engine.sh extract-restore "$snap_id"
 
     heading 'Step 4/5 — Restoring PostgreSQL cluster & promoting onto clean timeline'
-    docker run --rm --network none --read-only --security-opt no-new-privileges \
+    docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --security-opt no-new-privileges \
         --user 0:0 --entrypoint sh \
         --volume "$from_path:/backup:ro" \
         --volume "${postgres_volume}:/data" \
         "oscar:$ver" -eu -c "find /data -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar -C /data --no-same-owner -xf '/backup/OSCAR-Backup/snapshots/$snap_id/postgres.tar' && chown -R 999:999 /data && chmod 0700 /data"
     local src_tl
-    src_tl=$(docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+    src_tl=$(docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
         --user 999:999 --entrypoint /usr/local/bin/oscar-prepare-restore \
         --volume "${postgres_volume}:/data" \
         "oscar-postgis:$ver" /data | tr -d '[:space:]')
@@ -1068,7 +1068,7 @@ EOF
     compose up --detach --no-deps --no-build --pull never --wait --wait-timeout 300 postgres
     local pg_cid
     pg_cid=$(compose ps --quiet postgres | tr -d '[:space:]')
-    docker run --rm --network "container:$pg_cid" --read-only --cap-drop ALL \
+    docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network "container:$pg_cid" --read-only --cap-drop ALL \
         --security-opt no-new-privileges --user 999:999 --entrypoint sh \
         --volume "$script_dir/secrets/postgres-bootstrap-password.txt:/run/secrets/pg_pass:ro" \
         "oscar-postgis:$ver" -eu -c '

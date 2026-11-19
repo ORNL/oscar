@@ -103,6 +103,7 @@ const expected = [
     'documentation/REGRESSION_AND_RELEASE_CERTIFICATION.md',
     'documentation/UBUNTU_FIELD_SETUP_GUIDE.md',
     'documentation/CONTINUAL_AND_USB_BACKUP_GUIDE.md',
+    'documentation/PLUGGABLE_EXTENSIONS_GUIDE.md',
     'documentation/daily-file-journal-v1.md',
     'documentation/retained-media-v1.md',
 ];

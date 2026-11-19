@@ -48,6 +48,7 @@ node --test tools/update-version.test.js tools/collect-release-contributors.test
     --tests org.sensorhub.impl.utils.rad.cambio.CambioTempDirectoryTest \
     --tests org.sensorhub.impl.utils.rad.dailyfile.DailyFileAppenderTest \
     --tests org.sensorhub.impl.utils.rad.eml.EmlArchiveAndRuntimeTest \
+    --tests org.sensorhub.impl.utils.rad.webid.SpectroscopyAndTrustRegistryTest \
     --tests org.sensorhub.impl.utils.rad.output.OccupancyOutputConcurrencyTest
 
 ./gradlew --no-parallel \

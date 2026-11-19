@@ -302,7 +302,7 @@ function Invoke-PrepareDrive([string[]]$Tokens) {
 
     Ensure-BackupKey | Out-Null
     $ver = Get-OscarVersion
-    & cmd.exe /c "`"$TarExe`" -C `"$ScriptRoot`" -cf - oscar-usb-backup-engine.sh | docker run --rm -i --network none --read-only --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --user 0:0 --entrypoint sh oscar:$ver -eu -c `"mkdir -p /tmp/in /tmp/h && tar -C /tmp/in -xf - && bash /tmp/in/oscar-usb-backup-engine.sh write-helpers /tmp/h && tar -C /tmp/h -cf - .`" | `"$TarExe`" -C `"$targetRoot`" -xf -"
+    & cmd.exe /c "`"$TarExe`" -C `"$ScriptRoot`" -cf - oscar-usb-backup-engine.sh | docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine -i --network none --read-only --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --user 0:0 --entrypoint sh oscar:$ver -eu -c `"mkdir -p /tmp/in /tmp/h && tar -C /tmp/in -xf - && bash /tmp/in/oscar-usb-backup-engine.sh write-helpers /tmp/h && tar -C /tmp/h -cf - .`" | `"$TarExe`" -C `"$targetRoot`" -xf -"
     if ($LASTEXITCODE -ne 0) { Fail 'Failed writing laptop helper scripts onto USB backup drive.' }
 
     Save-UsbConfig $targetRoot $mode $interval $driveLetter $diskNum
@@ -433,7 +433,7 @@ function Invoke-Sync([string[]]$Tokens) {
             if ([string]::IsNullOrWhiteSpace($pgCid)) { Fail 'PostgreSQL container must be running to capture an online backup.' }
 
             $pgPassFile = Join-Path $ScriptRoot 'secrets\postgres-bootstrap-password.txt'
-            $metaLine = ([string](& cmd.exe /c "type `"$pgPassFile`" | docker run --rm -i --network `"container:$pgCid`" --read-only --cap-drop ALL --security-opt no-new-privileges --user 999:999 --entrypoint sh $pgImg -eu -c `"PGPASSWORD=`$(cat) psql -h 127.0.0.1 -p 5432 -U oscar_bootstrap -d gis -tA -c 'SELECT pg_current_wal_lsn()::text, gen_random_uuid()::text;'`"")).Trim()
+            $metaLine = ([string](& cmd.exe /c "type `"$pgPassFile`" | docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine -i --network `"container:$pgCid`" --read-only --cap-drop ALL --security-opt no-new-privileges --user 999:999 --entrypoint sh $pgImg -eu -c `"PGPASSWORD=`$(cat) psql -h 127.0.0.1 -p 5432 -U oscar_bootstrap -d gis -tA -c 'SELECT pg_current_wal_lsn()::text, gen_random_uuid()::text;'`"")).Trim()
             if ($LASTEXITCODE -ne 0 -or -not $metaLine.Contains('|')) { Fail 'Failed querying PostgreSQL LSN.' }
             $parts = $metaLine.Split('|')
             $lsn = $parts[0]; $epochId = $parts[1]
@@ -441,12 +441,12 @@ function Invoke-Sync([string[]]$Tokens) {
             # 1. Online PostgreSQL pg_basebackup inside WSL2 native volume -> stream tar over stdout (ZERO 9p bind mounts!)
             $pgStageVol = "oscar_usb_pgstage_$randHex"
             & docker volume create $pgStageVol | Out-Null
-            & docker run --rm --network none --user 0:0 --entrypoint sh `
+            & docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --user 0:0 --entrypoint sh `
                 --volume "${pgStageVol}:/pgbackup" $pgImg -eu -c 'rm -rf /pgbackup/* && chown 999:999 /pgbackup && chmod 0700 /pgbackup'
-            & cmd.exe /c "type `"$pgPassFile`" | docker run --rm -i --network `"container:$pgCid`" --read-only --cap-drop ALL --cpus=1 --cpu-shares=128 --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,nodev --user 999:999 --entrypoint sh -v ${pgStageVol}:/pgbackup $pgImg -eu -c `"PGPASSWORD=`$(cat) exec pg_basebackup --pgdata=/pgbackup -h 127.0.0.1 -p 5432 -U oscar_bootstrap --format=plain --wal-method=stream --checkpoint=fast`""
+            & cmd.exe /c "type `"$pgPassFile`" | docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine -i --network `"container:$pgCid`" --read-only --cap-drop ALL --cpus=1 --cpu-shares=128 --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,nodev --user 999:999 --entrypoint sh -v ${pgStageVol}:/pgbackup $pgImg -eu -c `"PGPASSWORD=`$(cat) exec pg_basebackup --pgdata=/pgbackup -h 127.0.0.1 -p 5432 -U oscar_bootstrap --format=plain --wal-method=stream --checkpoint=fast`""
             if ($LASTEXITCODE -ne 0) { Fail 'Online pg_basebackup failed.' }
 
-            & docker run --rm --network none --read-only --cap-drop ALL --cap-add DAC_READ_SEARCH `
+            & docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --cap-drop ALL --cap-add DAC_READ_SEARCH `
                 --cpus=1 --cpu-shares=128 `
                 --security-opt no-new-privileges --user 999:999 --entrypoint pg_verifybackup `
                 --volume "${pgStageVol}:/pgbackup:ro" `
@@ -454,7 +454,7 @@ function Invoke-Sync([string[]]$Tokens) {
             if ($LASTEXITCODE -ne 0) { Fail 'pg_verifybackup check failed.' }
 
             $pgTarPath = Join-Path $workDir 'postgres.tar'
-            & cmd.exe /c "docker run --rm --network none --read-only --cpus=1 --cpu-shares=128 --security-opt no-new-privileges --user 0:0 --entrypoint tar -v ${pgStageVol}:/pgbackup:ro $img -C /pgbackup -cf - . > `"$pgTarPath`""
+            & cmd.exe /c "docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --cpus=1 --cpu-shares=128 --security-opt no-new-privileges --user 0:0 --entrypoint tar -v ${pgStageVol}:/pgbackup:ro $img -C /pgbackup -cf - . > `"$pgTarPath`""
             if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $pgTarPath)) { Fail 'Failed streaming postgres.tar onto USB target.' }
             & docker volume rm -f $pgStageVol 2>$null | Out-Null
             $pgStageVol = $null
@@ -556,7 +556,7 @@ function Invoke-Sync([string[]]$Tokens) {
 set -Eeuo pipefail
 mkdir -p /stage/out /tmp/work
 : >/tmp/work/live.tsv
-for rel_root in "files/dailyfiles" "files/.dailyfile-journal/segments" "files/videos/retained-media/v1/events" "files/ocr/crops" "files/adjudication" "files/reports"; do
+for rel_root in "files/dailyfiles" "files/.dailyfile-journal/segments" "files/videos/retained-media/v1/events" "files/ocr/crops" "files/adjudication" "files/reports" "extensions/maps-storage"; do
     if [[ -d "/state/$rel_root" ]]; then
         (cd /state && find "$rel_root" -ignore_readdir_race -type f -printf '%p\t%s\t%Ts\n' 2>/dev/null) >>/tmp/work/live.tsv || true
     fi
@@ -597,7 +597,7 @@ fi
         --exclude='./files/videos/clips' --exclude='./files/videos/streams' \
         --exclude='./files/dailyfiles' --exclude='./files/.dailyfile-journal/segments' \
         --exclude='./files/videos/retained-media/v1/events' \
-        --exclude='./files/ocr/crops' --exclude='./files/adjudication' --exclude='./files/reports' \
+        --exclude='./files/ocr/crops' --exclude='./files/adjudication' --exclude='./files/reports' --exclude='./extensions/maps-storage' \
         -cf /stage/out/mutable-state.tar .
 ) || { mrc=$?; ((mrc <= 1)) || exit "$mrc"; }
 
@@ -624,13 +624,19 @@ for c in .dockerignore .env.example DEPLOYMENT.md QUICKSTART.md compose.yaml com
     [[ -f "/stage/deployment/$c" ]] && rel_files+=("$c")
 done
 tar -C /stage/deployment -czf /stage/out/release-config.tar.gz "${rel_files[@]}"
+meta_items=(live-immutable-paths.txt.gz imm-count.txt kept.tsv deployment-secrets.tar.gz.enc release-config.tar.gz)
+[[ -f /stage/out/has-new-pack.txt ]] && meta_items+=(has-new-pack.txt)
+tar --format=ustar -C /stage/out -cf /stage/out/meta.tar "${meta_items[@]}"
 '@
             [System.IO.File]::WriteAllText((Join-Path $winStageIn 'run.sh'), $stateScript.Replace("`r`n", "`n"), $Utf8NoBom)
-            & cmd.exe /c "`"$TarExe`" -C `"$winStageIn`" -cf - . | docker run --rm -i --network none --user 0:0 -v ${stateStageVol}:/stage --entrypoint tar $img -C /stage -xf -"
+            & cmd.exe /c "`"$TarExe`" -C `"$winStageIn`" -cf - . | docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine -i --network none --user 0:0 -v ${stateStageVol}:/stage --entrypoint tar $img -C /stage -xf -"
             if ($LASTEXITCODE -ne 0) { Fail 'Failed seeding state catalog into staging volume.' }
 
             $dockerArgs = @(
-                'run', '--rm', '--network', 'none', '--read-only', '--security-opt', 'no-new-privileges',
+                'run', '--rm',
+                '--label', 'com.docker.compose.project=oscar-usb-backup',
+                '--label', 'com.docker.compose.service=usb-backup-engine',
+                '--network', 'none', '--read-only', '--security-opt', 'no-new-privileges',
                 '--cpus=1', '--cpu-shares=128',
                 '--tmpfs', '/tmp:rw,noexec,nosuid,nodev,size=256m',
                 '--user', '0:0', '--entrypoint', 'bash',
@@ -641,27 +647,37 @@ tar -C /stage/deployment -czf /stage/out/release-config.tar.gz "${rel_files[@]}"
             & docker @dockerArgs
             if ($LASTEXITCODE -ne 0) { Fail 'Container state delta capture failed.' }
 
-            & cmd.exe /c "docker run --rm --network none --cpus=1 --cpu-shares=128 --user 0:0 -v ${stateStageVol}:/stage:ro --entrypoint tar $img --format=pax --exclude='./new-state-pack.tar' --exclude='./mutable-state.tar' -C /stage/out -cf - . | `"$TarExe`" -C `"$winStageOut`" -xf -"
-            if ($LASTEXITCODE -ne 0) { Fail 'Failed streaming state metadata output onto host.' }
+            $copyHolderCid = ([string](& docker create --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none -v "${stateStageVol}:/stage:ro" $img)).Trim()
+            if ([string]::IsNullOrWhiteSpace($copyHolderCid)) { Fail 'Failed creating staging copy container.' }
+            try {
+                $metaTarHost = Join-Path $winStageOut 'meta.tar'
+                & docker cp "${copyHolderCid}:/stage/out/meta.tar" $metaTarHost
+                if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $metaTarHost)) { Fail 'Failed copying state metadata archive onto host.' }
+                & $TarExe -C $winStageOut -xf $metaTarHost
+                if ($LASTEXITCODE -ne 0) { Fail 'Failed extracting state metadata archive on host.' }
+                Remove-Item -LiteralPath $metaTarHost -Force -ErrorAction SilentlyContinue
 
-            $mutTarDest = Join-Path $workDir 'mutable-state.tar'
-            & cmd.exe /c "docker run --rm --network none --cpus=1 --cpu-shares=128 --user 0:0 -v ${stateStageVol}:/stage:ro --entrypoint cat $img /stage/out/mutable-state.tar > `"$mutTarDest`""
-            if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $mutTarDest)) { Fail 'Failed streaming mutable-state.tar onto USB target.' }
+                $mutTarDest = Join-Path $workDir 'mutable-state.tar'
+                & docker cp "${copyHolderCid}:/stage/out/mutable-state.tar" $mutTarDest
+                if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $mutTarDest)) { Fail 'Failed copying mutable-state.tar onto USB target.' }
 
-            $keptContent = [System.IO.File]::ReadAllText((Join-Path $winStageOut 'kept.tsv'))
-            if (Test-Path -LiteralPath (Join-Path $winStageOut 'has-new-pack.txt')) {
-                $existingToday = @(Get-ChildItem -LiteralPath $statePacksDir -File -Filter "pack-$todayUtc-*.tar" -ErrorAction SilentlyContinue | Sort-Object Name)
-                $nextSeq = 1
-                if ($existingToday.Count -gt 0 -and $existingToday[-1].Name -match '^pack-[0-9-]+-([0-9]{6})\.tar$') {
-                    $nextSeq = [int]$Matches[1] + 1
+                $keptContent = [System.IO.File]::ReadAllText((Join-Path $winStageOut 'kept.tsv'))
+                if (Test-Path -LiteralPath (Join-Path $winStageOut 'has-new-pack.txt')) {
+                    $existingToday = @(Get-ChildItem -LiteralPath $statePacksDir -File -Filter "pack-$todayUtc-*.tar" -ErrorAction SilentlyContinue | Sort-Object Name)
+                    $nextSeq = 1
+                    if ($existingToday.Count -gt 0 -and $existingToday[-1].Name -match '^pack-[0-9-]+-([0-9]{6})\.tar$') {
+                        $nextSeq = [int]$Matches[1] + 1
+                    }
+                    $newPackName = ('pack-{0}-{1:D6}.tar' -f $todayUtc, $nextSeq)
+                    $newPackDest = Join-Path $statePacksDir $newPackName
+                    & docker cp "${copyHolderCid}:/stage/out/new-state-pack.tar" $newPackDest
+                    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $newPackDest)) { Fail 'Failed copying new-state-pack.tar onto USB target.' }
+                    $npSha = Get-FileSha256Lower $newPackDest
+                    [System.IO.File]::WriteAllText("$newPackDest.sha256", "$npSha  $newPackName`n", $Utf8NoBom)
+                    $keptContent = $keptContent.Replace('__NEW_PACK__', $newPackName)
                 }
-                $newPackName = ('pack-{0}-{1:D6}.tar' -f $todayUtc, $nextSeq)
-                $newPackDest = Join-Path $statePacksDir $newPackName
-                & cmd.exe /c "docker run --rm --network none --cpus=1 --cpu-shares=128 --user 0:0 -v ${stateStageVol}:/stage:ro --entrypoint cat $img /stage/out/new-state-pack.tar > `"$newPackDest`""
-                if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $newPackDest)) { Fail 'Failed streaming new-state-pack.tar onto USB target.' }
-                $npSha = Get-FileSha256Lower $newPackDest
-                [System.IO.File]::WriteAllText("$newPackDest.sha256", "$npSha  $newPackName`n", $Utf8NoBom)
-                $keptContent = $keptContent.Replace('__NEW_PACK__', $newPackName)
+            } finally {
+                & docker rm -f $copyHolderCid 2>$null | Out-Null
             }
             & docker volume rm -f $stateStageVol 2>$null | Out-Null
             $stateStageVol = $null
@@ -946,7 +962,7 @@ function Invoke-Verify([string[]]$Tokens) {
     try {
         Copy-Item -LiteralPath $keyFull -Destination (Join-Path $verifySecStage 'backup-key.txt') -Force
         Copy-Item -LiteralPath $encFile -Destination (Join-Path $verifySecStage 'secrets.enc') -Force
-        & cmd.exe /c "`"$TarExe`" -C `"$verifySecStage`" -cf - . | docker run --rm -i --network none --read-only --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --user 0:0 --entrypoint sh oscar:$ver -eu -c `"mkdir -p /tmp/in /tmp/s && tar -C /tmp/in -xf - && openssl enc -d -aes-256-cbc -pbkdf2 -pass file:/tmp/in/backup-key.txt -in /tmp/in/secrets.enc | tar -C /tmp/s -xzf - && test -f /tmp/s/.env && test -f /tmp/s/tls/server.crt && test -f /tmp/s/tls/server.key`""
+        & cmd.exe /c "`"$TarExe`" -C `"$verifySecStage`" -cf - . | docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine -i --network none --read-only --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --user 0:0 --entrypoint sh oscar:$ver -eu -c `"mkdir -p /tmp/in /tmp/s && tar -C /tmp/in -xf - && openssl enc -d -aes-256-cbc -pbkdf2 -pass file:/tmp/in/backup-key.txt -in /tmp/in/secrets.enc | tar -C /tmp/s -xzf - && test -f /tmp/s/.env && test -f /tmp/s/tls/server.crt && test -f /tmp/s/tls/server.key`""
         if ($LASTEXITCODE -ne 0) { Fail 'Decrypted secret archive check failed.' }
     } finally {
         Remove-Item -LiteralPath $verifySecStage -Recurse -Force -ErrorAction SilentlyContinue
@@ -956,9 +972,9 @@ function Invoke-Verify([string[]]$Tokens) {
     $pgVerifyVol = "oscar_usb_pgverify_$([Guid]::NewGuid().ToString('N').Substring(0,8))"
     try {
         & docker volume create $pgVerifyVol | Out-Null
-        & cmd.exe /c "type `"$pgTar`" | docker run --rm -i --network none --read-only --security-opt no-new-privileges --user 0:0 --entrypoint sh -v ${pgVerifyVol}:/pgbackup oscar:$ver -eu -c `"tar -C /pgbackup --no-same-owner -xf - && chown -R 999:999 /pgbackup`""
+        & cmd.exe /c "type `"$pgTar`" | docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine -i --network none --read-only --security-opt no-new-privileges --user 0:0 --entrypoint sh -v ${pgVerifyVol}:/pgbackup oscar:$ver -eu -c `"tar -C /pgbackup --no-same-owner -xf - && chown -R 999:999 /pgbackup`""
         if ($LASTEXITCODE -ne 0) { Fail 'Failed staging postgres.tar for verification.' }
-        & docker run --rm --network none --read-only --cap-drop ALL --cap-add DAC_READ_SEARCH `
+        & docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --cap-drop ALL --cap-add DAC_READ_SEARCH `
             --security-opt no-new-privileges --user 999:999 --entrypoint pg_verifybackup `
             --volume "${pgVerifyVol}:/pgbackup:ro" `
             "oscar-postgis:$ver" --quiet /pgbackup
@@ -1015,7 +1031,7 @@ function Invoke-Restore([string[]]$Tokens) {
         $encFile = Join-Path $snapDir 'deployment-secrets.tar.gz.enc'
         Copy-Item -LiteralPath $keyFull -Destination (Join-Path $credsIn 'backup-key.txt') -Force
         Copy-Item -LiteralPath $encFile -Destination (Join-Path $credsIn 'secrets.enc') -Force
-        & cmd.exe /c "`"$TarExe`" -C `"$credsIn`" -cf - . | docker run --rm -i --network none --read-only --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --user 0:0 --entrypoint sh oscar:$ver -eu -c `"mkdir -p /tmp/in /tmp/s && tar -C /tmp/in -xf - && openssl enc -d -aes-256-cbc -pbkdf2 -pass file:/tmp/in/backup-key.txt -in /tmp/in/secrets.enc | tar -C /tmp/s --no-same-owner -xzf - && tar -C /tmp/s -cf - .`" | `"$TarExe`" -C `"$credsStage`" -xf -"
+        & cmd.exe /c "`"$TarExe`" -C `"$credsIn`" -cf - . | docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine -i --network none --read-only --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --user 0:0 --entrypoint sh oscar:$ver -eu -c `"mkdir -p /tmp/in /tmp/s && tar -C /tmp/in -xf - && openssl enc -d -aes-256-cbc -pbkdf2 -pass file:/tmp/in/backup-key.txt -in /tmp/in/secrets.enc | tar -C /tmp/s --no-same-owner -xzf - && tar -C /tmp/s -cf - .`" | `"$TarExe`" -C `"$credsStage`" -xf -"
         if ($LASTEXITCODE -ne 0) { Fail 'Failed decrypting deployment credentials.' }
 
         $restoredDepId = Get-EnvFileValue (Join-Path $credsStage '.env') 'OSCAR_DEPLOYMENT_ID' ''
@@ -1068,27 +1084,27 @@ function Invoke-Restore([string[]]$Tokens) {
             if ($LASTEXITCODE -ne 0) { Fail 'Failed extracting archive-recent.tar' }
         }
 
-        & docker run --rm --network none --user 0:0 -v 'oscar_oscar_state:/state' --entrypoint sh "oscar:$ver" -eu -c 'find /state -mindepth 1 -maxdepth 1 ! -name archive -exec rm -rf -- {} +'
+        & docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --user 0:0 -v 'oscar_oscar_state:/state' --entrypoint sh "oscar:$ver" -eu -c 'find /state -mindepth 1 -maxdepth 1 ! -name archive -exec rm -rf -- {} +'
         $mutTar = Join-Path $snapDir 'mutable-state.tar'
-        & cmd.exe /c "type `"$mutTar`" | docker run --rm -i --network none --user 0:0 -v oscar_oscar_state:/state --entrypoint tar oscar:$ver -C /state --no-same-owner -xf -"
+        & cmd.exe /c "type `"$mutTar`" | docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine -i --network none --user 0:0 -v oscar_oscar_state:/state --entrypoint tar oscar:$ver -C /state --no-same-owner -xf -"
         if ($LASTEXITCODE -ne 0) { Fail 'Failed extracting mutable-state.tar' }
 
         foreach ($line in @([System.IO.File]::ReadAllLines((Join-Path $snapDir 'pack-index.txt')) | Where-Object { $_ -like '*  packs/state/*' } | Sort-Object { $_.Substring(66) })) {
             if ($line -match '^[0-9a-f]{64}  (packs/state/.+\.tar)$') {
                 $packFull = Join-Path $backupRoot ($Matches[1] -replace '/','\')
-                & cmd.exe /c "type `"$packFull`" | docker run --rm -i --network none --user 0:0 -v oscar_oscar_state:/state --entrypoint tar oscar:$ver -C /state --no-same-owner -xf -"
+                & cmd.exe /c "type `"$packFull`" | docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine -i --network none --user 0:0 -v oscar_oscar_state:/state --entrypoint tar oscar:$ver -C /state --no-same-owner -xf -"
                 if ($LASTEXITCODE -ne 0) { Fail "Failed extracting $packFull" }
             }
         }
         $liveImmGz = Join-Path $snapDir 'live-immutable-paths.txt.gz'
-        & cmd.exe /c "type `"$liveImmGz`" | docker run --rm -i --network none --tmpfs /tmp:rw,noexec,nosuid,nodev,size=128m --user 0:0 -v oscar_oscar_state:/state --entrypoint bash oscar:$ver -eu -c `"gzip -dc | LC_ALL=C sort -u >/tmp/exp && : >/tmp/ext && for r in 'files/dailyfiles' 'files/.dailyfile-journal/segments' 'files/videos/retained-media/v1/events' 'files/ocr/crops' 'files/adjudication' 'files/reports'; do if [ -d /state/`$r ]; then (cd /state && find `$r -type f -printf '%p\n' 2>/dev/null) >>/tmp/ext || true; fi; done && LC_ALL=C sort -u /tmp/ext -o /tmp/ext && LC_ALL=C comm -23 /tmp/ext /tmp/exp >/tmp/prune && if [ -s /tmp/prune ]; then (cd /state && xargs -d '\n' rm -f -- </tmp/prune); fi && for l in lib web rules models documentation trusted_certificates config logback.xml; do rm -rf /state/`$l && ln -s /opt/oscar/`$l /state/`$l; done && chown -R 10001:10001 /state && if [ -f /state/config.json ]; then chmod 0600 /state/config.json; fi`""
+        & cmd.exe /c "type `"$liveImmGz`" | docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine -i --network none --tmpfs /tmp:rw,noexec,nosuid,nodev,size=128m --user 0:0 -v oscar_oscar_state:/state --entrypoint bash oscar:$ver -eu -c `"gzip -dc | LC_ALL=C sort -u >/tmp/exp && : >/tmp/ext && for r in 'files/dailyfiles' 'files/.dailyfile-journal/segments' 'files/videos/retained-media/v1/events' 'files/ocr/crops' 'files/adjudication' 'files/reports' 'extensions/maps-storage'; do if [ -d /state/`$r ]; then (cd /state && find `$r -type f -printf '%p\n' 2>/dev/null) >>/tmp/ext || true; fi; done && LC_ALL=C sort -u /tmp/ext -o /tmp/ext && LC_ALL=C comm -23 /tmp/ext /tmp/exp >/tmp/prune && if [ -s /tmp/prune ]; then (cd /state && xargs -d '\n' rm -f -- </tmp/prune); fi && for l in lib web rules models documentation trusted_certificates config logback.xml; do rm -rf /state/`$l && ln -s /opt/oscar/`$l /state/`$l; done && chown -R 10001:10001 /state && if [ -f /state/config.json ]; then chmod 0600 /state/config.json; fi`""
         if ($LASTEXITCODE -ne 0) { Fail 'Failed finalizing restored OSCAR state volume.' }
 
         Write-Heading 'Step 4/5 - Restoring PostgreSQL cluster & promoting onto clean timeline'
         $pgTar = Join-Path $snapDir 'postgres.tar'
-        & cmd.exe /c "type `"$pgTar`" | docker run --rm -i --network none --read-only --security-opt no-new-privileges --user 0:0 -v oscar_postgres_data:/data --entrypoint sh oscar:$ver -eu -c `"find /data -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar -C /data --no-same-owner -xf - && chown -R 999:999 /data && chmod 0700 /data`""
+        & cmd.exe /c "type `"$pgTar`" | docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine -i --network none --read-only --security-opt no-new-privileges --user 0:0 -v oscar_postgres_data:/data --entrypoint sh oscar:$ver -eu -c `"find /data -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar -C /data --no-same-owner -xf - && chown -R 999:999 /data && chmod 0700 /data`""
         if ($LASTEXITCODE -ne 0) { Fail 'Failed extracting PostgreSQL base backup.' }
-        & docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges `
+        & docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --cap-drop ALL --security-opt no-new-privileges `
             --user 999:999 --entrypoint /usr/local/bin/oscar-prepare-restore `
             --volume 'oscar_postgres_data:/data' `
             "oscar-postgis:$ver" /data | Out-Null
@@ -1097,7 +1113,7 @@ function Invoke-Restore([string[]]$Tokens) {
         Invoke-Compose @('up', '--detach', '--no-deps', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', '300', 'postgres')
         $pgCid = ([string](& docker compose --project-name oscar --project-directory $ScriptRoot --env-file (Join-Path $ScriptRoot '.env') --file (Join-Path $ScriptRoot 'compose.yaml') ps --quiet postgres)).Trim()
         $pgPassFile = Join-Path $ScriptRoot 'secrets\postgres-bootstrap-password.txt'
-        & cmd.exe /c "type `"$pgPassFile`" | docker run --rm -i --network `"container:$pgCid`" --read-only --cap-drop ALL --security-opt no-new-privileges --user 999:999 --entrypoint sh oscar-postgis:$ver -eu -c `"PGPASSWORD=`$(cat); export PGPASSWORD; for s in restore_command recovery_target recovery_target_timeline recovery_target_action; do psql -h 127.0.0.1 -p 5432 -U oscar_bootstrap -d gis -q -c 'ALTER SYSTEM RESET '`$s';'; done; psql -h 127.0.0.1 -p 5432 -U oscar_bootstrap -d gis -q -c 'CHECKPOINT; SELECT pg_reload_conf();'`""
+        & cmd.exe /c "type `"$pgPassFile`" | docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine -i --network `"container:$pgCid`" --read-only --cap-drop ALL --security-opt no-new-privileges --user 999:999 --entrypoint sh oscar-postgis:$ver -eu -c `"PGPASSWORD=`$(cat); export PGPASSWORD; for s in restore_command recovery_target recovery_target_timeline recovery_target_action; do psql -h 127.0.0.1 -p 5432 -U oscar_bootstrap -d gis -q -c 'ALTER SYSTEM RESET '`$s';'; done; psql -h 127.0.0.1 -p 5432 -U oscar_bootstrap -d gis -q -c 'CHECKPOINT; SELECT pg_reload_conf();'`""
         Invoke-Compose @('stop', 'postgres')
         Invoke-Compose @('up', '--detach', '--no-deps', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', '300', 'postgres')
 
@@ -1136,9 +1152,9 @@ function Invoke-ControlDirSh([string]$ShCmd, [string]$StdinText = '') {
             }
             $ver = Get-OscarVersion
             if ($tmpIn) {
-                return ([string](& cmd.exe /c "type `"$tmpIn`" | docker run --rm -i --network none --user 10001:10001 -v oscar_oscar_state:/var/lib/oscar --entrypoint sh oscar:$ver -eu -c `"$ShCmd`" 2>nul"))
+                return ([string](& cmd.exe /c "type `"$tmpIn`" | docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine -i --network none --user 10001:10001 -v oscar_oscar_state:/var/lib/oscar --entrypoint sh oscar:$ver -eu -c `"$ShCmd`" 2>nul"))
             }
-            return ([string](& docker run --rm --network none --user 10001:10001 -v oscar_oscar_state:/var/lib/oscar --entrypoint sh "oscar:$ver" -eu -c $ShCmd 2>$null))
+            return ([string](& docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --user 10001:10001 -v oscar_oscar_state:/var/lib/oscar --entrypoint sh "oscar:$ver" -eu -c $ShCmd 2>$null))
         } finally { $ErrorActionPreference = $prev }
     } finally {
         if ($tmpIn) { Remove-Item -LiteralPath $tmpIn -Force -ErrorAction SilentlyContinue }

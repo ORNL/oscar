@@ -191,6 +191,8 @@ const viewerRoutes = [
     ['/map', 'Map'],
     ['/national-view', 'National'],
     ['/users', 'Users, Passkeys & Access Control'],
+    ['/usb-backups', 'Continual & Occasional USB NVMe Backups'],
+    ['/extensions', 'Pluggable Runtime Extensions & Regional Packs'],
     ['/servers', 'Nodes'],
 ];
 const browser = await chromium.launch({ headless: true });
@@ -244,6 +246,174 @@ try {
     await page.waitForTimeout(2000);
     const adminBody = await page.locator('body').innerText();
     assert.ok(/sensorhub|admin|module|sensor|system/i.test(adminBody) && adminBody.trim().length > 100, 'SensorHub Admin UI did not render module controls');
+
+    // 8. Pluggable Runtime Extensions & Regional Packs E2E round-trip (shipped defaults -> custom upload -> HTTP 206 -> 1-click reset)
+    const unauthExt = await requestOnce('https://oscar.local/sensorhub/oscar/extensions/status');
+    assert.equal(unauthExt.status, 401, `Expected 401 on anonymous /extensions/status, got ${unauthExt.status}`);
+
+    const extHeaders = { 'X-Requested-With': 'OSCAR-Viewer' };
+    try {
+        const initExtRes = await context.request.get('https://oscar.local/sensorhub/oscar/extensions/status');
+        assert.equal(initExtRes.status(), 200, `Expected 200 from /extensions/status, got ${initExtRes.status()}`);
+        const initExt = await initExtRes.json();
+        assert.equal(initExt.ocr?.customActive, false, 'Fresh install must start with shipped default OCR');
+        assert.equal(initExt.maps?.customActive, false, 'Fresh install must start with shipped default maps');
+        assert.equal(initExt.spectroscopy?.customActive, false, 'Fresh install must start with shipped default spectroscopy');
+        assert.equal(initExt.trustedCerts?.customActive, false, 'Fresh install must start with shipped default CA trust');
+        assert.equal(initExt.policyPacks?.customActive, false, 'Fresh install must start with shipped default policy pack');
+
+        // Starter template download check
+        const tplRes = await context.request.get('https://oscar.local/sensorhub/oscar/extensions/templates/ocr-pack.zip');
+        assert.equal(tplRes.status(), 200);
+        assert.ok((await tplRes.body()).length > 100, 'Expected non-empty OCR starter template ZIP');
+
+        // 8a. OCR regional plate-rules upload & reset
+        const ocrRules = JSON.stringify({
+            ruleSetId: 'ci-numeric-plates-v1',
+            description: 'CI Numeric & Alphanumeric Plate Filter',
+            minLength: 3,
+            maxLength: 10,
+            asciiOnly: false,
+            requireLetter: false,
+            requireDigit: true,
+        });
+        const ocrUp = await context.request.post(
+            'https://oscar.local/sensorhub/oscar/extensions/ocr/upload?filename=ci-plate-rules.json',
+            { headers: { ...extHeaders, 'Content-Type': 'application/octet-stream' }, data: Buffer.from(ocrRules, 'utf8') },
+        );
+        assert.equal(ocrUp.status(), 200, `OCR rules upload failed: ${ocrUp.status()}`);
+        const ocrAfter = await ocrUp.json();
+        assert.equal(ocrAfter.ocr?.customActive, true);
+        assert.equal(ocrAfter.ocr?.plateRuleSetId, 'ci-numeric-plates-v1');
+
+        // 8b. Offline PMTiles v3 upload, HTTP 206 Range verification, & /map render
+        const pmBuf = Buffer.alloc(256, 0);
+        pmBuf.write('PMTiles', 0, 'ascii');
+        pmBuf[7] = 3;
+        pmBuf.writeBigUInt64LE(127n, 8);
+        pmBuf.writeBigUInt64LE(1n, 16);
+        pmBuf.writeBigUInt64LE(128n, 24);
+        pmBuf.writeBigUInt64LE(2n, 32);
+        pmBuf.writeBigUInt64LE(130n, 40);
+        pmBuf.writeBigUInt64LE(130n, 56);
+        pmBuf[96] = 1; pmBuf[97] = 1; pmBuf[98] = 1; pmBuf[99] = 1;
+        pmBuf[100] = 0; pmBuf[101] = 14;
+        pmBuf.writeInt32LE(-844000000, 102);
+        pmBuf.writeInt32LE(359000000, 106);
+        pmBuf.writeInt32LE(-842000000, 110);
+        pmBuf.writeInt32LE(360500000, 114);
+        pmBuf[118] = 10;
+        pmBuf.writeInt32LE(-843000000, 119);
+        pmBuf.writeInt32LE(359750000, 123);
+        pmBuf.write('{}', 128, 'utf8');
+
+        const mapUp = await context.request.post(
+            'https://oscar.local/sensorhub/oscar/extensions/maps/upload?filename=ci-region.pmtiles&displayName=CI%20Offline%20Region&defaultBasemap=true',
+            { headers: { ...extHeaders, 'Content-Type': 'application/octet-stream' }, data: pmBuf },
+        );
+        assert.equal(mapUp.status(), 200, `PMTiles upload failed: ${mapUp.status()}`);
+        assert.equal((await mapUp.json()).maps?.customActive, true);
+
+        const rangeRes = await context.request.get(
+            'https://oscar.local/sensorhub/oscar/extensions/maps/tiles/ci-region.pmtiles',
+            { headers: { Range: 'bytes=0-126' } },
+        );
+        assert.equal(rangeRes.status(), 206, `Expected HTTP 206 Partial Content for PMTiles range, got ${rangeRes.status()}`);
+        assert.equal((await rangeRes.body()).length, 127);
+
+        // 8c. Spectroscopy isotope library upload & mode toggle
+        const specLib = JSON.stringify({
+            schemaVersion: 1,
+            libraryId: 'ci-riid-v1',
+            version: '1.0.0',
+            isotopes: [{ name: 'Cs-137', category: 'Industrial', energiesKeV: [661.7], windowKeV: 20.0, minSnr: 3.5 }],
+        });
+        const specUp = await context.request.post(
+            'https://oscar.local/sensorhub/oscar/extensions/spectroscopy/upload?filename=ci-isotopes.json&executionMode=override',
+            { headers: { ...extHeaders, 'Content-Type': 'application/octet-stream' }, data: Buffer.from(specLib, 'utf8') },
+        );
+        assert.equal(specUp.status(), 200);
+        const specJson = await specUp.json();
+        assert.equal(specJson.spectroscopy?.customActive, true);
+        assert.equal(specJson.spectroscopy?.executionMode, 'override');
+
+        // 8d. Private key rejection (HTTP 400) + valid public CA X.509 upload
+        const fakeKey = ['-----BEGIN ' + 'PRIVATE KEY-----', 'dGVzdA==', '-----END ' + 'PRIVATE KEY-----'].join('\n');
+        const badCert = await context.request.post(
+            'https://oscar.local/sensorhub/oscar/extensions/trusted-certs/upload?filename=bad-key.pem',
+            { headers: { ...extHeaders, 'Content-Type': 'application/octet-stream' }, data: Buffer.from(fakeKey, 'utf8') },
+        );
+        assert.equal(badCert.status(), 400, `Expected 400 when private key material is uploaded, got ${badCert.status()}`);
+
+        const testCaCert = [
+            '-----BEGIN ' + 'CERTIFICATE-----',
+            'MIIB6DCCAY2gAwIBAgIUDu7BhMC7VJ2L5aY7wnQlr9cjy3owCgYIKoZIzj0EAwIw',
+            'STErMCkGA1UEAwwiT1NDQVIgUmVncmVzc2lvbiBFcGhlbWVyYWwgVGVzdCBDQTEa',
+            'MBgGA1UECgwRT1JOTCBUZXN0IEZpeHR1cmUwHhcNMjYxMTE5MTkyNTA0WhcNMzYx',
+            'MTE2MTkyNTA0WjBJMSswKQYDVQQDDCJPU0NBUiBSZWdyZXNzaW9uIEVwaGVtZXJh',
+            'bCBUZXN0IENBMRowGAYDVQQKDBFPUk5MIFRlc3QgRml4dHVyZTBZMBMGByqGSM49',
+            'AgEGCCqGSM49AwEHA0IABI+/9JGj86a2MjXJt6OfpMJzak0ImBKt6HJhINquNy1O',
+            'yNbV+mBrHnim/6w/BfG1CjpkGTTfIsVGhKQsA4iZoGyjUzBRMB0GA1UdDgQWBBQ8',
+            '5g23KIfKnsay6z9P8mcLuv68ejAfBgNVHSMEGDAWgBQ85g23KIfKnsay6z9P8mcL',
+            'uv68ejAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49BAMCA0kAMEYCIQDsKKITGSgj',
+            'RM6/swph2ag5mO/yv8qvWLLgEmMwfvWeEgIhAICvvV/YhZ7Pq3z3fPqtXOSkPY5G',
+            'yVbiYD94Kvx47zvG',
+            '-----END ' + 'CERTIFICATE-----',
+        ].join('\n');
+        const goodCert = await context.request.post(
+            'https://oscar.local/sensorhub/oscar/extensions/trusted-certs/upload?filename=ci-test-ca.pem',
+            { headers: { ...extHeaders, 'Content-Type': 'application/octet-stream' }, data: Buffer.from(testCaCert, 'utf8') },
+        );
+        assert.equal(goodCert.status(), 200, `Expected 200 uploading public X.509 CA cert, got ${goodCert.status()}`);
+        assert.equal((await goodCert.json()).trustedCerts?.customActive, true);
+
+        // 8e. Agency Adjudication Policy Pack upload & export
+        const policyDoc = JSON.stringify({
+            schemaVersion: 1,
+            packId: 'ci-policy-v1',
+            version: '1.0.0',
+            agencyName: 'CI Port Test',
+            codes: [{ code: 741, label: 'CI Cleared Medical Permit' }],
+        });
+        const polUp = await context.request.post(
+            'https://oscar.local/sensorhub/oscar/extensions/policy-packs/upload?filename=ci-policy.json',
+            { headers: { ...extHeaders, 'Content-Type': 'application/octet-stream' }, data: Buffer.from(policyDoc, 'utf8') },
+        );
+        assert.equal(polUp.status(), 200);
+        assert.equal((await polUp.json()).policyPacks?.customActive, true);
+
+        const polExp = await context.request.get('https://oscar.local/sensorhub/oscar/extensions/policy-packs/export');
+        assert.equal(polExp.status(), 200);
+        assert.ok((await polExp.text()).includes('CI Cleared Medical Permit'));
+    } finally {
+        // Restore all domains cleanly to shipped defaults
+        await context.request.post('https://oscar.local/sensorhub/oscar/extensions/ocr/action', {
+            headers: { ...extHeaders, 'Content-Type': 'application/json' }, data: { action: 'reset' },
+        }).catch(() => {});
+        await context.request.post('https://oscar.local/sensorhub/oscar/extensions/maps/action', {
+            headers: { ...extHeaders, 'Content-Type': 'application/json' }, data: { action: 'delete-pack', fileName: 'ci-region.pmtiles' },
+        }).catch(() => {});
+        await context.request.post('https://oscar.local/sensorhub/oscar/extensions/maps/action', {
+            headers: { ...extHeaders, 'Content-Type': 'application/json' }, data: { action: 'reset' },
+        }).catch(() => {});
+        await context.request.post('https://oscar.local/sensorhub/oscar/extensions/spectroscopy/action', {
+            headers: { ...extHeaders, 'Content-Type': 'application/json' }, data: { action: 'reset' },
+        }).catch(() => {});
+        await context.request.post('https://oscar.local/sensorhub/oscar/extensions/trusted-certs/action', {
+            headers: { ...extHeaders, 'Content-Type': 'application/json' }, data: { action: 'reset' },
+        }).catch(() => {});
+        await context.request.post('https://oscar.local/sensorhub/oscar/extensions/policy-packs/action', {
+            headers: { ...extHeaders, 'Content-Type': 'application/json' }, data: { action: 'reset' },
+        }).catch(() => {});
+    }
+    const postResetRes = await context.request.get('https://oscar.local/sensorhub/oscar/extensions/status');
+    assert.equal(postResetRes.status(), 200);
+    const postReset = await postResetRes.json();
+    assert.equal(postReset.ocr?.customActive, false, 'Expected OCR reset to shipped default');
+    assert.equal(postReset.maps?.customActive, false, 'Expected Maps reset to shipped default');
+    assert.equal(postReset.spectroscopy?.customActive, false, 'Expected Spectroscopy reset to shipped default');
+    assert.equal(postReset.trustedCerts?.customActive, false, 'Expected Trusted CAs reset to shipped default');
+    assert.equal(postReset.policyPacks?.customActive, false, 'Expected Policy Packs reset to shipped default');
 } finally {
     await browser.close();
 }
