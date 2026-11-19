@@ -1668,7 +1668,7 @@ case "$command_name" in
         protect_deployment_files
         $add_hosts && add_local_hosts_mapping "$hostname_value"
         if compose ps --status running gateway 2>/dev/null | grep -q gateway; then
-            compose restart gateway
+            compose up --detach --force-recreate --no-deps --no-build --pull never --wait gateway
         fi
         printf 'TLS certificate refreshed for %s.\n' "$hostname_value"
         print_client_access_instructions
