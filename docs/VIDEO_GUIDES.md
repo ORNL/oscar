@@ -15,8 +15,8 @@ Every module starts immediately at `00:00` with the workflow action, runs under 
 | Accessibility | Embedded MP4 `mov_text` soft captions + standalone `.vtt` and `.srt` files + 3-to-4-step Markdown blocks |
 
 > **Interactive HTML5 Player & In-App Contextual Video Assistance:**
-> - **Source checkouts:** With submodules initialized, open `docs/video-guides/index.html` in any browser to watch all 23 modules with synchronized closed captions enabled by default.
-> - **Running OSCAR 3.11.0 deployments (offline-ready):** All 23 MP4 recordings and WebVTT/SRT captions are bundled directly in the OSCAR web root (`osh-node-oscar/web/video-guides/`) and served over TLS with HTTP byte-range streaming and zero idle network load:
+> - **Source checkouts:** With submodules initialized, open `docs/video-guides/index.html` in any browser to watch all 26 modules with synchronized closed captions enabled by default.
+> - **Running OSCAR 3.11.0 deployments (offline-ready):** All 26 MP4 recordings and WebVTT/SRT captions are bundled directly in the OSCAR web root (`osh-node-oscar/web/video-guides/`) and served over TLS with HTTP byte-range streaming and zero idle network load:
 >   - **OSCAR Viewer (`?` Help Dialog):** Click `?` on any console page to watch route-matched workflow videos inline with closed captions, trigger per-card/per-glossary video walkthroughs, or open the full local catalog at `/video-guides/index.html`.
 >   - **SensorHub Admin (`/sensorhub/admin`):** Open any supported module's **README** tab (`OSCAR Service`, `Lane Sensor System`, `Rapiscan RPM`, `FFmpeg Video`, or `Durable Daily File Journal`) and expand the collapsed `Video guide (#XX)` disclosures on demand.
 
@@ -47,6 +47,9 @@ Every module starts immediately at `00:00` with the workflow action, runs under 
 | 21 | [Onboard Authentik SSO Passkey Users & Revoke Access Across All Layers](#21-federated-sso-passkey-onboarding-and-revocation) ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/21-federated-sso-passkey-onboarding-and-revocation.mp4)) | Track C | 21.7s | 1354.4 KiB | [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/21-federated-sso-passkey-onboarding-and-revocation.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/21-federated-sso-passkey-onboarding-and-revocation.srt) |
 | 22 | [Install, Configure & Run the End-to-End OSCAR Regression Suite](#22-regression-suite-setup-and-certification) ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/22-regression-suite-setup-and-certification.mp4)) | Track D | 23.9s | 823.5 KiB | [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/22-regression-suite-setup-and-certification.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/22-regression-suite-setup-and-certification.srt) |
 | 23 | [Prepare Windows 11 WSL 2 Hosts & Right-Size 100% Per-Lane OCR](#23-windows-wsl2-host-readiness-and-ocr-scaling) ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/23-windows-wsl2-host-readiness-and-ocr-scaling.mp4)) | Track D | 16.4s | 443.6 KiB | [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/23-windows-wsl2-host-readiness-and-ocr-scaling.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/23-windows-wsl2-host-readiness-and-ocr-scaling.srt) |
+| 24 | [Manage Continual & Occasional USB NVMe Backups & Safe Field Eject](#24-continual-and-occasional-usb-backups) ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/24-continual-and-occasional-usb-backups.mp4)) | Track C | 16.7s | 944.6 KiB | [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/24-continual-and-occasional-usb-backups.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/24-continual-and-occasional-usb-backups.srt) |
+| 25 | [Swap Pluggable OCR Packs & Air-Gapped Regional .pmtiles Basemaps](#25-pluggable-runtime-extensions-and-pmtiles) ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/25-pluggable-runtime-extensions-and-pmtiles.mp4)) | Track C | 20.7s | 1473.9 KiB | [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/25-pluggable-runtime-extensions-and-pmtiles.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/25-pluggable-runtime-extensions-and-pmtiles.srt) |
+| 26 | [Stage Ubuntu 24.04 Off-Site & Cut Over to Air-Gapped Portal Subnets](#26-ubuntu-hotel-staging-and-airgapped-cutover) ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/26-ubuntu-hotel-staging-and-airgapped-cutover.mp4)) | Track D | 15.6s | 516.8 KiB | [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/26-ubuntu-hotel-staging-and-airgapped-cutover.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/26-ubuntu-hotel-staging-and-airgapped-cutover.srt) |
 
 ## Track A — CLI Deployment, Upgrades & Storage Lifecycle
 
@@ -300,6 +303,30 @@ Create centralized operator and viewer accounts in Authentik, map roles via osca
 3. To completely offboard a user, select the account in **Authentik -> Directory -> Users**, click **Delete**, and confirm permanent deletion; `oscar-hub-sync.timer` automatically purges the `managed-by: authentik-sync` user from Octelium within 30 seconds (or immediately via `sudo ./oscar-hub.sh sync-users`).
 4. Open **Users & Access -> Users & Roles (`/users`)** on federated OSCAR nodes and delete any cached user profile row to clear active browser cookies.
 
+<a id="24-continual-and-occasional-usb-backups"></a>
+### 24. Manage Continual & Occasional USB NVMe Backups & Safe Field Eject
+
+Open USB Backups (/usb-backups) to inspect an attached NTFS external USB 3.x NVMe SSD, configure Continual vs. Occasional zero-downtime sync, run an on-demand incremental backup, download the off-site recovery key, and perform a 1-click Safely Eject USB Drive offload.
+
+- **Video:** [Watch `24-continual-and-occasional-usb-backups.mp4` (16.7s, 944.6 KiB)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/24-continual-and-occasional-usb-backups.mp4) · [WebVTT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/24-continual-and-occasional-usb-backups.vtt) · [SRT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/24-continual-and-occasional-usb-backups.srt)
+
+1. Open **USB Backups (`/usb-backups`)** from the left navigation drawer to inspect the attached external USB 3.x NVMe SSD (`ATTACHED & ONLINE`), carrier capacity, PostgreSQL WAL LSN, and deduplicated Parquet/media pack counts.
+2. Under **Backup Mode & Sync Schedule**, choose **Continual Background Sync** (`15 min` default, `0.0 s` portal outage with automatic USB reconnect catch-up) or **Occasional / On-Demand Visit Sync**, and click **Save Mode & Schedule**.
+3. Click **Sync Incremental Snapshot Now** to capture new sealed Parquet daily packs, retained media/OCR crops, and an encrypted PostgreSQL checkpoint, and click **Download Off-Site Recovery Key (`backup-key.txt`)** to store the decryption key in off-site escrow.
+4. Before unplugging the drive for laptop offload (`COPY-TO-ANOTHER-DRIVE.bat` or `./copy-to-another-drive.sh`) or cold-iron recovery (`sudo bash oscar.sh usb-backup restore`), click **Safely Eject USB Drive** and wait for the green **SAFE TO UNPLUG** banner.
+
+<a id="25-pluggable-runtime-extensions-and-pmtiles"></a>
+### 25. Swap Pluggable OCR Packs & Air-Gapped Regional .pmtiles Basemaps
+
+Open Runtime Extensions (/extensions) to inspect OSCAR's shipped built-in defaults, hot-swap a Unicode regional OCR plate-rule pack and an offline PMTiles v3 (.pmtiles) regional basemap, render live portal lane markers offline on Map (/map), review Spectroscopy, Trusted CAs, Policy Packs & EML, and restore shipped defaults.
+
+- **Video:** [Watch `25-pluggable-runtime-extensions-and-pmtiles.mp4` (20.7s, 1473.9 KiB)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/25-pluggable-runtime-extensions-and-pmtiles.mp4) · [WebVTT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/25-pluggable-runtime-extensions-and-pmtiles.vtt) · [SRT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/25-pluggable-runtime-extensions-and-pmtiles.srt)
+
+1. Open **Runtime Extensions (`/extensions`)** from the left navigation drawer to review the six upgrade-safe extension domains (`OCR Models & Engines`, `Offline Maps (.pmtiles)`, `Spectroscopy / Nuclide ID`, `Trusted CA Certificates`, `Adjudication Policy Packs`, and `EML Alarm Assessment`) persisted under `/var/lib/oscar/extensions/`.
+2. On **OCR Models & Engines**, upload a compliant `plate-rules.json` or ONNX/SPI `.zip` package to activate regional non-Latin or numeric plate rules (`CUSTOM OVERRIDE (UPGRADE-SAFE)`) while inheriting OSCAR's shipped PP-OCRv3 + PARSeq models.
+3. Switch to **Offline Maps (`.pmtiles`)**, enter a layer display name, upload a Protomaps **PMTiles v3** regional archive (`pmtiles extract ...`), and open **Map (`/map`)** to view live portal lane markers over `Offline: <Layer Name>` via HTTP `206` byte-range serving with zero internet requests.
+4. Browse **Spectroscopy**, **Trusted CA Certificates**, **Adjudication Policy Packs**, and **EML Alarm Assessment**, or click **Reset to Shipped Default** on any tab to revert immediately with zero portal downtime.
+
 ## Track D — End-to-End Regression & Multi-OS Capacity Scaling
 
 <a id="22-regression-suite-setup-and-certification"></a>
@@ -324,3 +351,15 @@ Prepare unattended 24/7 Windows 11 + WSL 2 hosts with oscar.bat prepare-host, at
 1. On Windows 11 x86-64 (Administrator PowerShell 5.1), run `.\oscar.bat host-check` and `.\oscar.bat prepare-host` to enable High Performance AC power, disable sleep/USB suspend, and write bounded `%USERPROFILE%\.wslconfig` limits.
 2. Attach firewalled portals outbound over TLS `443` via `.\oscar-remote-access.ps1 configure` (Windows) or `sudo bash oscar-remote-access.sh configure` (Ubuntu).
 3. When enabling `100%` per-lane Container & License Plate OCR (`ocrConfig.enabled = true`), size Windows 11 + WSL 2 deployments to `1–8` lanes (such as `6` lanes) so Hyper-V/WSL 2 network virtualization maintains smooth `200 ms` (`5 Hz`) radiation plots, and deploy `25–50` OCR-enabled lanes on Ubuntu Server 24.04 bare-metal.
+
+<a id="26-ubuntu-hotel-staging-and-airgapped-cutover"></a>
+### 26. Stage Ubuntu 24.04 Off-Site & Cut Over to Air-Gapped Portal Subnets
+
+Unpack the self-contained Ubuntu 24.04 offline bundle on hotel/office Wi-Fi, identify physical NICs by carrier blink, pre-stage the portal's static Netplan YAML without dropping SSH, expand Ubuntu LVM root storage and initialize OSCAR offline, then cut over on-site and discover RPMs and RTSP cameras.
+
+- **Video:** [Watch `26-ubuntu-hotel-staging-and-airgapped-cutover.mp4` (15.6s, 516.8 KiB)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/26-ubuntu-hotel-staging-and-airgapped-cutover.mp4) · [WebVTT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/26-ubuntu-hotel-staging-and-airgapped-cutover.vtt) · [SRT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/26-ubuntu-hotel-staging-and-airgapped-cutover.srt)
+
+1. Off-site (hotel or staging bench), extract `oscar-3.11.0-ubuntu-x86_64-offline-full.zip`, verify bundle checksums (`sudo bash verify-bundle.sh`), and run `sudo bash oscar.sh identify-nics --watch` while plugging a patch cord into the target NIC to confirm its Linux interface name (`enp2s0`).
+2. Stage the portal's static IPv4 configuration safely without touching active Wi-Fi/SSH via `sudo bash oscar.sh stage-site-network --interface enp2s0 --ip 198.51.100.10/24 --gateway 198.51.100.1`.
+3. Run `sudo bash oscar.sh prepare-host --offline --expand-lvm` to expand Ubuntu Server's default `100 GiB` LVM logical volume across the full NVMe disk and install offline `.deb` packages, then run `sudo bash oscar.sh init --offline` to load air-gapped container images and initialize credentials.
+4. On-site inside the air-gapped portal rack, apply the pre-staged static subnet with `sudo bash oscar.sh apply-site-network` and scan the sensor LAN with `sudo bash oscar.sh discover-devices --interface enp2s0` to verify Rapiscan RPM (`10001–10050`) and RTSP camera (`554`/`8554`) endpoints.

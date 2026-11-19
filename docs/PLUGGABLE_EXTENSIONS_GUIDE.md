@@ -23,6 +23,12 @@ At the same time, sites operating in non-Latin license-plate regions, air-gapped
 
 Any signed-in OSCAR **Administrator** can manage all six extension domains from a single accessible workspace at **`https://<oscar-host>/extensions`** (**Extensions** in the OSCAR Viewer navigation bar), localized in **English, Spanish, French, and Greek** (`en`, `es`, `fr`, `el`):
 
+![Pluggable Runtime Extensions & Regional Packs Hub](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/46-runtime-extensions-hub.png)
+
+![Air-Gapped Offline PMTiles Regional Basemap on Map View](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/47-offline-pmtiles-basemap.png)
+
+> **Captioned Video Walkthrough (`#25`, `20.7s`):** Watch **[Swap Pluggable OCR Packs & Air-Gapped Regional .pmtiles Basemaps](VIDEO_GUIDES.md#25-pluggable-runtime-extensions-and-pmtiles)** ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/25-pluggable-runtime-extensions-and-pmtiles.mp4) · [WebVTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/25-pluggable-runtime-extensions-and-pmtiles.vtt), also bundled offline in-app via **Help (`?`)** on `/extensions` and `/map`).
+
 1. **Live Status & Provenance Badges:** Every tab clearly indicates whether the subsystem is currently running its **Shipped Built-In Default** or a **Custom Override**, along with the active package filename, SHA-256 digest, version/rule counts, and load timestamp.
 2. **Streaming Upload with Progress:** Select a compliant archive or configuration file and upload it directly from the browser with live byte-level progress reporting (`<progress>`), server-side structural/magic-byte validation, and atomic activation—no container restart or shell access required.
 3. **1-Click Reset to Shipped Default:** Every tab includes a confirmed **Reset to Shipped Default** action that immediately reverts to OSCAR's built-in implementation if a custom model, map, certificate, or policy pack needs to be rolled back.

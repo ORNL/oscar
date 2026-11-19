@@ -8,6 +8,8 @@ It covers all three real-world field deployment scenarios:
 - **[Scenario B — 100% Bare-Metal Air-Gapped On-Site Setup](#5-scenario-b--bare-metal-from-scratch-on-site-with-zero-internet--zero-dhcp):** You arrive at an offline facility with a blank computer, no internet, and no DHCP, and install Ubuntu 24.04 + Docker + OSCAR completely offline from a USB drive.
 - **[Scenario C — Discovering Unknown RPM & Camera IPs On-Site](#6-scenario-c--when-rpm-or-camera-ip-addresses-are-unknown-on-site):** You arrive on-site without a complete IP sheet (or cameras/RPMs are sitting on unknown/factory subnets with no DHCP) and use `sudo bash oscar.sh discover-devices` to find every live camera and RPM controller on the wire.
 
+> **Captioned Video Walkthrough (`#26`, `15.6s`):** Watch **[Stage Ubuntu 24.04 Off-Site & Cut Over to Air-Gapped Portal Subnets](VIDEO_GUIDES.md#26-ubuntu-hotel-staging-and-airgapped-cutover)** ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/26-ubuntu-hotel-staging-and-airgapped-cutover.mp4) · [WebVTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/26-ubuntu-hotel-staging-and-airgapped-cutover.vtt), also bundled offline inside OSCAR at `/video-guides/index.html` and **Help (`?`)**).
+
 ---
 
 ## 1. Pre-Trip USB Kit & Direct Official Download Links

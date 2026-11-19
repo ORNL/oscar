@@ -39,6 +39,10 @@ For the single-snapshot quiesced recovery workflow (`OSCAR_BACKUP_MODE=single` v
 
 Every day-to-day backup and field-visit operation can be managed directly from the browser by any signed-in OSCAR **Administrator** at **`/usb-backups`** (**USB Backups** in the left navigation bar, or from **Users & Access → Recovery → USB NVMe Backups**), localized in **English, Spanish, French, and Greek**—with **zero shell commands required**:
 
+![Continual & Occasional USB NVMe Backups Manager](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/45-usb-backups-manager.png)
+
+> **Captioned Video Walkthrough (`#24`, `16.7s`):** Watch **[Manage Continual & Occasional USB NVMe Backups & Safe Field Eject](VIDEO_GUIDES.md#24-continual-and-occasional-usb-backups)** ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/24-continual-and-occasional-usb-backups.mp4) · [WebVTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/24-continual-and-occasional-usb-backups.vtt), also bundled offline in-app via **Help (`?`)** on `/usb-backups`).
+
 1. **First-Time USB NVMe SSD Initialization:**
    - Plug the external USB 3.x NVMe SSD into the OSCAR host and open **USB Backups** (`/usb-backups`).
    - Under **Initialize or Switch External USB NVMe SSD**, select the detected USB drive (OS boot and active OSCAR disks are hardware-excluded and can never be selected), keep **`NTFS`** selected for universal laptop compatibility, and click **Format & Initialize Selected USB Drive...** (or check **Use existing NTFS/ext4 partition without erasing** to adopt a pre-formatted carrier).
