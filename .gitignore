@@ -15,6 +15,7 @@
 hivemq-config/
 hivemq-data/
 *.env
+!*.example.env
 tools/postgis-test/pgdata
 *.log
 
