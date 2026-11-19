@@ -533,7 +533,7 @@ EOF
             info "Installing official APT Docker Engine, Compose v2, chrony, openssh-server, and field NIC tools..."
             export DEBIAN_FRONTEND=noninteractive
             apt-get update -y
-            apt-get install -y ca-certificates curl gnupg openssh-server chrony ethtool nmap arp-scan jq ufw lsb-release
+            apt-get install -y ca-certificates curl gnupg openssh-server chrony ethtool nmap arp-scan jq ntfs-3g rsync ufw lsb-release
             if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
                 install -m 0755 -d /etc/apt/keyrings
                 if [[ ! -s /etc/apt/keyrings/docker.asc ]]; then

@@ -120,7 +120,7 @@ if ! compgen -G "${deb_cache}/docker/*.deb" >/dev/null; then
             done
 
             apt-get install -y --no-install-recommends --download-only -o Dir::Cache::archives=/tmp/dl-tools \
-                chrony ethtool nmap arp-scan jq >/dev/null
+                chrony ethtool nmap arp-scan jq ntfs-3g rsync >/dev/null
             for f in /tmp/dl-tools/*.deb; do
                 base=$(basename "$f")
                 cp -f "$f" "/out/host-tools/${base//%/_}"

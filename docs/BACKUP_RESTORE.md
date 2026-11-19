@@ -13,6 +13,8 @@ out a restore drill on an isolated test host before relying on a deployment for 
 Run it only on supported Ubuntu Server 24.04 x86-64 or Windows 11 x86-64 Docker Desktop/WSL 2
 hosts; macOS deployment and storage operations fail closed.
 
+> **Multi-Year (`1–10` Year) Continual USB NVMe Sync, Mode Switching & Field Laptop Offloads:** For zero-downtime (`0s` outage) continual incremental backups onto an external USB 3.2 NVMe SSD, 1-command switching between `continual` and `occasional` modes, safe field USB `eject` → laptop copy (`COPY-TO-ANOTHER-DRIVE.bat` / `copy-to-another-drive.sh`) → hotplug auto-catch-up, and bare-metal migration of `400+ GiB` portals onto a new server, see the **[Continual & Occasional USB NVMe Incremental Backup Guide](CONTINUAL_AND_USB_BACKUP_GUIDE.md)**.
+
 > **Companion Video Guide:** Watch [Module 03 — Verify Parquet Cold Archive & Single-Snapshot Backup (`03-archive-and-snapshot-backup.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/03-archive-and-snapshot-backup.mp4) ([WebVTT captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/03-archive-and-snapshot-backup.vtt)) in [VIDEO_GUIDES.md](VIDEO_GUIDES.md#03-archive-and-snapshot-backup).
 
 ## What a coordinated backup contains

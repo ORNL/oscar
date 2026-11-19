@@ -2100,6 +2100,11 @@ OSCAR deployment administration
   .\oscar.bat backup
   .\oscar.bat backup-verify -BackupId ID
   .\oscar.bat restore -BackupId ID -Confirm ID
+  .\oscar.bat usb-backup list-drives|status|attach|eject|sync
+  .\oscar.bat usb-backup prepare-drive (-DriveLetter R [-Format -Confirm FORMAT] | -Path DIR) [-Mode continual|occasional]
+  .\oscar.bat usb-backup mode continual|occasional|disabled [-IntervalMinutes 15]
+  .\oscar.bat usb-backup verify [-From PATH] [-BackupKey FILE] [-Deep]
+  .\oscar.bat usb-backup restore [-From PATH] [-BackupKey FILE] -Confirm RESTORE
   .\oscar.bat archive status|verify
   .\oscar.bat archive hold list
   .\oscar.bat archive hold create -StoreKey KEY -IdScope INT (-Generation UUID | -Observation ID) -Reason TEXT
@@ -2228,6 +2233,8 @@ try {
                     Write-SecretFile $adminSecretPath '# CONSUMED_AT_INIT: Initial bootstrap password hashed into OSCAR state; manage accounts in OSCAR Viewer -> Users & Access.'
                     Protect-DeploymentFiles
                 }
+                $usbScript = Join-Path $ScriptRoot 'oscar-usb-backup.ps1'
+                if (Test-Path -LiteralPath $usbScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $usbScript install-agent | Out-Null } catch {} }
             }
             Write-Host "`nOSCAR setup complete: https://${Hostname}:$Port/sensorhub/admin" -ForegroundColor Green
             Write-ClientAccessInstructions $resolvedTlsSans
@@ -2239,6 +2246,8 @@ try {
             Invoke-Compose @('up', '--detach', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', '240')
             Enable-StorageDatabaseFeatures
             Complete-PendingFreshInit
+            $usbScript = Join-Path $ScriptRoot 'oscar-usb-backup.ps1'
+            if (Test-Path -LiteralPath $usbScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $usbScript install-agent | Out-Null } catch {} }
             Invoke-RemoteAccessSubcommand @('sync')
         }
         'stop' {
@@ -2253,6 +2262,8 @@ try {
             Invoke-Compose @('up', '--detach', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', '240')
             Enable-StorageDatabaseFeatures
             Complete-PendingFreshInit
+            $usbScript = Join-Path $ScriptRoot 'oscar-usb-backup.ps1'
+            if (Test-Path -LiteralPath $usbScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $usbScript install-agent | Out-Null } catch {} }
             Invoke-RemoteAccessSubcommand @('sync')
         }
         'status' {
@@ -2307,6 +2318,8 @@ try {
             Invoke-StorageCommand 'upgrade-state' $null
             Enable-StorageDatabaseFeatures
             Complete-PendingFreshInit
+            $usbScript = Join-Path $ScriptRoot 'oscar-usb-backup.ps1'
+            if (Test-Path -LiteralPath $usbScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $usbScript install-agent | Out-Null } catch {} }
             if (Test-Path -LiteralPath (Join-Path $ScriptRoot 'offline-images.tar')) {
                 Invoke-RemoteAccessSubcommand @('sync')
             } else {

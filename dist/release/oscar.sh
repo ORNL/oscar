@@ -61,7 +61,7 @@ run_menu_command() {
     local command_name=${1:-}
     shift || true
     case "$command_name" in
-        init|verify|start|stop|restart|upgrade|refresh-tls|prepare-host|stage-site-network|apply-site-network|rollback-network|discover-devices|backup|backup-verify|backup-prune|restore|archive|support-bundle|remote-access)
+        init|verify|start|stop|restart|upgrade|refresh-tls|prepare-host|stage-site-network|apply-site-network|rollback-network|discover-devices|backup|backup-verify|backup-prune|restore|archive|usb-backup|continual-backup|support-bundle|remote-access)
             if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
                 bash "$setup_script" "$command_name" "$@"
             else
@@ -109,6 +109,15 @@ Enter a command and any options. Examples:
   backup
   backup-verify BACKUP_ID
   restore --backup BACKUP_ID --confirm BACKUP_ID
+  usb-backup list-drives
+  usb-backup prepare-drive --device /dev/sdX --mode continual --confirm FORMAT
+  usb-backup mode continual
+  usb-backup mode occasional
+  usb-backup sync
+  usb-backup eject
+  usb-backup attach
+  usb-backup status
+  usb-backup restore --from /srv/oscar-usb-backup --backup-key FILE --confirm RESTORE
   archive status
   archive verify
   archive hold list

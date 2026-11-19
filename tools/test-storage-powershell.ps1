@@ -10,6 +10,7 @@ if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT -or $PSVersionTa
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) '..'))
 $storageScript = Join-Path $repoRoot 'dist\release\oscar-storage.ps1'
+$usbBackupScript = Join-Path $repoRoot 'dist\release\oscar-usb-backup.ps1'
 $setupScript = Join-Path $repoRoot 'dist\release\oscar-setup.ps1'
 $hostPrepScript = Join-Path $repoRoot 'dist\release\configure-windows-host.ps1'
 $verifyScript = Join-Path $repoRoot 'dist\release\verify-bundle.ps1'
@@ -17,7 +18,7 @@ $offlineBuilderScript = Join-Path $repoRoot 'tools\offline\build-offline-bundle.
 $composeFile = Join-Path $repoRoot 'dist\release\compose.yaml'
 $oscarDockerfile = Join-Path $repoRoot 'dist\release\docker\oscar\Dockerfile'
 $oscarEntrypoint = Join-Path $repoRoot 'dist\release\docker\oscar\entrypoint.sh'
-$releasePowerShellScripts = @($storageScript, $setupScript, $hostPrepScript, $verifyScript, $offlineBuilderScript)
+$releasePowerShellScripts = @($storageScript, $usbBackupScript, $setupScript, $hostPrepScript, $verifyScript, $offlineBuilderScript)
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ('oscar-storage-ps5-' + [Guid]::NewGuid().ToString('N'))
 $createdDockerGroup = $false
 

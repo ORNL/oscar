@@ -81,7 +81,8 @@ for (const [relative, expected] of Object.entries(backupDisabledMessages)) {
 }
 
 const expected = [
-    'oscar-storage.sh', 'oscar-storage.ps1', 'configure-ubuntu-host.sh', 'configure-windows-host.ps1', 'validate-storage-archive.sh',
+    'oscar-storage.sh', 'oscar-storage.ps1', 'oscar-usb-backup.sh', 'oscar-usb-backup.ps1', 'oscar-usb-backup-engine.sh',
+    'configure-ubuntu-host.sh', 'configure-windows-host.ps1', 'validate-storage-archive.sh',
     'ubuntu/README.md', 'ubuntu/site-network.example.env', 'ubuntu/ansible-site-hosts.yml',
     'ubuntu/autoinstall/user-data.yaml', 'ubuntu/autoinstall/meta-data',
     'ubuntu/netplan/01-single-nic-static.yaml.example',
@@ -101,6 +102,7 @@ const expected = [
     'documentation/STORAGE_OPERATIONS.md', 'documentation/DIAGNOSTICS_AND_FLIGHT_RECORDER.md',
     'documentation/REGRESSION_AND_RELEASE_CERTIFICATION.md',
     'documentation/UBUNTU_FIELD_SETUP_GUIDE.md',
+    'documentation/CONTINUAL_AND_USB_BACKUP_GUIDE.md',
     'documentation/daily-file-journal-v1.md',
     'documentation/retained-media-v1.md',
 ];

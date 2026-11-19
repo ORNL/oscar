@@ -11,6 +11,9 @@ case "$command_name" in
     backup|backup-verify|backup-prune|restore|archive)
         exec bash "$script_dir/oscar-storage.sh" "$command_name" "$@"
         ;;
+    usb-backup|continual-backup)
+        exec bash "$script_dir/oscar-usb-backup.sh" "$@"
+        ;;
     remote-access)
         exec bash "$script_dir/oscar-remote-access.sh" "$@"
         ;;
@@ -67,6 +70,11 @@ OSCAR deployment administration
   sudo ./oscar.sh backup
   sudo ./oscar.sh backup-verify BACKUP_ID
   sudo ./oscar.sh restore --backup BACKUP_ID --confirm BACKUP_ID
+  sudo ./oscar.sh usb-backup list-drives|status|attach|eject|sync
+  sudo ./oscar.sh usb-backup prepare-drive (--device /dev/sdX --confirm FORMAT | --path DIR) [--mode continual|occasional]
+  sudo ./oscar.sh usb-backup mode continual|occasional|disabled [--interval-minutes 15]
+  sudo ./oscar.sh usb-backup verify [--from PATH] [--backup-key FILE] [--deep]
+  sudo ./oscar.sh usb-backup restore [--from PATH] [--backup-key FILE] --confirm RESTORE
   sudo ./oscar.sh archive status|verify
   sudo ./oscar.sh archive hold list
   sudo ./oscar.sh archive hold create --store-key KEY --id-scope INT (--generation UUID | --observation ID) --reason TEXT
@@ -1588,6 +1596,7 @@ case "$command_name" in
                 write_secret "$script_dir/secrets/oscar-admin-password.txt" '# CONSUMED_AT_INIT: Initial bootstrap password hashed into OSCAR state; manage accounts in OSCAR Viewer -> Users & Access.'
                 protect_deployment_files
             fi
+            [[ -f "$script_dir/oscar-usb-backup.sh" ]] && bash "$script_dir/oscar-usb-backup.sh" install-agent >/dev/null 2>&1 || true
         fi
         printf '\nOSCAR setup complete: https://%s:%s/sensorhub/admin\n' "$hostname_value" "$port_value"
         print_client_access_instructions
@@ -1599,6 +1608,7 @@ case "$command_name" in
         compose up --detach --no-build --pull never --wait --wait-timeout 240
         ensure_storage_database_features
         finalize_pending_fresh_init
+        [[ -f "$script_dir/oscar-usb-backup.sh" ]] && bash "$script_dir/oscar-usb-backup.sh" install-agent >/dev/null 2>&1 || true
         invoke_remote_access_subcommand sync
         ;;
     stop)
@@ -1614,6 +1624,7 @@ case "$command_name" in
         compose up --detach --no-build --pull never --wait --wait-timeout 240
         ensure_storage_database_features
         finalize_pending_fresh_init
+        [[ -f "$script_dir/oscar-usb-backup.sh" ]] && bash "$script_dir/oscar-usb-backup.sh" install-agent >/dev/null 2>&1 || true
         invoke_remote_access_subcommand sync
         ;;
     status)
@@ -1715,6 +1726,7 @@ case "$command_name" in
         bash "$script_dir/oscar-storage.sh" upgrade-state
         ensure_storage_database_features
         finalize_pending_fresh_init
+        [[ -f "$script_dir/oscar-usb-backup.sh" ]] && bash "$script_dir/oscar-usb-backup.sh" install-agent >/dev/null 2>&1 || true
         if [[ -f $script_dir/offline-images.tar ]]; then
             invoke_remote_access_subcommand sync
         else

@@ -107,13 +107,14 @@ distributions{
                     include 'DIAGNOSTICS_AND_FLIGHT_RECORDER.md'
                     include 'REGRESSION_AND_RELEASE_CERTIFICATION.md'
                     include 'UBUNTU_FIELD_SETUP_GUIDE.md'
+                    include 'CONTINUAL_AND_USB_BACKUP_GUIDE.md'
                     filesMatching('STORAGE_ARCHITECTURE.md') {
                         filter { line ->
                             line.replace('../include/osh-oakridge-modules/docs/', '')
                                 .replace('https://github.com/ORNL/osh-oakridge-modules/blob/main/docs/', '')
                         }
                     }
-                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md', 'LIVE_VIDEO.md', 'UBUNTU_FIELD_SETUP_GUIDE.md']) {
+                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md', 'LIVE_VIDEO.md', 'UBUNTU_FIELD_SETUP_GUIDE.md', 'CONTINUAL_AND_USB_BACKUP_GUIDE.md']) {
                         filter { line ->
                             line.replace('../dist/release/ubuntu/', '../../ubuntu/')
                                 .replace('../dist/release/', '')
@@ -164,13 +165,14 @@ distributions{
                     include 'DIAGNOSTICS_AND_FLIGHT_RECORDER.md'
                     include 'REGRESSION_AND_RELEASE_CERTIFICATION.md'
                     include 'UBUNTU_FIELD_SETUP_GUIDE.md'
+                    include 'CONTINUAL_AND_USB_BACKUP_GUIDE.md'
                     filesMatching('STORAGE_ARCHITECTURE.md') {
                         filter { line ->
                             line.replace('../include/osh-oakridge-modules/docs/', '')
                                 .replace('https://github.com/ORNL/osh-oakridge-modules/blob/main/docs/', '')
                         }
                     }
-                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md', 'LIVE_VIDEO.md', 'UBUNTU_FIELD_SETUP_GUIDE.md']) {
+                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md', 'LIVE_VIDEO.md', 'UBUNTU_FIELD_SETUP_GUIDE.md', 'CONTINUAL_AND_USB_BACKUP_GUIDE.md']) {
                         filter { line ->
                             line.replace('../dist/release/ubuntu/', '../ubuntu/')
                                 .replace('../dist/release/', '')
@@ -260,6 +262,9 @@ distributions{
                 include 'oscar-setup.sh'
                 include 'oscar-storage.ps1'
                 include 'oscar-storage.sh'
+                include 'oscar-usb-backup.ps1'
+                include 'oscar-usb-backup.sh'
+                include 'oscar-usb-backup-engine.sh'
                 include 'oscar.bat'
                 include 'oscar.sh'
                 include 'postgis/Dockerfile'

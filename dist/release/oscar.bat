@@ -26,13 +26,24 @@ if errorlevel 1 (
 goto menu
 
 :command
+call :dispatch %*
+exit /b %errorlevel%
+
+:dispatch
 if /I "%~1"=="remote-access" goto remote_access
+if /I "%~1"=="usb-backup" goto usb_backup
+if /I "%~1"=="continual-backup" goto usb_backup
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%OSCAR_SETUP%" %*
 exit /b %errorlevel%
 
 :remote_access
 shift
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0oscar-remote-access.ps1" %1 %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %errorlevel%
+
+:usb_backup
+shift
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0oscar-usb-backup.ps1" %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %errorlevel%
 
 :menu
@@ -63,6 +74,15 @@ echo   upgrade
 echo   backup
 echo   backup-verify -BackupId BACKUP_ID
 echo   restore -BackupId BACKUP_ID -Confirm BACKUP_ID
+echo   usb-backup list-drives
+echo   usb-backup prepare-drive -DriveLetter R -Mode continual
+echo   usb-backup mode continual
+echo   usb-backup mode occasional
+echo   usb-backup sync
+echo   usb-backup eject
+echo   usb-backup attach
+echo   usb-backup status
+echo   usb-backup restore -From R:\ -BackupKey FILE -Confirm RESTORE
 echo   archive status
 echo   archive verify
 echo   archive hold list
@@ -81,7 +101,7 @@ if /I "%OSCAR_INPUT%"=="exit" exit /b 0
 if /I "%OSCAR_INPUT%"=="quit" exit /b 0
 
 echo.
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%OSCAR_SETUP%" %OSCAR_INPUT%
+call :dispatch %OSCAR_INPUT%
 set "OSCAR_RESULT=%errorlevel%"
 echo.
 if not "%OSCAR_RESULT%"=="0" echo Command failed with exit code %OSCAR_RESULT%.
