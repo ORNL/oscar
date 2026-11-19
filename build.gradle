@@ -104,6 +104,8 @@ distributions{
                     include 'ARCHIVE_FORMAT.md'
                     include 'BACKUP_RESTORE.md'
                     include 'STORAGE_OPERATIONS.md'
+                    include 'DIAGNOSTICS_AND_FLIGHT_RECORDER.md'
+                    include 'REGRESSION_AND_RELEASE_CERTIFICATION.md'
                     filesMatching('STORAGE_ARCHITECTURE.md') {
                         filter { line ->
                             line.replace('../include/osh-oakridge-modules/docs/', '')
@@ -157,6 +159,8 @@ distributions{
                     include 'ARCHIVE_FORMAT.md'
                     include 'BACKUP_RESTORE.md'
                     include 'STORAGE_OPERATIONS.md'
+                    include 'DIAGNOSTICS_AND_FLIGHT_RECORDER.md'
+                    include 'REGRESSION_AND_RELEASE_CERTIFICATION.md'
                     filesMatching('STORAGE_ARCHITECTURE.md') {
                         filter { line ->
                             line.replace('../include/osh-oakridge-modules/docs/', '')

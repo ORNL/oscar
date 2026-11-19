@@ -363,6 +363,8 @@ for (const relativePath of [
     'docs/STORAGE_ARCHITECTURE.md',
     'docs/STORAGE_OPERATIONS.md',
     'docs/STATUS_OF_HEALTH.md',
+    'docs/DIAGNOSTICS_AND_FLIGHT_RECORDER.md',
+    'docs/REGRESSION_AND_RELEASE_CERTIFICATION.md',
     'include/osh-oakridge-modules/README.md',
     'include/osh-oakridge-modules/docs/oscar-operator-manual/README.md',
     'include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/README.md',

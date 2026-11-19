@@ -94,7 +94,9 @@ const expected = [
     'documentation/STATUS_OF_HEALTH.md', 'documentation/TRANSLATION_SYSTEM.md',
     'documentation/STORAGE_ARCHITECTURE.md', 'documentation/DATA_LIFECYCLE.md',
     'documentation/ARCHIVE_FORMAT.md', 'documentation/BACKUP_RESTORE.md',
-    'documentation/STORAGE_OPERATIONS.md', 'documentation/daily-file-journal-v1.md',
+    'documentation/STORAGE_OPERATIONS.md', 'documentation/DIAGNOSTICS_AND_FLIGHT_RECORDER.md',
+    'documentation/REGRESSION_AND_RELEASE_CERTIFICATION.md',
+    'documentation/daily-file-journal-v1.md',
     'documentation/retained-media-v1.md',
 ];
 for (const relative of expected) {
