@@ -76,14 +76,37 @@ organization's behalf.
 
 ## Ubuntu Server 24.04
 
-Official offline bundles are Windows-only. Install Docker Engine and the Docker Compose plugin,
-extract the connected Ubuntu release, and run:
+For step-by-step instructions tailored to users unfamiliar with Ubuntu or OSCAR—including bootable USB links, **off-site hotel-room Wi-Fi/DHCP staging with 1-command static-IP on-site cutover**, **bare-metal air-gapped USB setup with zero internet and zero DHCP**, declarative `autoinstall`/Netplan/Ansible YAML files, and **discovering unknown camera/RPM IP addresses**—read [`UBUNTU_FIELD_SETUP_GUIDE.md`](../../docs/UBUNTU_FIELD_SETUP_GUIDE.md).
+
+1. Choose `oscar-3.11.0-ubuntu-x86_64-offline-full.zip` for air-gapped sites without internet (or slow hotel Wi-Fi), or `oscar-3.11.0.zip` when installing over fast internet.
+2. Prepare the Ubuntu 24.04 host (installs official Docker Engine + Compose v2 from bundled `.deb`s or APT, expands Ubuntu's default `100 GiB` LVM root volume if `--expand-lvm` is passed, masks sleep/suspend, disables automatic unattended-upgrade reboots, bounds offline boot-wait timeouts, and tunes socket buffers):
+
+```sh
+sudo bash verify-bundle.sh   # when using ubuntu-x86_64-offline-full
+sudo bash oscar.sh prepare-host --expand-lvm --configure-ufw
+```
+
+3. **If staging off-site (for example, on hotel Wi-Fi/DHCP before driving to an offline/static-IP site):** identify physical ports, pre-stage your site schematic static IPs *without* dropping hotel internet, and initialize OSCAR (which automatically embeds your staged site IPs into `tls/server.crt`):
+
+```sh
+sudo bash oscar.sh identify-nics --watch
+sudo bash oscar.sh stage-site-network
+sudo bash oscar.sh init
+```
+
+   Once you arrive on-site and plug in the site switches, activate the static IPs in one command:
+
+```sh
+sudo bash oscar.sh apply-site-network
+```
+
+4. **If already connected on-site with static IPs configured**, simply run:
 
 ```sh
 sudo bash oscar.sh init
 ```
 
-On a graphical Ubuntu installation, double-click the executable `oscar.sh` launcher to open the same interactive menu. Ubuntu Server administrators use the command above because the server has no desktop environment.
+On a graphical Ubuntu installation, double-click the executable `oscar.sh` launcher to open the same interactive menu. Ubuntu Server administrators use the terminal commands above (and can run `sudo bash oscar.sh discover-devices --interface <NIC>` if RPM or camera IPs are unknown).
 
 ## Routine administration
 

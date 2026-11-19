@@ -102,6 +102,8 @@ The [diagnostic flight recorder & support bundle guide](docs/DIAGNOSTICS_AND_FLI
 
 The [end-to-end regression & release certification guide](docs/REGRESSION_AND_RELEASE_CERTIFICATION.md) documents installing, configuring, safety-locking, and running all 5 profiles (`smoke`, `full`, `3.11.0-release`, `restore-drill`, `ui-endurance`) and all 23 functional scenarios in [`ORNL/oscar-regression`](https://github.com/ORNL/oscar-regression).
 
+The [Ubuntu 24.04 field setup, hotel-room staging & air-gapped bare-metal guide](docs/UBUNTU_FIELD_SETUP_GUIDE.md) walks step-by-step through bootable USB creation, bare-metal Ubuntu 24.04 installation (interactive or declarative `autoinstall`), hotel-room DHCP/Wi-Fi staging (`stage-site-network`) with 1-command static-IP on-site cutover (`apply-site-network`), completely offline `ubuntu-x86_64-offline-full` installation (`tools/offline/build-ubuntu-offline-bundle.sh`), and discovering unknown RPM/camera IP addresses (`discover-devices`).
+
 ## Build Windows offline media
 
 On a connected Windows x86-64 build workstation with Docker available, run the builder with Windows

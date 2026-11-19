@@ -14,6 +14,9 @@ case "$command_name" in
     remote-access)
         exec bash "$script_dir/oscar-remote-access.sh" "$@"
         ;;
+    host-check|prepare-host|identify-nics|stage-site-network|apply-site-network|rollback-network|discover-devices)
+        exec bash "$script_dir/configure-ubuntu-host.sh" "$command_name" "$@"
+        ;;
 esac
 
 hostname_value=''
@@ -42,12 +45,20 @@ usage() {
     cat <<'EOF'
 OSCAR deployment administration
 
+  sudo ./oscar.sh host-check [--strict] [--json] [--allow-dhcp]
+  sudo ./oscar.sh prepare-host [--expand-lvm] [--configure-ufw] [--offline] [--hold-docker]
+  sudo ./oscar.sh identify-nics [--watch [SECONDS]] [--blink NIC]
+  sudo ./oscar.sh stage-site-network [--config FILE | --from-netplan YAML]
+  sudo ./oscar.sh apply-site-network [--keep-wifi]
+  sudo ./oscar.sh rollback-network
+  sudo ./oscar.sh discover-devices [--interface NIC] [--subnet CIDR] [--temp-ip IP/CIDR]
   sudo ./oscar.sh init [--hostname oscar.local] [--port 443] [--timezone America/Chicago]
       [--tls-mode self-signed|import] [--certificate FILE --private-key FILE]
       [--tls-san DNS_OR_IP]... [--no-auto-network-sans]
       [--add-hosts-entry] [--skip-hosts-entry] [--skip-start]
       [--backup-mode disabled|single] [--backup-dir ABSOLUTE_PATH]
       [--prerequisites auto|existing|bundled]
+  sudo ./oscar.sh refresh-tls [--hostname oscar.local] [--tls-san DNS_OR_IP]...
   sudo ./oscar.sh check|verify|start|stop|restart|status
   sudo ./oscar.sh upgrade [--adopt-legacy-volumes] [--adopt-legacy-storage-roots]
       [--backup-mode disabled|single] [--backup-dir ABSOLUTE_PATH]
@@ -263,6 +274,14 @@ detect_network_tls_sans() {
             if [[ $address == *:* && $interface != tailscale* ]]; then continue; fi
             is_ip_address "$address" && append_unique_tls_san "$address"
         done < <(ip -o address show up scope global 2>/dev/null | awk '{print $2, $4}')
+    fi
+
+    # Include any pre-staged on-site static IPv4s prepared via stage-site-network
+    # (for example, while staging off-site on hotel Wi-Fi/DHCP before site cutover).
+    if [[ -f /etc/oscar/staged-netplan/90-oscar-site.yaml ]]; then
+        while IFS= read -r address; do
+            [[ -n $address ]] && is_ip_address "$address" && append_unique_tls_san "$address"
+        done < <(sed -nE 's/^[[:space:]]*-[[:space:]]*([0-9]{1,3}(\.[0-9]{1,3}){3})\/[0-9]{1,2}[[:space:]]*$/\1/p' /etc/oscar/staged-netplan/90-oscar-site.yaml 2>/dev/null || true)
     fi
 
     # Tailscale IPs are normally discovered from tailscale0 above. Include its
@@ -1617,6 +1636,42 @@ case "$command_name" in
         ;;
     support-bundle)
         export_host_support_bundle
+        ;;
+    refresh-tls)
+        require_admin
+        require_supported_storage_host
+        assert_deployment_paths_safe
+        require_docker
+        configured || fail 'Run init before refreshing the TLS certificate.'
+        if [[ -z $hostname_value ]]; then
+            hostname_value=$(get_env_value OSCAR_HOSTNAME)
+            hostname_value=${hostname_value:-oscar.local}
+        fi
+        valid_hostname "$hostname_value" || fail "Invalid hostname or IP address: $hostname_value"
+        set_env_value OSCAR_HOSTNAME "$hostname_value"
+        port_value=$(get_env_value OSCAR_HTTPS_PORT)
+        port_value=${port_value:-443}
+        resolve_tls_sans "$hostname_value"
+        tls_backup_tmp=$(mktemp -d "${TMPDIR:-/tmp}/oscar-tls-refresh.XXXXXX")
+        chmod 0700 "$tls_backup_tmp"
+        cp -f "$script_dir/tls/server.crt" "$tls_backup_tmp/server.crt"
+        cp -f "$script_dir/tls/server.key" "$tls_backup_tmp/server.key"
+        rm -f "$script_dir/tls/server.crt" "$script_dir/tls/server.key"
+        if ! initialize_tls "$hostname_value"; then
+            cp -f "$tls_backup_tmp/server.crt" "$script_dir/tls/server.crt"
+            cp -f "$tls_backup_tmp/server.key" "$script_dir/tls/server.key"
+            protect_deployment_files
+            rm -rf -- "$tls_backup_tmp"
+            fail 'Failed to refresh TLS certificate; restored previous certificate/key.'
+        fi
+        rm -rf -- "$tls_backup_tmp"
+        protect_deployment_files
+        $add_hosts && add_local_hosts_mapping "$hostname_value"
+        if compose ps --status running gateway 2>/dev/null | grep -q gateway; then
+            compose restart gateway
+        fi
+        printf 'TLS certificate refreshed for %s.\n' "$hostname_value"
+        print_client_access_instructions
         ;;
     upgrade)
         require_admin

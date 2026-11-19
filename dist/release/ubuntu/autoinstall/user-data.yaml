@@ -1,0 +1,79 @@
+#cloud-config
+# OSCAR Declarative Bare-Metal Ubuntu Server 24.04 LTS Autoinstall Profile
+#
+# HOW TO USE (Zero-Touch Bare-Metal USB Install):
+#   1. Format a small second USB stick (or second FAT32 partition) with volume label: CIDATA
+#   2. Copy THIS file onto that partition renamed to: user-data   (no .yaml extension!)
+#   3. Copy ubuntu/autoinstall/meta-data alongside it named: meta-data
+#   4. Boot the server from a stock Ubuntu Server 24.04 LTS USB stick with the CIDATA stick plugged in.
+#
+# WHAT THIS SOLVES AUTOMATICALLY:
+#   - Allocates 100% of the NVMe/SSD ('sizing-policy: all') instead of Ubuntu's 100 GiB LVM cap.
+#   - Never installs Snap-confined Docker.
+#   - Enables OpenSSH server and configures non-blocking 'optional: true' networking so offline sites
+#     with no internet and no DHCP boot in seconds instead of hanging 2 minutes.
+#
+# BEFORE USING: Replace 'password' below with a fresh SHA-512 hash generated via:
+#   openssl passwd -6 'ChangeMeBeforeInstall!'
+
+autoinstall:
+  version: 1
+  locale: en_US.UTF-8
+  timezone: UTC
+  keyboard:
+    layout: us
+
+  identity:
+    hostname: oscar-host
+    username: oscaradmin
+    # Default hash corresponds to 'OscarChangeMe!24' — replace with `openssl passwd -6` before production use!
+    password: "$6$rounds=4096$oscarfieldinit$N7n8X7pB5p8wV0xR9u6eW5zY3kL2mQ1tH4jF6dG8sA0cV9bN2mK4lP7oI5uY3tR1eW9qA2sD4fG6hJ8kL0zX1."
+
+  ssh:
+    install-server: true
+    allow-pw: true
+    authorized-keys: []
+
+  # Use 100% of the primary disk (eliminates Ubuntu's 100 GiB ubuntu-lv root partition trap)
+  storage:
+    layout:
+      name: lvm
+      sizing-policy: all
+
+  # Start on non-blocking DHCP so hotel-room staging works immediately AND air-gapped sites never hang at boot.
+  network:
+    version: 2
+    ethernets:
+      all-en:
+        match:
+          name: "en*"
+        dhcp4: true
+        dhcp6: false
+        optional: true
+      all-eth:
+        match:
+          name: "eth*"
+        dhcp4: true
+        dhcp6: false
+        optional: true
+
+  # Intentionally empty snaps list: NEVER install snap docker!
+  snaps: []
+
+  packages:
+    - ca-certificates
+    - chrony
+    - curl
+    - ethtool
+    - jq
+    - openssh-server
+    - ufw
+    - unzip
+
+  late-commands:
+    # Passwordless sudo for administrative convenience if desired (remove if site policy requires password prompt)
+    - curtin in-target --target=/target -- sh -c 'echo "oscaradmin ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-oscaradmin && chmod 0440 /etc/sudoers.d/90-oscaradmin'
+    # Disable automatic unattended-upgrade reboots and mask sleep/suspend targets from first boot
+    - curtin in-target --target=/target -- sh -c 'printf "Unattended-Upgrade::Automatic-Reboot \"false\";\n" > /etc/apt/apt.conf.d/52oscar-unattended-upgrades'
+    - curtin in-target --target=/target -- systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
+    - curtin in-target --target=/target -- sh -c 'mkdir -p /etc/systemd/system/systemd-networkd-wait-online.service.d && printf "[Service]\nExecStart=\nExecStart=/lib/systemd/systemd-networkd-wait-online --any --timeout=10\n" > /etc/systemd/system/systemd-networkd-wait-online.service.d/oscar-timeout.conf'

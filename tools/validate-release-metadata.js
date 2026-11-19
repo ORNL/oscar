@@ -365,6 +365,7 @@ for (const relativePath of [
     'docs/STATUS_OF_HEALTH.md',
     'docs/DIAGNOSTICS_AND_FLIGHT_RECORDER.md',
     'docs/REGRESSION_AND_RELEASE_CERTIFICATION.md',
+    'docs/UBUNTU_FIELD_SETUP_GUIDE.md',
     'include/osh-oakridge-modules/README.md',
     'include/osh-oakridge-modules/docs/oscar-operator-manual/README.md',
     'include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/README.md',

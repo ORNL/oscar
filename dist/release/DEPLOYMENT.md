@@ -117,6 +117,26 @@ pass `-ConfigureLanHttpsFirewall` (or `.\oscar.bat prepare-host -ConfigureLanHtt
 switch connected wired `802.3` Ethernet adapters to `Private` and configure a scoped
 `OSCAR-HTTPS-Gateway-In` rule (`TCP 443,80`, `Private,Domain`, `LocalSubnet` and `100.64.0.0/10`).
 
+### Ubuntu 24.04 unattended server preparation, hotel-room staging & air-gapped cutover
+
+Ubuntu Server 24.04 LTS defaults to a `100 GiB` `ubuntu-lv` root logical volume even on multi-terabyte NVMe drives, offers a Snap-confined `docker` installer checkbox that breaks bind mounts, leaves `unattended-upgrades` or desktop sleep targets unguarded, and can stall boot for 120 seconds on air-gapped multi-NIC portals without internet or DHCP. Run `configure-ubuntu-host.sh` through `oscar.sh` before or after `init` (and see [UBUNTU_FIELD_SETUP_GUIDE.md](../../docs/UBUNTU_FIELD_SETUP_GUIDE.md) plus `ubuntu/` for declarative `autoinstall`, Netplan, and Ansible templates, bootable USB links, and unknown-IP sensor discovery):
+
+```sh
+sudo bash oscar.sh host-check
+sudo bash oscar.sh prepare-host --expand-lvm --configure-ufw
+```
+
+When pre-staging a server off-site (for example, on hotel Wi-Fi/DHCP with the site schematic in hand before traveling to an offline, no-DHCP portal):
+
+```sh
+sudo bash oscar.sh identify-nics --watch      # plug/unplug a cable to label physical RJ45 ports
+sudo bash oscar.sh stage-site-network         # stages /etc/oscar/staged-netplan/90-oscar-site.yaml without dropping hotel DHCP
+sudo bash oscar.sh init                       # embeds both current & staged site static IPs into tls/server.crt
+# ...after arriving on-site and connecting switch cables:
+sudo bash oscar.sh apply-site-network         # backs up DHCP Netplan, applies static IPs, refreshes TLS SANs & verifies health
+sudo bash oscar.sh discover-devices --interface enp2s0   # optional: scan wire for unknown camera/RPM IPs
+```
+
 ## Administrative CLI
 
 Use `oscar.bat` on Windows and `oscar.sh` on Ubuntu. The Windows launcher invokes Windows
@@ -130,9 +150,13 @@ The menu accepts the same command and options shown below. For example, enter `i
 | --- | --- | --- |
 | Initialize | `oscar.bat init` | `sudo bash oscar.sh init` |
 | Check prerequisites | `oscar.bat check` | `sudo bash oscar.sh check` |
-| Audit Windows 11 server power/USB readiness | `oscar.bat host-check` | Not applicable |
-| Apply Windows 11 unattended server settings | `oscar.bat prepare-host` | Not applicable |
-| Verify offline media | `oscar.bat verify` | Site-prepared bundles only: `sudo bash oscar.sh verify` |
+| Audit host power/LVM/NIC readiness | `oscar.bat host-check` | `sudo bash oscar.sh host-check` |
+| Apply unattended server settings | `oscar.bat prepare-host` | `sudo bash oscar.sh prepare-host --expand-lvm` |
+| Identify physical NIC ports | Not applicable | `sudo bash oscar.sh identify-nics --watch` |
+| Stage / apply / roll back static site IPs | Not applicable | `sudo bash oscar.sh stage-site-network` / `apply-site-network` / `rollback-network` |
+| Discover unknown RPM & camera IPs | Not applicable | `sudo bash oscar.sh discover-devices --interface NIC` |
+| Refresh self-signed TLS SANs after IP change | Not applicable | `sudo bash oscar.sh refresh-tls` |
+| Verify offline media | `oscar.bat verify` | `sudo bash oscar.sh verify` |
 | Start | `oscar.bat start` | `sudo bash oscar.sh start` |
 | Stop | `oscar.bat stop` | `sudo bash oscar.sh stop` |
 | Restart | `oscar.bat restart` | `sudo bash oscar.sh restart` |

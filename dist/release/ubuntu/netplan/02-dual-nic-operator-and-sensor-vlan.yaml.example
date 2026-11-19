@@ -1,0 +1,34 @@
+# Dual-NIC Portal Server Netplan Template (Operator LAN + Isolated RPM/Camera Sensor Switch)
+#
+# Architecture:
+#   - enp1s0 (Port 1): Operator Workstations / Site LAN (carries the ONLY default gateway, if any)
+#   - enp2s0 (Port 2): Dedicated PoE/Sensor Switch for RPMs & RTSP Cameras (NO gateway, NO DHCP)
+#
+# Stage off-site (e.g., hotel room) without losing hotel Wi-Fi/DHCP:
+#   sudo bash oscar.sh stage-site-network --from-netplan ubuntu/netplan/02-dual-nic-operator-and-sensor-vlan.yaml.example
+# Activate on-site:
+#   sudo bash oscar.sh apply-site-network
+
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    enp1s0:
+      dhcp4: false
+      dhcp6: false
+      optional: true
+      addresses:
+        - 198.51.100.10/24
+      # Remove 'routes' if Port 1 is also an air-gapped switch with no router:
+      routes:
+        - to: default
+          via: 198.51.100.1
+
+    enp2s0:
+      dhcp4: false
+      dhcp6: false
+      # CRITICAL: Never configure a default gateway on the sensor NIC, and keep optional: true
+      # so server boot never pauses if the lane switch powers up slower than the server.
+      optional: true
+      addresses:
+        - 203.0.113.10/24

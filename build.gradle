@@ -106,15 +106,17 @@ distributions{
                     include 'STORAGE_OPERATIONS.md'
                     include 'DIAGNOSTICS_AND_FLIGHT_RECORDER.md'
                     include 'REGRESSION_AND_RELEASE_CERTIFICATION.md'
+                    include 'UBUNTU_FIELD_SETUP_GUIDE.md'
                     filesMatching('STORAGE_ARCHITECTURE.md') {
                         filter { line ->
                             line.replace('../include/osh-oakridge-modules/docs/', '')
                                 .replace('https://github.com/ORNL/osh-oakridge-modules/blob/main/docs/', '')
                         }
                     }
-                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md', 'LIVE_VIDEO.md']) {
+                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md', 'LIVE_VIDEO.md', 'UBUNTU_FIELD_SETUP_GUIDE.md']) {
                         filter { line ->
-                            line.replace('../dist/release/', '')
+                            line.replace('../dist/release/ubuntu/', '../../ubuntu/')
+                                .replace('../dist/release/', '')
                                 .replace('../include/osh-oakridge-modules/docs/', '')
                                 .replace('https://github.com/ORNL/osh-oakridge-modules/blob/main/docs/', '')
                                 .replace('../include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/', 'operator-manual/')
@@ -126,7 +128,7 @@ distributions{
                     include 'daily-file-journal-v1.md'
                     include 'retained-media-v1.md'
                 }
-                filesMatching('DEPLOYMENT.md') {
+                filesMatching(['DEPLOYMENT.md', 'QUICKSTART.md']) {
                     filter { line -> line.replace('../../docs/', '') }
                 }
             }
@@ -161,15 +163,17 @@ distributions{
                     include 'STORAGE_OPERATIONS.md'
                     include 'DIAGNOSTICS_AND_FLIGHT_RECORDER.md'
                     include 'REGRESSION_AND_RELEASE_CERTIFICATION.md'
+                    include 'UBUNTU_FIELD_SETUP_GUIDE.md'
                     filesMatching('STORAGE_ARCHITECTURE.md') {
                         filter { line ->
                             line.replace('../include/osh-oakridge-modules/docs/', '')
                                 .replace('https://github.com/ORNL/osh-oakridge-modules/blob/main/docs/', '')
                         }
                     }
-                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md', 'LIVE_VIDEO.md']) {
+                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md', 'LIVE_VIDEO.md', 'UBUNTU_FIELD_SETUP_GUIDE.md']) {
                         filter { line ->
-                            line.replace('../dist/release/', '')
+                            line.replace('../dist/release/ubuntu/', '../ubuntu/')
+                                .replace('../dist/release/', '')
                                 .replace('../include/osh-oakridge-modules/docs/', '')
                                 .replace('https://github.com/ORNL/osh-oakridge-modules/blob/main/docs/', '')
                                 .replace('../include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/', 'operator-manual/')
@@ -181,7 +185,7 @@ distributions{
                     include 'daily-file-journal-v1.md'
                     include 'retained-media-v1.md'
                 }
-                filesMatching('DEPLOYMENT.md') {
+                filesMatching(['DEPLOYMENT.md', 'QUICKSTART.md']) {
                     filter { line -> line.replace('../../docs/', '') }
                 }
             }
@@ -240,6 +244,7 @@ distributions{
                 include 'QUICKSTART.md'
                 include 'compose.yaml'
                 include 'compose.octelium.yaml'
+                include 'configure-ubuntu-host.sh'
                 include 'configure-windows-host.ps1'
                 include 'docker/gateway/default.conf'
                 include 'docker/tunnel/Dockerfile'
@@ -263,13 +268,23 @@ distributions{
                 include 'postgis/prepare-restore.sh'
                 include 'postgis/init-app-role.sh'
                 include 'postgis/init-extensions.sql'
+                include 'ubuntu/README.md'
+                include 'ubuntu/site-network.example.env'
+                include 'ubuntu/ansible-site-hosts.yml'
+                include 'ubuntu/autoinstall/user-data.yaml'
+                include 'ubuntu/autoinstall/meta-data'
+                include 'ubuntu/netplan/01-single-nic-static.yaml.example'
+                include 'ubuntu/netplan/02-dual-nic-operator-and-sensor-vlan.yaml.example'
                 include 'validate-storage-archive.sh'
                 include 'verify-bundle.ps1'
                 include 'verify-bundle.sh'
                 filesMatching('.env.example') {
                     filter { line -> line.startsWith('OSCAR_VERSION=') ? "OSCAR_VERSION=${project.version}" : line }
                 }
-                filesMatching('DEPLOYMENT.md') {
+                filesMatching('ubuntu/README.md') {
+                    filter { line -> line.replace('../../../docs/', '../documentation/') }
+                }
+                filesMatching(['DEPLOYMENT.md', 'QUICKSTART.md']) {
                     filter { line -> line.replace('../../docs/', 'documentation/') }
                 }
                 filesMatching('**/*.sh') {

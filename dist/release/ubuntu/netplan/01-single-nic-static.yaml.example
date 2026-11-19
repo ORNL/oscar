@@ -1,0 +1,24 @@
+# Single-NIC Static IPv4 Netplan Template (Ubuntu 24.04 LTS)
+# Stage safely off-site with:
+#   sudo bash oscar.sh stage-site-network --from-netplan ubuntu/netplan/01-single-nic-static.yaml.example
+# Activate on arrival on-site with:
+#   sudo bash oscar.sh apply-site-network
+
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    enp1s0:
+      dhcp4: false
+      dhcp6: false
+      # Keep optional: true so an offline/air-gapped boot never stalls waiting for internet reachability
+      optional: true
+      addresses:
+        - 198.51.100.10/24
+      # Delete 'routes' and 'nameservers' below if the site is an isolated switch with no router/gateway:
+      routes:
+        - to: default
+          via: 198.51.100.1
+      nameservers:
+        addresses:
+          - 198.51.100.1

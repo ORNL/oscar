@@ -1,0 +1,74 @@
+---
+# Optional Declarative Ansible Playbook for Provisioning OSCAR Ubuntu 24.04 Hosts
+#
+# Usage from a prep laptop in the hotel room or on-site:
+#   ansible-playbook -i "198.51.100.10," -u oscaradmin --ask-become-pass ubuntu/ansible-site-hosts.yml \
+#     -e "oscar_release_zip=/path/to/oscar-3.11.0.zip" \
+#     -e "site_primary_nic=enp1s0 site_primary_ip=198.51.100.10/24 site_sensor_nic=enp2s0 site_sensor_ip=203.0.113.10/24"
+
+- name: Prepare Ubuntu 24.04 LTS Host & Stage OSCAR Deployment
+  hosts: all
+  become: true
+  vars:
+    oscar_install_root: /srv/oscar/oscar-3.11.0
+    oscar_release_zip: ""
+    oscar_expand_lvm: true
+    oscar_configure_ufw: true
+    oscar_offline_bundle: false
+    site_primary_nic: ""
+    site_primary_ip: ""
+    site_primary_gateway: ""
+    site_sensor_nic: ""
+    site_sensor_ip: ""
+    site_hostname: "oscar.local"
+    apply_site_network_now: false
+
+  tasks:
+    - name: Ensure unzip and base tools exist when connected
+      ansible.builtin.apt:
+        name: [unzip, ca-certificates, curl]
+        state: present
+        update_cache: true
+      when: not oscar_offline_bundle | bool
+
+    - name: Create OSCAR parent directory
+      ansible.builtin.file:
+        path: "{{ oscar_install_root | dirname }}"
+        state: directory
+        mode: "0755"
+
+    - name: Upload and extract OSCAR release archive when provided
+      ansible.builtin.unarchive:
+        src: "{{ oscar_release_zip }}"
+        dest: "{{ oscar_install_root | dirname }}"
+        creates: "{{ oscar_install_root }}/oscar.sh"
+      when: oscar_release_zip | length > 0
+
+    - name: Run OSCAR idempotent Ubuntu 24.04 prepare-host
+      ansible.builtin.command: >
+        bash oscar.sh prepare-host
+        {{ '--expand-lvm' if oscar_expand_lvm | bool else '' }}
+        {{ '--configure-ufw' if oscar_configure_ufw | bool else '' }}
+        {{ '--offline' if oscar_offline_bundle | bool else '' }}
+      args:
+        chdir: "{{ oscar_install_root }}"
+      changed_when: true
+
+    - name: Stage on-site static network profile (safe while still on hotel DHCP)
+      ansible.builtin.command: >
+        bash oscar.sh stage-site-network
+        --primary-nic "{{ site_primary_nic }}"
+        --primary-ip "{{ site_primary_ip }}"
+        --primary-gateway "{{ site_primary_gateway }}"
+        --sensor-nic "{{ site_sensor_nic }}"
+        --sensor-ip "{{ site_sensor_ip }}"
+        --hostname "{{ site_hostname }}"
+      args:
+        chdir: "{{ oscar_install_root }}"
+      when: site_primary_nic | length > 0 and site_primary_ip | length > 0
+
+    - name: Activate on-site static network immediately only when requested
+      ansible.builtin.command: bash oscar.sh apply-site-network
+      args:
+        chdir: "{{ oscar_install_root }}"
+      when: apply_site_network_now | bool

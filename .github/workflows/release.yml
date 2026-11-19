@@ -413,10 +413,12 @@ jobs:
             documentation/ARCHIVE_FORMAT.md \
             documentation/BACKUP_RESTORE.md \
             documentation/STORAGE_OPERATIONS.md \
+            documentation/UBUNTU_FIELD_SETUP_GUIDE.md \
             documentation/daily-file-journal-v1.md \
             documentation/retained-media-v1.md \
             oscar-storage.sh \
             oscar-storage.ps1 \
+            configure-ubuntu-host.sh \
             configure-windows-host.ps1 \
             validate-storage-archive.sh \
             docker/oscar/archive-object-helper.sh \
@@ -459,6 +461,15 @@ jobs:
             -BundleProfile Both `
             -SkipConnectedBuild `
             -CreateArchive
+
+      - name: Build Ubuntu 24.04 offline release artifact
+        shell: bash
+        run: |
+          ./tools/offline/build-ubuntu-offline-bundle.sh \
+            --skip-connected-build \
+            --use-existing-expanded-release \
+            --skip-image-export \
+            --create-archive
 
       - name: Validate offline release artifacts
         shell: bash
@@ -524,6 +535,7 @@ jobs:
               SHA256SUMS
               compose.octelium.yaml
               compose.yaml
+              configure-ubuntu-host.sh
               configure-windows-host.ps1
               offline-images.tar
               oscar-remote-access.ps1
@@ -549,6 +561,7 @@ jobs:
               documentation/ARCHIVE_FORMAT.md
               documentation/BACKUP_RESTORE.md
               documentation/STORAGE_OPERATIONS.md
+              documentation/UBUNTU_FIELD_SETUP_GUIDE.md
               documentation/daily-file-journal-v1.md
               documentation/retained-media-v1.md
               documentation/operator-manual/README.md
@@ -602,6 +615,7 @@ jobs:
                 SHA256SUMS \
                 compose.octelium.yaml \
                 compose.yaml \
+                configure-ubuntu-host.sh \
                 configure-windows-host.ps1 \
                 docker \
                 documentation \
@@ -615,6 +629,7 @@ jobs:
                 oscar.bat \
                 oscar.sh \
                 postgis \
+                ubuntu \
                 validate-storage-archive.sh \
                 verify-bundle.ps1 \
                 verify-bundle.sh
@@ -628,7 +643,7 @@ jobs:
             for expected in "${required_files[@]}"; do
               [ -s "$package_root/$expected" ] || fail "Offline $profile bundle has a missing or empty core file: $expected"
             done
-            for expected_directory in docker documentation postgis; do
+            for expected_directory in docker documentation postgis ubuntu; do
               [ -d "$package_root/$expected_directory" ] || fail "Offline $profile bundle is missing directory: $expected_directory"
             done
             [ ! -e "$package_root/osh-node-oscar" ] || fail "Offline $profile bundle unexpectedly retained osh-node-oscar"
@@ -702,8 +717,39 @@ jobs:
             rm -rf "$expanded"
           done
 
+          # Validate Ubuntu 24.04 full offline archive
+          ubuntu_root="oscar-${version}-ubuntu-x86_64-offline-full"
+          ubuntu_archive="build/offline/${ubuntu_root}.zip"
+          ubuntu_checksum="${ubuntu_archive}.sha256"
+          ubuntu_expanded="$RUNNER_TEMP/offline-ubuntu-release-expanded"
+          ubuntu_package_root="${ubuntu_expanded}/${ubuntu_root}"
+
+          test -s "$ubuntu_archive" || fail "Ubuntu offline archive is missing or empty: $ubuntu_archive"
+          test -s "$ubuntu_checksum" || fail "Ubuntu offline archive checksum is missing or empty: $ubuntu_checksum"
+          if [ "$(stat -c '%s' "$ubuntu_archive")" -ge 2147483648 ]; then
+            fail "Ubuntu release asset exceeds GitHub's 2 GiB per-file limit: $ubuntu_archive"
+          fi
+          (cd "$(dirname "$ubuntu_archive")" && sha256sum --check --strict "$(basename "$ubuntu_checksum")")
+
+          rm -rf "$ubuntu_expanded"
+          mkdir -p "$ubuntu_expanded"
+          unzip -q "$ubuntu_archive" -d "$ubuntu_expanded"
+          [ -d "$ubuntu_package_root" ] || fail "Ubuntu offline package root is not a directory: $ubuntu_package_root"
+          [ -s "$ubuntu_package_root/installers/components.ubuntu-24.04-x86_64.json" ] || fail "Ubuntu offline bundle missing components.ubuntu-24.04-x86_64.json"
+          while IFS=$'\t' read -r component_file component_hash; do
+            component_path="$ubuntu_package_root/$component_file"
+            [ -s "$component_path" ] || fail "Ubuntu offline bundle missing .deb payload: $component_file"
+            [ "$(sha256sum "$component_path" | awk '{print $1}')" = "$component_hash" ] || fail "Ubuntu offline .deb checksum failed: $component_file"
+          done < <(node -e 'const m = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); for (const c of m.components) console.log(`${c.file}\t${c.sha256}`);' "$ubuntu_package_root/installers/components.ubuntu-24.04-x86_64.json")
+
+          node tools/validate-packaged-release.js --offline --expected-version="$RELEASE_VERSION" "$ubuntu_package_root"
+          bash "$ubuntu_package_root/verify-bundle.sh"
+          [ -s "$ubuntu_package_root/.bundle-verified" ] || fail "Ubuntu offline bundled verifier did not create its verification receipt"
+          rm -rf "$ubuntu_expanded"
+
           rm -rf \
             build/offline/.cache \
+            build/offline/oscar-*-ubuntu-x86_64-offline-full \
             build/offline/oscar-*-windows-x86_64-offline-full \
             build/offline/oscar-*-windows-x86_64-offline-images
 
@@ -722,7 +768,7 @@ jobs:
           {
             (cd "${DIST_DIR}" && sha256sum --binary oscar-*.zip)
             (cd "${DOCS_DIR}" && sha256sum --binary OSCAR-*-Administrator-Operator-Manual-*.pdf)
-            (cd build/offline && sha256sum --binary oscar-*-windows-x86_64-offline-*.zip)
+            (cd build/offline && sha256sum --binary oscar-*-offline-*.zip)
           } > "${DIST_DIR}/OSCAR-${RELEASE_VERSION}-SHA256SUMS.txt"
           cat "${DIST_DIR}/OSCAR-${RELEASE_VERSION}-SHA256SUMS.txt"
 
@@ -740,5 +786,5 @@ jobs:
             ${{ env.DIST_DIR }}/oscar-*.zip.sha256
             ${{ env.DIST_DIR }}/OSCAR-*-SHA256SUMS.txt
             ${{ env.DOCS_DIR }}/OSCAR-*-Administrator-Operator-Manual-*.pdf
-            build/offline/oscar-*-windows-x86_64-offline-*.zip
-            build/offline/oscar-*-windows-x86_64-offline-*.zip.sha256
+            build/offline/oscar-*-offline-*.zip
+            build/offline/oscar-*-offline-*.zip.sha256

@@ -61,14 +61,14 @@ run_menu_command() {
     local command_name=${1:-}
     shift || true
     case "$command_name" in
-        init|verify|start|stop|restart|upgrade|backup|backup-verify|backup-prune|restore|archive|support-bundle|remote-access)
+        init|verify|start|stop|restart|upgrade|refresh-tls|prepare-host|stage-site-network|apply-site-network|rollback-network|discover-devices|backup|backup-verify|backup-prune|restore|archive|support-bundle|remote-access)
             if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
                 bash "$setup_script" "$command_name" "$@"
             else
                 sudo bash "$setup_script" "$command_name" "$@"
             fi
             ;;
-        check|status|logs|help)
+        check|host-check|identify-nics|status|logs|help)
             bash "$setup_script" "$command_name" "$@"
             ;;
         exit|quit) return 2 ;;
@@ -86,9 +86,16 @@ OSCAR Administration
 ====================
 
 Enter a command and any options. Examples:
+  host-check
+  prepare-host --expand-lvm --configure-ufw
+  identify-nics --watch
+  stage-site-network
+  apply-site-network
+  discover-devices --interface enp2s0
   init
   init --hostname oscar.local --port 443
   init --hostname oscar.local --tls-san oscar-site.example.org
+  refresh-tls
   start
   stop
   restart

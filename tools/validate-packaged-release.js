@@ -81,7 +81,11 @@ for (const [relative, expected] of Object.entries(backupDisabledMessages)) {
 }
 
 const expected = [
-    'oscar-storage.sh', 'oscar-storage.ps1', 'configure-windows-host.ps1', 'validate-storage-archive.sh',
+    'oscar-storage.sh', 'oscar-storage.ps1', 'configure-ubuntu-host.sh', 'configure-windows-host.ps1', 'validate-storage-archive.sh',
+    'ubuntu/README.md', 'ubuntu/site-network.example.env', 'ubuntu/ansible-site-hosts.yml',
+    'ubuntu/autoinstall/user-data.yaml', 'ubuntu/autoinstall/meta-data',
+    'ubuntu/netplan/01-single-nic-static.yaml.example',
+    'ubuntu/netplan/02-dual-nic-operator-and-sensor-vlan.yaml.example',
     'postgis/archive-wal.sh', 'postgis/merge-wal-restore.sh', 'postgis/prepare-restore.sh',
     'docker/oscar/Dockerfile', 'docker/oscar/entrypoint.sh',
     'docker/oscar/archive-object-helper.sh',
@@ -96,6 +100,7 @@ const expected = [
     'documentation/ARCHIVE_FORMAT.md', 'documentation/BACKUP_RESTORE.md',
     'documentation/STORAGE_OPERATIONS.md', 'documentation/DIAGNOSTICS_AND_FLIGHT_RECORDER.md',
     'documentation/REGRESSION_AND_RELEASE_CERTIFICATION.md',
+    'documentation/UBUNTU_FIELD_SETUP_GUIDE.md',
     'documentation/daily-file-journal-v1.md',
     'documentation/retained-media-v1.md',
 ];
