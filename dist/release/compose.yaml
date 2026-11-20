@@ -2,7 +2,7 @@ name: oscar
 
 services:
   gateway:
-    image: nginxinc/nginx-unprivileged:1.28.1-alpine
+    image: nginx/nginx-unprivileged:1.30.7-alpine
     restart: unless-stopped
     depends_on:
       oscar:

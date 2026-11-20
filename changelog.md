@@ -1,6 +1,10 @@
 # OSCAR Change Log
 All notable changes to this project will be documented in this file. 
 
+## Unreleased
+
+- Upgrade the HTTPS gateway and remote-access tunnel base image to `nginx/nginx-unprivileged:1.30.7-alpine`, fixing the November 18, 2026 NGINX vulnerabilities, including CVE-2026-123007, CVE-2026-123633, and CVE-2026-118899. Update connected/offline packaging and invalidate older offline image caches. Existing installations require a rebuilt release and container recreation; changing source files alone does not patch a running gateway.
+
 ## 3.11.0 (Amber) 2026-11-15
 
 ### Release overview
