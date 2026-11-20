@@ -8,7 +8,7 @@ rate, and keyframe intervals for `1–50` RPMs and `2–100` cameras (or optiona
 federation hub VMs), review *Recommended hardware and capacity sizing* in
 [`DEPLOYMENT.md`](DEPLOYMENT.md#recommended-hardware-and-capacity-sizing).
 
-> **Companion Video Guide:** Watch [Module 01 — Initialize OSCAR Deployment, Admin Credentials & TLS (`01-deployment-init-and-credentials.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/01-deployment-init-and-credentials.mp4) ([WebVTT captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/01-deployment-init-and-credentials.vtt)), or browse all 19 captioned workflow guides in [`docs/VIDEO_GUIDES.md`](https://github.com/ORNL/oscar/blob/main/docs/VIDEO_GUIDES.md).
+> **Companion Video Guide:** Watch [Module 01 — Initialize OSCAR Deployment, Admin Credentials & TLS (`01-deployment-init-and-credentials.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/01-deployment-init-and-credentials.mp4) ([WebVTT captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/01-deployment-init-and-credentials.vtt)), or browse all 26 captioned workflow guides in [`docs/VIDEO_GUIDES.md`](https://github.com/ORNL/oscar/blob/main/docs/VIDEO_GUIDES.md).
 
 ## Windows 11
 
