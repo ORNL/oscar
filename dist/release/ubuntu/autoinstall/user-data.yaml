@@ -152,6 +152,26 @@ autoinstall:
     - curtin in-target --target=/target -- sh -c 'printf "Unattended-Upgrade::Automatic-Reboot \"false\";\n" > /etc/apt/apt.conf.d/52oscar-unattended-upgrades'
     - curtin in-target --target=/target -- systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
     - curtin in-target --target=/target -- sh -c 'mkdir -p /etc/systemd/system/systemd-networkd-wait-online.service.d && printf "[Service]\nExecStart=\nExecStart=/lib/systemd/systemd-networkd-wait-online --any --timeout=10\n" > /etc/systemd/system/systemd-networkd-wait-online.service.d/oscar-timeout.conf'
+    # Pre-configure USB-to-NVMe Bulk-Only Transport (:u) + No-LPM (:k) quirks from first boot
+    # so Realtek RTL9210, JMicron JMS583/562/578, and ASMedia ASM2362 enclosures never hang on UAS or U1/U2
+    - |
+      curtin in-target --target=/target -- bash -euc '
+      mkdir -p /etc/modprobe.d /etc/default/grub.d /etc/udev/rules.d
+      cat >/etc/modprobe.d/oscar-usb-nvme-quirks.conf <<EOF
+      options usb-storage quirks=0bda:9210:u,152d:0583:u,174c:2362:u,152d:0562:u,152d:0578:u
+      options usbcore quirks=0bda:9210:k,152d:0583:k,174c:2362:k,152d:0562:k,152d:0578:k
+      EOF
+      cat >/etc/default/grub.d/90-oscar-usb-quirks.cfg <<\EOF
+      GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT} usb-storage.quirks=0bda:9210:u,152d:0583:u,174c:2362:u,152d:0562:u,152d:0578:u usbcore.quirks=0bda:9210:k,152d:0583:k,174c:2362:k,152d:0562:k,152d:0578:k"
+      EOF
+      cat >/etc/udev/rules.d/98-oscar-usb-nosuspend.rules <<\EOF
+      ACTION=="add", SUBSYSTEM=="usb", ATTR{bInterfaceClass}=="08", TEST=="power/control", ATTR{power/control}="on"
+      ACTION=="add", SUBSYSTEM=="usb", DRIVERS=="uas|usb-storage", TEST=="power/control", ATTR{power/control}="on"
+      ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="sd[a-z]", ENV{ID_BUS}=="usb", TEST=="queue/max_sectors_kb", ATTR{queue/max_sectors_kb}="1024"
+      ACTION=="add|change", SUBSYSTEM=="scsi_disk", DRIVERS=="sd", ENV{ID_BUS}=="usb", TEST=="provisioning_mode", ATTR{provisioning_mode}="disabled"
+      EOF
+      update-grub || true
+      '
     # Optional: if an OSCAR_MEDIA partition/stick containing oscar-*-ubuntu-x86_64-offline-full.zip is attached, stage it into /srv/oscar
     - |
       bash -euc '
@@ -161,6 +181,18 @@ autoinstall:
         mount -o ro "$DEV" /mnt/oscar-media
         for f in /mnt/oscar-media/oscar-*-ubuntu-x86_64-offline-full.zip /mnt/oscar-media/*.sha256 /mnt/oscar-media/*SHA256SUMS* /mnt/oscar-media/*.pdf /mnt/oscar-media/README*.txt; do
           [ -f "$f" ] && cp -f "$f" /target/srv/oscar/ || true
+        done
+        if [ -d /mnt/oscar-media/seed ]; then
+          mkdir -p /target/srv/oscar/seed
+          cp -a /mnt/oscar-media/seed/. /target/srv/oscar/seed/ || true
+          chmod 0700 /target/srv/oscar/seed
+        fi
+        for kf in /mnt/oscar-media/*backup*key*.txt; do
+          if [ -f "$kf" ]; then
+            mkdir -p /target/srv/oscar/seed
+            cp -f "$kf" /target/srv/oscar/seed/
+            chmod 0600 "/target/srv/oscar/seed/$(basename "$kf")"
+          fi
         done
         for sf in /target/srv/oscar/oscar-*-ubuntu-x86_64-offline-full.zip.sha256; do
           [ -f "$sf" ] && (cd /target/srv/oscar && sha256sum -c "$(basename "$sf")")
@@ -182,4 +214,37 @@ autoinstall:
         umount /mnt/oscar-media
         curtin in-target --target=/target -- chown -R oscaradmin:oscaradmin /srv/oscar
       fi
+      '
+    # Install /usr/local/bin/oscar-wizard and auto-launch on first uninitialized interactive login
+    - |
+      curtin in-target --target=/target -- bash -euc '
+      cat >/usr/local/bin/oscar-wizard <<\EOF
+      #!/usr/bin/env bash
+      set -Eeuo pipefail
+      for d in /srv/oscar/oscar-*-ubuntu-x86_64-offline-full /srv/oscar/oscar-*; do
+        if [ -f "$d/oscar.sh" ]; then
+          if [ "${EUID:-$(id -u)}" -eq 0 ]; then
+            exec bash "$d/oscar.sh" wizard "$@"
+          else
+            exec sudo bash "$d/oscar.sh" wizard "$@"
+          fi
+        fi
+      done
+      echo "OSCAR bundle directory was not found under /srv/oscar." >&2
+      exit 1
+      EOF
+      chmod 0755 /usr/local/bin/oscar-wizard
+      cat >/etc/profile.d/99-oscar-firstboot-wizard.sh <<\EOF
+      # Launch OSCAR First-Boot Provisioning Wizard on interactive login until initialized or dismissed
+      if [ -t 0 ] && [ -t 1 ] && [ -z "${OSCAR_WIZARD_ACTIVE:-}" ] && [ ! -f /etc/oscar/wizard-completed ] && [ ! -f /etc/oscar/wizard-dismissed ]; then
+        for _oscar_d in /srv/oscar/oscar-*-ubuntu-x86_64-offline-full /srv/oscar/oscar-*; do
+          if [ -f "$_oscar_d/oscar.sh" ] && [ ! -f "$_oscar_d/.env" ]; then
+            /usr/local/bin/oscar-wizard || true
+            break
+          fi
+        done
+        unset _oscar_d
+      fi
+      EOF
+      chmod 0644 /etc/profile.d/99-oscar-firstboot-wizard.sh
       '

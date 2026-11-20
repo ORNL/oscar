@@ -653,7 +653,33 @@ local stratum 10
 EOF
     chmod 0644 "${etc_dir}/chrony/conf.d/90-oscar-airgap.conf"
 
+    # 10. USB-to-NVMe Bulk-Only Transport (:u) + No-LPM (:k) stability quirks
+    mkdir -p "${etc_dir}/modprobe.d" "${etc_dir}/default/grub.d" "${etc_dir}/udev/rules.d"
+    cat > "${etc_dir}/modprobe.d/oscar-usb-nvme-quirks.conf" <<'EOF'
+# Force Bulk-Only Transport (no UAS) and disable USB3 U1/U2 Link Power Management
+# on Realtek RTL9210, JMicron JMS583/562/578, and ASMedia ASM2362 NVMe enclosures.
+options usb-storage quirks=0bda:9210:u,152d:0583:u,174c:2362:u,152d:0562:u,152d:0578:u
+options usbcore quirks=0bda:9210:k,152d:0583:k,174c:2362:k,152d:0562:k,152d:0578:k
+EOF
+    chmod 0644 "${etc_dir}/modprobe.d/oscar-usb-nvme-quirks.conf"
+    cat > "${etc_dir}/default/grub.d/90-oscar-usb-quirks.cfg" <<'EOF'
+GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT} usb-storage.quirks=0bda:9210:u,152d:0583:u,174c:2362:u,152d:0562:u,152d:0578:u usbcore.quirks=0bda:9210:k,152d:0583:k,174c:2362:k,152d:0562:k,152d:0578:k"
+EOF
+    chmod 0644 "${etc_dir}/default/grub.d/90-oscar-usb-quirks.cfg"
+    cat > "${etc_dir}/udev/rules.d/98-oscar-usb-nosuspend.rules" <<'EOF'
+ACTION=="add", SUBSYSTEM=="usb", ATTR{bInterfaceClass}=="08", TEST=="power/control", ATTR{power/control}="on"
+ACTION=="add", SUBSYSTEM=="usb", DRIVERS=="uas|usb-storage", TEST=="power/control", ATTR{power/control}="on"
+ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="sd[a-z]", ENV{ID_BUS}=="usb", TEST=="queue/max_sectors_kb", ATTR{queue/max_sectors_kb}="1024"
+ACTION=="add|change", SUBSYSTEM=="scsi_disk", DRIVERS=="sd", ENV{ID_BUS}=="usb", TEST=="provisioning_mode", ATTR{provisioning_mode}="disabled"
+EOF
+    chmod 0644 "${etc_dir}/udev/rules.d/98-oscar-usb-nosuspend.rules"
+
     if [[ -z $host_root ]]; then
+        modprobe usb_storage 2>/dev/null || true
+        [[ -w /sys/module/usb_storage/parameters/quirks ]] && echo "0bda:9210:u,152d:0583:u,174c:2362:u,152d:0562:u,152d:0578:u" >/sys/module/usb_storage/parameters/quirks 2>/dev/null || true
+        [[ -w /sys/module/usbcore/parameters/quirks ]] && echo "0bda:9210:k,152d:0583:k,174c:2362:k,152d:0562:k,152d:0578:k" >/sys/module/usbcore/parameters/quirks 2>/dev/null || true
+        udevadm control --reload-rules >/dev/null 2>&1 || true
+        command -v update-grub >/dev/null 2>&1 && update-grub >/dev/null 2>&1 || true
         sysctl --system >/dev/null 2>&1 || true
         systemctl daemon-reload || true
         systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1 || true

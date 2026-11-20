@@ -283,8 +283,11 @@ EOF
         ra_dir=$(resolve_remote_access_dir)
         config_file="$ra_dir/octelium.env"
         if [[ -f $config_file && $(read_kv_file "$config_file" OCTELIUM_ENABLED) == true ]]; then
-            ensure_tunnel_image "$rebuild_tunnel"
-            run_tunnel_compose up --detach --force-recreate --no-build tunnel
+            if ( ensure_tunnel_image "$rebuild_tunnel" ); then
+                run_tunnel_compose up --detach --force-recreate --no-build tunnel
+            else
+                printf 'WARNING: Skipping optional Octelium remote-access tunnel on offline host (core OSCAR HTTPS services remain active).\n' >&2
+            fi
         fi
         ;;
     stop-if-enabled)

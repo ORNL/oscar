@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 - Upgrade the HTTPS gateway and remote-access tunnel base image to `nginx/nginx-unprivileged:1.30.7-alpine`, fixing the November 18, 2026 NGINX vulnerabilities, including CVE-2026-123007, CVE-2026-123633, and CVE-2026-118899. Update connected/offline packaging and invalidate older offline image caches. Existing installations require a rebuilt release and container recreation; changing source files alone does not patch a running gateway.
+- Add cross-platform bare-metal Ubuntu 24.04 autoinstall USB builders for Windows 11 (`.\oscar.bat create-autoinstall-usb` / `ubuntu/create-autoinstall-usb.ps1`) and Ubuntu (`sudo bash oscar.sh create-autoinstall-usb` / `ubuntu/create-autoinstall-usb.sh`), plus the interactive post-autoinstall First-Boot Provisioning & Recovery Wizard (`sudo bash oscar.sh wizard` / `sudo oscar-wizard` / `ubuntu/oscar-firstboot-wizard.sh`) supporting read-only USB NVMe backup restore, single-snapshot restore, `config.json` / `lanes.csv` / `.pmtiles` import, and clean site initialization.
+- Harden Linux USB-to-NVMe enclosure stability (`Realtek RTL9210`, `JMicron JMS583/562/578`, `ASMedia ASM2362`) across `autoinstall`, `prepare-host`, and `usb-backup` by configuring both `usb-storage` Bulk-Only Transport (`:u`) and `usbcore` No-LPM (`:k`) quirks so Thunderbolt 3/4 and USB 3.2 Gen 2 links cannot lock up during multi-gigabyte verification or restore streams.
+- Assign deterministic sensor unique identifiers prior to initial TCP connection attempts in `RapiscanSensor` and `AspectSensor` (matching `RS350Sensor`), ensuring `LaneSystem` and container application readiness (`/tmp/oscar-ready`) start cleanly even when RPMs are powered off or unreachable on air-gapped networks.
 
 ## 3.11.0 (Amber) 2026-11-15
 

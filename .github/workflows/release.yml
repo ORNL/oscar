@@ -595,6 +595,9 @@ jobs:
               postgis/prepare-restore.sh
               postgis/init-app-role.sh
               postgis/init-extensions.sql
+              ubuntu/create-autoinstall-usb.sh
+              ubuntu/create-autoinstall-usb.ps1
+              ubuntu/oscar-firstboot-wizard.sh
             )
             for expected in "${required_files[@]}"; do
               [ "$(grep -Fxc "${archive_root}/${expected}" "$listing")" -eq 1 ] || fail "Offline $profile bundle must contain exactly one $expected at its package root"

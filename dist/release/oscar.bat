@@ -33,7 +33,19 @@ exit /b %errorlevel%
 if /I "%~1"=="remote-access" goto remote_access
 if /I "%~1"=="usb-backup" goto usb_backup
 if /I "%~1"=="continual-backup" goto usb_backup
+if /I "%~1"=="create-autoinstall-usb" goto autoinstall_usb
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%OSCAR_SETUP%" %*
+exit /b %errorlevel%
+
+:autoinstall_usb
+if "%~2"=="" (
+    powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0ubuntu\create-autoinstall-usb.ps1"
+    exit /b %errorlevel%
+)
+set "OSCAR_SUBARGS=%*"
+for /f "tokens=1* delims= " %%A in ("%OSCAR_SUBARGS%") do (
+    powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0ubuntu\create-autoinstall-usb.ps1" %%B
+)
 exit /b %errorlevel%
 
 :remote_access
@@ -56,6 +68,8 @@ echo OSCAR Administration
 echo ====================
 echo.
 echo Enter a command and any options. Examples:
+echo   create-autoinstall-usb
+echo   create-autoinstall-usb -ListDrives
 echo   init
 echo   init -Hostname oscar.local -Port 443
 echo   init -Hostname oscar.local -TlsSan oscar-site.example.org

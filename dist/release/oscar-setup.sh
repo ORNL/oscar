@@ -17,6 +17,12 @@ case "$command_name" in
     remote-access)
         exec bash "$script_dir/oscar-remote-access.sh" "$@"
         ;;
+    wizard|firstboot-wizard)
+        exec bash "$script_dir/ubuntu/oscar-firstboot-wizard.sh" "$@"
+        ;;
+    create-autoinstall-usb)
+        exec bash "$script_dir/ubuntu/create-autoinstall-usb.sh" "$@"
+        ;;
     host-check|prepare-host|identify-nics|stage-site-network|apply-site-network|rollback-network|discover-devices)
         exec bash "$script_dir/configure-ubuntu-host.sh" "$command_name" "$@"
         ;;
@@ -48,6 +54,8 @@ usage() {
     cat <<'EOF'
 OSCAR deployment administration
 
+  sudo ./oscar.sh wizard [--scan-only]
+  sudo ./oscar.sh create-autoinstall-usb [--list-drives] [--iso FILE] [--offline-bundle ZIP] [--device /dev/sdX]
   sudo ./oscar.sh host-check [--strict] [--json] [--allow-dhcp]
   sudo ./oscar.sh prepare-host [--expand-lvm] [--configure-ufw] [--offline] [--hold-docker]
   sudo ./oscar.sh identify-nics [--watch [SECONDS]] [--blink NIC]
