@@ -227,18 +227,22 @@ EOF
 
 disable_usb_autosuspend() {
     [[ $skip_systemd == 1 ]] && return 0
-    # Prevent UAS multi-tag / UNMAP firmware lockups on Realtek RTL9210 (0bda:9210),
-    # JMicron JMS583 (152d:0583), and ASMedia ASM2362 (174c:2362) USB 3.2 NVMe enclosures
+    # Prevent UAS multi-tag / UNMAP / U1-U2 LPM firmware lockups on Realtek RTL9210 (0bda:9210),
+    # JMicron JMS583/562/578 (152d:0583/0562/0578), and ASMedia ASM2362 (174c:2362) USB 3.2 NVMe enclosures
     if [[ -d /etc/modprobe.d ]]; then
         cat >/etc/modprobe.d/oscar-usb-nvme-quirks.conf <<'EOF'
-# Use rock-solid Bulk-Only Transport (BOT) on USB-to-NVMe bridge chips known to
-# lock up under Linux UAS NCQ / UNMAP bursts during sustained multi-GB backups
-options usb-storage quirks=0bda:9210:u,152d:0583:u,174c:2362:u
+# Use rock-solid Bulk-Only Transport (BOT) and disable USB3 U1/U2 LPM on USB-to-NVMe
+# bridge chips known to lock up under Linux UAS NCQ / UNMAP / LPM bursts
+options usb-storage quirks=0bda:9210:u,152d:0583:u,174c:2362:u,152d:0562:u,152d:0578:u
+options usbcore quirks=0bda:9210:k,152d:0583:k,174c:2362:k,152d:0562:k,152d:0578:k
 EOF
     fi
     modprobe usb_storage 2>/dev/null || true
     if [[ -w /sys/module/usb_storage/parameters/quirks ]]; then
-        echo "0bda:9210:u,152d:0583:u,174c:2362:u" >/sys/module/usb_storage/parameters/quirks 2>/dev/null || true
+        echo "0bda:9210:u,152d:0583:u,174c:2362:u,152d:0562:u,152d:0578:u" >/sys/module/usb_storage/parameters/quirks 2>/dev/null || true
+    fi
+    if [[ -w /sys/module/usbcore/parameters/quirks ]]; then
+        echo "0bda:9210:k,152d:0583:k,174c:2362:k,152d:0562:k,152d:0578:k" >/sys/module/usbcore/parameters/quirks 2>/dev/null || true
     fi
     if [[ -d $udev_dir ]]; then
         cat >"$udev_dir/98-oscar-usb-nosuspend.rules" <<'EOF'
@@ -871,6 +875,7 @@ cmd_status() {
 
 cmd_verify() {
     require_root
+    disable_usb_autosuspend
     local from_path='' key_path='' deep=false
     while (($#)); do
         case $1 in
@@ -916,6 +921,7 @@ cmd_verify() {
 
 cmd_restore() {
     require_root
+    disable_usb_autosuspend
     local from_path='' key_path='' target_archive='' confirm=''
     while (($#)); do
         case $1 in

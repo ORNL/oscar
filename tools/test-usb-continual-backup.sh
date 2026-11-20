@@ -115,6 +115,10 @@ docker compose --project-name "$proj_src" --project-directory "$work_root/server
 
 pg_cid_a=$(docker compose --project-name "$proj_src" --project-directory "$work_root/server-a" \
     --env-file "$work_root/server-a/.env" --file "$work_root/server-a/compose.yaml" ps --quiet postgres | tr -d '[:space:]')
+for _pg_try in {1..30}; do
+    docker exec "$pg_cid_a" sh -c 'PGPASSWORD=test-pg-boot-pass psql -U oscar_bootstrap -d gis -c "SELECT 1"' >/dev/null 2>&1 && break
+    sleep 1
+done
 docker exec "$pg_cid_a" sh -c 'PGPASSWORD=test-pg-boot-pass psql -U oscar_bootstrap -d gis -c "CREATE TABLE usb_test_audit(id serial primary key, note text); INSERT INTO usb_test_audit(note) VALUES ('\''before_eject'\'');"' >/dev/null
 
 run_usb_a() {
@@ -224,6 +228,10 @@ bash "$work_root/server-b/oscar-setup.sh" usb-backup restore \
 # Verify every piece of historical + while-unplugged state on the brand-new replacement machine!
 pg_cid_b=$(docker compose --project-name "$proj_dst" --project-directory "$work_root/server-b" \
     --env-file "$work_root/server-b/.env" --file "$work_root/server-b/compose.yaml" ps --quiet postgres | tr -d '[:space:]')
+for _pg_try in {1..30}; do
+    docker exec "$pg_cid_b" sh -c 'PGPASSWORD=test-pg-boot-pass psql -U oscar_bootstrap -d gis -c "SELECT 1"' >/dev/null 2>&1 && break
+    sleep 1
+done
 notes=$(docker exec "$pg_cid_b" sh -c 'PGPASSWORD=test-pg-boot-pass psql -U oscar_bootstrap -d gis -tAc "SELECT note FROM usb_test_audit ORDER BY id;"' | tr '\n' ',')
 [[ $notes == "before_eject,recorded_while_usb_unplugged," ]] || { echo "FAIL: restored DB rows mismatch: $notes"; exit 1; }
 

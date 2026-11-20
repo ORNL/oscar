@@ -14,11 +14,12 @@ $usbBackupScript = Join-Path $repoRoot 'dist\release\oscar-usb-backup.ps1'
 $setupScript = Join-Path $repoRoot 'dist\release\oscar-setup.ps1'
 $hostPrepScript = Join-Path $repoRoot 'dist\release\configure-windows-host.ps1'
 $verifyScript = Join-Path $repoRoot 'dist\release\verify-bundle.ps1'
+$autoinstallUsbScript = Join-Path $repoRoot 'dist\release\ubuntu\create-autoinstall-usb.ps1'
 $offlineBuilderScript = Join-Path $repoRoot 'tools\offline\build-offline-bundle.ps1'
 $composeFile = Join-Path $repoRoot 'dist\release\compose.yaml'
 $oscarDockerfile = Join-Path $repoRoot 'dist\release\docker\oscar\Dockerfile'
 $oscarEntrypoint = Join-Path $repoRoot 'dist\release\docker\oscar\entrypoint.sh'
-$releasePowerShellScripts = @($storageScript, $usbBackupScript, $setupScript, $hostPrepScript, $verifyScript, $offlineBuilderScript)
+$releasePowerShellScripts = @($storageScript, $usbBackupScript, $setupScript, $hostPrepScript, $verifyScript, $autoinstallUsbScript, $offlineBuilderScript)
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ('oscar-storage-ps5-' + [Guid]::NewGuid().ToString('N'))
 $createdDockerGroup = $false
 
@@ -72,6 +73,27 @@ try {
             Assert-True (-not ([IO.File]::ReadAllText($script).Contains($forbidden))) "$script uses a .NET API absent from Windows PowerShell 5.1: $forbidden"
         }
     }
+
+    # Verify Windows 11 Bare-Metal Autoinstall USB Builder renders LF UTF-8 user-data with USB-NVMe quirks
+    $sshPubFixture = Join-Path $temporaryRoot 'id_ed25519.pub'
+    [IO.File]::WriteAllText($sshPubFixture, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKey fixture@oscar`r`n")
+    $renderedUserData = Join-Path $temporaryRoot 'rendered-user-data'
+    & (Join-Path $PSHOME 'powershell.exe') -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+        -File $autoinstallUsbScript `
+        -Hostname 'portal-node-07' `
+        -Username 'siteadmin' `
+        -SshKeyFile $sshPubFixture `
+        -RenderUserDataOnly $renderedUserData | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'create-autoinstall-usb.ps1 -RenderUserDataOnly exited non-zero.'
+    $renderedBytes = [IO.File]::ReadAllBytes($renderedUserData)
+    Assert-True (-not ($renderedBytes -contains [byte]13)) 'Rendered cloud-init user-data must use pure LF line endings (no CR).'
+    $renderedText = [IO.File]::ReadAllText($renderedUserData)
+    Assert-True ($renderedText.Contains('hostname: portal-node-07')) 'Rendered user-data did not apply custom hostname.'
+    Assert-True ($renderedText.Contains('username: siteadmin')) 'Rendered user-data did not apply custom username.'
+    Assert-True ($renderedText.Contains('siteadmin ALL=(ALL) NOPASSWD:ALL')) 'Rendered user-data did not update sudoers username.'
+    Assert-True ($renderedText.Contains('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKey fixture@oscar')) 'Rendered user-data did not inject SSH authorized_keys.'
+    Assert-True ($renderedText.Contains('0bda:9210:u') -and $renderedText.Contains('0bda:9210:k')) 'Rendered user-data is missing USB-NVMe BOT + No-LPM quirks.'
+    Assert-True ($renderedText.Contains('/usr/local/bin/oscar-wizard')) 'Rendered user-data is missing first-boot oscar-wizard installer.'
 
     . $setupScript -Command help -TlsSan @('192.168.0.61,oscar-site.example-tailnet.ts.net', '192.168.0.61') -NoAutoNetworkSans | Out-Null
     $resolvedTlsSans = @(Get-TlsSubjectAlternativeNames 'oscar.local')

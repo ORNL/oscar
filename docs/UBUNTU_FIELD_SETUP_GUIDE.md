@@ -90,11 +90,26 @@ You can install Ubuntu Server 24.04 either **interactively** (5 minutes with key
    - **Featured Server Snaps:** **Leave EVERYTHING UNCHECKED (especially do NOT check `docker`)!** -> `Done`.
 4. Wait ~3 minutes for installation to finish -> select **Reboot Now** -> remove the USB stick when prompted and press `Enter`.
 
-### Option 3B — Declarative Zero-Touch Bare-Metal Install (`autoinstall`)
+### Option 3B — Declarative Zero-Touch Bare-Metal Install + First-Boot Wizard (`create-autoinstall-usb` + `oscar-wizard`)
 
-If you are imaging multiple servers and want zero prompts:
-1. Copy [`ubuntu/autoinstall/user-data.yaml`](../dist/release/ubuntu/autoinstall/user-data.yaml) (renaming it to **`user-data`** with no extension after replacing the password hash via `openssl passwd -6`) and [`ubuntu/autoinstall/meta-data`](../dist/release/ubuntu/autoinstall/meta-data) onto a small FAT32 USB partition labeled **`CIDATA`**.
-2. Boot the Ubuntu Server 24.04 USB installer with the `CIDATA` partition attached. Ubuntu automatically allocates 100% of the NVMe (`sizing-policy: all`), skips Snap Docker, enables OpenSSH, masks sleep/suspend, and bounds offline boot-wait timeouts.
+If you want a **single-stick unattended bare-metal installer** that installs Ubuntu Server 24.04 LTS onto the target server's internal NVMe/SSD (`100%` LVM capacity, never touching USB drives), configures USB-to-NVMe Bulk-Only Transport + No-LPM stability quirks from first boot, unpacks `oscar-3.11.0-ubuntu-x86_64-offline-full.zip` into `/srv/oscar/`, and launches an interactive menu on first login:
+
+1. **Build the Bare-Metal Autoinstall USB Stick** on either **Windows 11** or **Ubuntu**:
+   - **On Windows 11 (Administrator prompt, zero third-party tools needed):**
+     ```powershell
+     .\oscar.bat create-autoinstall-usb
+     ```
+   - **On Ubuntu Linux:**
+     ```bash
+     sudo bash oscar.sh create-autoinstall-usb
+     ```
+   Select your removable external USB drive (`16 GB+`), point to `ubuntu-24.04.x-live-server-amd64.iso` and `oscar-3.11.0-ubuntu-x86_64-offline-full.zip`, and optionally supply a `seed/` folder containing `config.json`, `lanes.csv`, `site-network.env`, `*.pmtiles`, or `backup-key.txt`.
+2. **Boot the Target Server Offline:** Insert the USB drive, choose it from the UEFI One-Time Boot Menu (`F9`/`F11`/`F12`), and wait ~4 minutes while Ubuntu 24.04 + `/srv/oscar/` install with zero prompts. Remove the installer USB when prompted and press `Enter`.
+3. **Interactive First-Boot Provisioning & Recovery Wizard (`sudo oscar-wizard`):** On your first login as `oscaradmin` (or anytime via `sudo oscar-wizard` / `sudo bash oscar.sh wizard`), OSCAR automatically runs offline host optimization (Docker Engine, sysctl, UFW, LVM, and USB-NVMe quirks), scans attached USB drives read-only (`-o ro` — zero manual `mount`/`cp`/`umount` commands), and lets you pick:
+   - **Restore from Continual / Occasional USB NVMe Backup** (`usb-backup restore`)
+   - **Restore from Single-Snapshot Backup** (`oscar restore`)
+   - **Fresh Install + Import Configuration** (`config.json` lanes/sensors, `lanes.csv` spreadsheet, and/or `.pmtiles` offline basemap)
+   - **Clean Fresh Site Installation** (`oscar init`, with optional hotel/site static IP setup)
 
 ---
 
