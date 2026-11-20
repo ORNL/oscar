@@ -1227,7 +1227,7 @@ postgres_id=sha256:ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 postgres_repo_digests=null
 postgres_version_label=$inventory_version
 postgres_storage_profile_label=$inventory_version
-gateway_name=nginxinc/nginx-unprivileged:1.28.1-alpine
+gateway_name=nginx/nginx-unprivileged:1.30.7-alpine
 gateway_id=sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 gateway_repo_digests=null
 created_at=2026-10-17T12:00:00Z
@@ -1236,12 +1236,12 @@ if bash -c '
     storage_script=$1; fixture=$2; version=$3
     set -- help
     source "$storage_script" >/dev/null
-    resolve_release_images() { printf "%s\n%s\n%s\n" "oscar:$version" "oscar-postgis:$version" "nginxinc/nginx-unprivileged:1.28.1-alpine"; }
+    resolve_release_images() { printf "%s\n%s\n%s\n" "oscar:$version" "oscar-postgis:$version" "nginx/nginx-unprivileged:1.30.7-alpine"; }
     image_inspect_value() {
         case "$1|$2" in
             "oscar:$version|{{.Id}}") printf "sha256:%064d" 0 | tr 0 b ;;
             "oscar-postgis:$version|{{.Id}}") printf "sha256:%064d" 0 | tr 0 c ;;
-            "nginxinc/nginx-unprivileged:1.28.1-alpine|{{.Id}}") printf "sha256:%064d" 0 | tr 0 d ;;
+            "nginx/nginx-unprivileged:1.30.7-alpine|{{.Id}}") printf "sha256:%064d" 0 | tr 0 d ;;
             *"|{{json .RepoDigests}}") printf null ;;
             *"org.opencontainers.image.version"*) printf "%s" "$version" ;;
             *"com.botts.oscar.storage-profile"*) printf "%s" "$version" ;;
@@ -1272,21 +1272,21 @@ postgres_id=sha256:ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 postgres_repo_digests=["oscar-postgis@sha256:2222222222222222222222222222222222222222222222222222222222222222"]
 postgres_version_label=$inventory_version
 postgres_storage_profile_label=$inventory_version
-gateway_name=nginxinc/nginx-unprivileged:1.28.1-alpine
+gateway_name=nginx/nginx-unprivileged:1.30.7-alpine
 gateway_id=sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-gateway_repo_digests=["nginxinc/nginx-unprivileged@sha256:3333333333333333333333333333333333333333333333333333333333333333"]
+gateway_repo_digests=["nginx/nginx-unprivileged@sha256:3333333333333333333333333333333333333333333333333333333333333333"]
 created_at=2026-10-17T12:00:00Z
 EOF
 bash -c '
     storage_script=$1; fixture=$2; version=$3
     set -- help
     source "$storage_script" >/dev/null
-    resolve_release_images() { printf "%s\n%s\n%s\n" "oscar:$version" "oscar-postgis:$version" "nginxinc/nginx-unprivileged:1.28.1-alpine"; }
+    resolve_release_images() { printf "%s\n%s\n%s\n" "oscar:$version" "oscar-postgis:$version" "nginx/nginx-unprivileged:1.30.7-alpine"; }
     image_inspect_value() {
         case "$1|$2" in
             "oscar:$version|{{.Id}}") printf "sha256:%064d" 0 | tr 0 a ;;
             "oscar-postgis:$version|{{.Id}}") printf "sha256:%064d" 0 | tr 0 c ;;
-            "nginxinc/nginx-unprivileged:1.28.1-alpine|{{.Id}}") printf "sha256:%064d" 0 | tr 0 d ;;
+            "nginx/nginx-unprivileged:1.30.7-alpine|{{.Id}}") printf "sha256:%064d" 0 | tr 0 d ;;
             *"|{{json .RepoDigests}}") printf null ;;
             *"org.opencontainers.image.version"*) printf "%s" "$version" ;;
             *"com.botts.oscar.storage-profile"*) printf "%s" "$version" ;;
@@ -3242,7 +3242,7 @@ if command -v pwsh >/dev/null 2>&1; then
                 return [pscustomobject]@{
                     application = "oscar:$RequiredReleaseVersion"
                     postgres = "oscar-postgis:$RequiredReleaseVersion"
-                    gateway = "nginxinc/nginx-unprivileged:1.28.1-alpine"
+                    gateway = "nginx/nginx-unprivileged:1.30.7-alpine"
                 }
             }
             function Get-ImageInspectValue([string]$Image, [string]$Field) {
@@ -3261,7 +3261,7 @@ if command -v pwsh >/dev/null 2>&1; then
                     switch -CaseSensitive ($Image) {
                         "oscar:$RequiredReleaseVersion" { return "sha256:" + ("a" * 64) }
                         "oscar-postgis:$RequiredReleaseVersion" { return "sha256:" + ("c" * 64) }
-                        "nginxinc/nginx-unprivileged:1.28.1-alpine" { return "sha256:" + ("d" * 64) }
+                        "nginx/nginx-unprivileged:1.30.7-alpine" { return "sha256:" + ("d" * 64) }
                     }
                 }
                 if ($Field -ceq "RepoDigests") { return "null" }

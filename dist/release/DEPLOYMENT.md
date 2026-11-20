@@ -4,6 +4,21 @@ OSCAR runs as three Docker Compose services: an HTTPS gateway, the non-root OSCA
 
 Start with [QUICKSTART.md](QUICKSTART.md) for installation, and see [VIDEO_GUIDES.md](../../docs/VIDEO_GUIDES.md) for concise 1080p captioned screen recordings covering initialization ([Module 01](https://github.com/ORNL/oscar-video-guides/blob/main/videos/01-deployment-init-and-credentials.mp4)), clean-directory upgrades ([Module 02](https://github.com/ORNL/oscar-video-guides/blob/main/videos/02-clean-directory-upgrade.mp4)), archive/backup verification ([Module 03](https://github.com/ORNL/oscar-video-guides/blob/main/videos/03-archive-and-snapshot-backup.mp4)), and SensorHub Admin configuration ([Modules 04–07](../../docs/VIDEO_GUIDES.md#04-admin-oscar-service-and-custom-codes)). This guide documents deployment choices and routine administration.
 
+## November 2026 NGINX security update
+
+The gateway and optional remote-access tunnel now use `nginx/nginx-unprivileged:1.30.7-alpine`. NGINX identifies this version as fixed for the November 18 vulnerabilities, including HTTP/2 CVE-2026-123007 and CVE-2026-123633 and TLS 1.3 CVE-2026-118899. See the [upstream security advisories](https://nginx.org/en/security_advisories.html).
+
+Build and distribute this change as a new release; do not replace an already published release or image tag. Regenerate offline bundles so their `offline-images.tar` contains the patched gateway. The offline builders use new cache filenames to avoid reusing archives from before this update.
+
+For an existing installation, follow the supported clean-directory **Upgrade** procedure with that new release. Include the optional tunnel rebuild when it is enabled. Updating this source checkout or downloading a new image alone does not replace running containers. After the upgrade, run the following from the deployed release directory:
+
+```sh
+docker compose exec gateway nginx -v
+docker compose exec gateway nginx -t
+```
+
+Confirm the running gateway reports `nginx/1.30.7` (or a newer patched version), passes its configuration check, and serves HTTPS, Viewer/Admin routes, and live video. HTTP/2 and TLS 1.3 remain enabled with the patched binary.
+
 ## Supported deployment and operation hosts
 
 - Windows 11 x86-64 with Docker Desktop and WSL 2

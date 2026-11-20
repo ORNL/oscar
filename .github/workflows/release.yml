@@ -666,7 +666,7 @@ jobs:
               const expected = [
                 `oscar:${version}`,
                 `oscar-postgis:${version}`,
-                "nginxinc/nginx-unprivileged:1.28.1-alpine",
+                "nginx/nginx-unprivileged:1.30.7-alpine",
               ].sort();
               if (JSON.stringify(actual) !== JSON.stringify(expected)) {
                 throw new Error(`expected image tags ${expected.join(", ")}; received ${actual.join(", ")}`);

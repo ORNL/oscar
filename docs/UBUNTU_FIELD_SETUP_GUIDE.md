@@ -241,7 +241,7 @@ sudo bash oscar.sh apply-site-network
 sudo bash oscar.sh init
 ```
 
-OSCAR loads `oscar:3.11.0`, `oscar-postgis:3.11.0`, and `nginxinc/nginx-unprivileged:1.28.1-alpine` directly from `offline-images.tar`, generates your TLS certificate covering the static NIC IPs, initializes PostgreSQL with `data_checksums=on`, and starts all services cleanly offline.
+OSCAR loads `oscar:3.11.0`, `oscar-postgis:3.11.0`, and `nginx/nginx-unprivileged:1.30.7-alpine` directly from `offline-images.tar`, generates your TLS certificate covering the static NIC IPs, initializes PostgreSQL with `data_checksums=on`, and starts all services cleanly offline.
 
 ---
 
