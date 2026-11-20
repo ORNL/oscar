@@ -22,8 +22,12 @@ For the single-snapshot quiesced recovery workflow (`OSCAR_BACKUP_MODE=single` v
 
 ## 2. Recommended External USB Drive Hardware & Safety Rules
 
-1. **Use an External USB 3.2 Gen 2 (`10 Gbps`) UASP NVMe SSD (`1–2 TB`):**
-   - Choose an aluminum/heatsinked or ruggedized portable NVMe SSD (for example, Samsung T7 Shield, Crucial X9/X10 Pro, or an enterprise M.2 TLC NVMe SSD in a UASP enclosure) plugged directly into a **rear motherboard USB 3.x port** (never an unpowered front-panel hub).
+1. **Use an External USB 3.2 Gen 2 (`10 Gbps`) NVMe SSD (`1–4 TB`) with Sufficient `5 V` Spin-Up Power (`6–8 W`):**
+   - Choose an aluminum/heatsinked or ruggedized portable NVMe SSD (for example, Samsung T7 Shield, Crucial X9/X10 Pro, or an enterprise M.2 TLC NVMe SSD in an external NVMe enclosure) connected to a **mains-powered USB 3.2 Gen 2 (`10 Gbps`) hub/dock** or a **dedicated rear motherboard `15 W` (`5 V / 3 A`) USB-C port**.
+   - **Critical Laptop & Thin-Host USB Power Budget Rule (`6–8 W` Inrush vs. `4.5 W` USB-A / Shared Type-C PD):** High-capacity (`1–4 TB`) M.2 PCIe Gen3/Gen4 NVMe SSDs inside bridge enclosures (such as Realtek `RTL9210`, JMicron `JMS583`, or ASMedia `ASM2362`) draw **`1.1–1.6 A` (`5.5–8 W`)** at spin-up:
+     - Standard laptop **USB-A 3.x ports** cap power at `5 V × 0.9 A = 4.5 W` and can silently brown out the enclosure before Linux or Windows enumerates it (`state=not attached` / LED dark).
+     - Adjacent laptop **dual Thunderbolt / USB-C ports** often share a single `15 W` Type-C Power Delivery controller (for example, Cypress `CCG5`): if a USB-C Ethernet dongle is plugged in *first*, the controller reserves primary power on that port and throttles the second USB-C port (`hp_wmi` Type-C power limit), preventing the NVMe drive from spinning up. Always use a **mains-powered USB 3.2 Gen 2 hub/dock**, put low-power (`~250 mA`) Ethernet adapters on USB-A, or plug the NVMe drive into a dedicated `15 W` Type-C port *before* secondary adapters.
+   - **Automatic Linux USB-NVMe Bridge Stability Quirks (`BOT` + `No-LPM`):** On Ubuntu 24.04, OSCAR's `autoinstall`, `prepare-host`, `usb-backup`, and `oscar-wizard` automatically configure Bulk-Only Transport (`usb-storage.quirks=...:u`) and disable broken USB 3.x `U1/U2` Link Power Management (`usbcore.quirks=...:k`) plus `udev` autosuspend across common NVMe bridge chipsets so multi-terabyte restores run with zero `UAS` tag hangs or `Read(10)` I/O errors.
    - **Never use USB flash thumb drives, SD cards, or mechanical spinning HDDs:** Thumb drives lack DRAM/wear-leveling and silently corrupt under sustained writes; spinning HDDs stall on metadata seeks and fail under gatehouse vibration.
    - **Never place live OSCAR volumes on USB:** Keep `postgres_data`, `oscar_state`, and live `OSCAR_ARCHIVE_DIR` on internal NVMe; use the external USB NVMe SSD strictly for `usb-backup`.
 2. **Keep `NTFS` as the Default Carrier Filesystem for Laptop Portability:**
@@ -217,6 +221,9 @@ What `usb-backup restore` verifies and performs automatically:
 2. **Credentials & Deployment Identity:** Installs `.env`, `secrets/`, `tls/`, and optional Octelium `remote-access/` credentials, creates `oscar_oscar_state` and `oscar_postgres_data` labeled with the original `OSCAR_DEPLOYMENT_ID`, and stamps `.oscar-storage-root` on `OSCAR_ARCHIVE_DIR`.
 3. **High-Speed Sequential Extraction:** Streams uncompressed `packs/archive/*.tar` and `packs/state/*.tar` at full NVMe speed (`~10–15 minutes` for a `400 GiB` 5-year 50-lane archive, honoring Day-30 secondary-JPEG pruning via `live-immutable-paths.txt.gz`).
 4. **PostgreSQL Timeline Promotion & Service Bring-Up:** Prepares `pg_basebackup` via `oscar-prepare-restore`, promotes PostgreSQL onto a clean timeline (`archive_mode=off`), clears recovery settings, and starts `postgres -> oscar -> gateway`.
+5. **Testing a Restore on the Same LAN as a Live Portal (`Safe Bench / DR Clone Isolation`):**
+   - Because a restored snapshot carries all live RPM (`10001`), camera (`554`/`8554`), and Octelium tunnel settings, starting a restored test clone on the **same network** while the production portal is still running would otherwise compete for single-client RPM TCP sockets and tunnel sessions.
+   - When restoring via **`sudo oscar-wizard`** (or `sudo bash oscar.sh wizard --mode usb-restore --bench-isolation`), choose **Yes — Safe Bench / DR Drill Mode**: OSCAR automatically installs a `DOCKER-USER` `tcp-reset` outbound container guard and sets `OCTELIUM_ENABLED=false` on the test clone so you can inspect 100% of restored Parquet data, keyframes, reports, and users in the browser with zero traffic sent toward live lane sensors (`sudo iptables -F DOCKER-USER` lifts isolation when cutting over into production).
 
 ---
 

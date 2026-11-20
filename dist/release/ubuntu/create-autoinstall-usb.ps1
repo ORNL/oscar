@@ -408,6 +408,14 @@ try {
             throw "SHA-256 mismatch on USB copy ($destBundle): expected $expectedSha, got $actualUsbSha"
         }
         [IO.File]::WriteAllText($destShaFile, "$actualUsbSha *$bundleLeaf`n", $Utf8NoBom)
+        $bundleParentDir = Split-Path -Parent $OfflineBundlePath
+        foreach ($searchDir in @($bundleParentDir, (Join-Path (Join-Path $ReleaseDir 'documentation') 'operator-manual'))) {
+            if ($searchDir -and (Test-Path -LiteralPath $searchDir -PathType Container)) {
+                Get-ChildItem -LiteralPath $searchDir -File -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Name -like 'OSCAR-*-Administrator-Operator-Manual-*.pdf' -or $_.Name -like 'OSCAR-*-SHA256SUMS.txt' } |
+                    ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $mediaDrive $_.Name) -Force }
+            }
+        }
     }
 
     if ($SeedDirectory) {
@@ -434,7 +442,14 @@ How to Install on Bare-Metal Server / Laptop:
      and unpacks OSCAR into /srv/oscar/.
   4. Remove this USB drive when prompted at the end of installation and press Enter.
   5. Log in as '$Username' - the interactive OSCAR First-Boot Provisioning Wizard
-     launches automatically (or run: sudo oscar-wizard).
+     launches automatically (or run: sudo oscar-wizard), including optional
+     Safe Bench / DR Clone Isolation when testing a backup while a live portal runs.
+
+Hardware Power Tip for 1-4 TB M.2 NVMe USB Backup Enclosures:
+  High-capacity PCIe NVMe USB enclosures draw 6-8W inrush at spin-up. Connect them
+  via a mains-powered USB 3.2 Gen 2 hub/dock or a dedicated rear/15W USB-C port
+  rather than a 4.5W laptop USB-A port or a shared dual USB-C port next to another
+  USB-C dongle.
 "@
     [IO.File]::WriteAllText((Join-Path $mediaDrive 'README-BARE-METAL-INSTALL.txt'), ($readmeText -replace "`r`n", "`n"), $Utf8NoBom)
 

@@ -215,8 +215,13 @@ for req_cmd in dd sgdisk mkfs.vfat python3 sha256sum; do
 done
 
 has_tui=false
+saved_printk_level=''
 if [[ -t 0 && -t 1 ]] && command -v whiptail >/dev/null 2>&1 && [[ ${TERM:-dumb} != dumb ]]; then
     has_tui=true
+    if [[ -r /proc/sys/kernel/printk && -w /proc/sys/kernel/printk ]]; then
+        saved_printk_level=$(awk '{print $1}' /proc/sys/kernel/printk 2>/dev/null || true)
+        dmesg --console-off 2>/dev/null || printf '1\n' >/proc/sys/kernel/printk 2>/dev/null || true
+    fi
 fi
 
 # Interactive guided prompts when required arguments are omitted
@@ -359,6 +364,9 @@ mkdir -p "$cidata_mnt" "$media_mnt"
 
 cleanup() {
     set +e
+    if [[ -n $saved_printk_level && -w /proc/sys/kernel/printk ]]; then
+        printf '%s\n' "$saved_printk_level" >/proc/sys/kernel/printk 2>/dev/null || true
+    fi
     mountpoint -q "$cidata_mnt" 2>/dev/null && umount "$cidata_mnt"
     mountpoint -q "$media_mnt" 2>/dev/null && umount "$media_mnt"
     [[ -n $loop_dev ]] && losetup -d "$loop_dev" 2>/dev/null
@@ -464,6 +472,13 @@ if [[ -n $offline_bundle ]]; then
         (cd "$media_mnt" && sha256sum --binary "$bundle_base" > "${bundle_base}.sha256")
     fi
     (cd "$media_mnt" && sha256sum --check --strict "${bundle_base}.sha256")
+    bundle_dir=$(dirname -- "$offline_bundle")
+    for extra_doc in \
+        "$bundle_dir"/OSCAR-*-Administrator-Operator-Manual-*.pdf \
+        "$bundle_dir"/OSCAR-*-SHA256SUMS.txt \
+        "$release_dir/documentation/operator-manual"/OSCAR-*-Administrator-Operator-Manual-*.pdf; do
+        [[ -f $extra_doc ]] && cp -f -- "$extra_doc" "$media_mnt/$(basename -- "$extra_doc")"
+    done
 fi
 
 if [[ -n $seed_dir ]]; then
@@ -490,11 +505,18 @@ How to Install on Bare-Metal Server / Laptop:
   5. Log in as '$username_val' — the interactive OSCAR First-Boot Provisioning
      Wizard launches automatically so you can:
        - Optimize the Ubuntu host offline (Docker, sysctl, UFW, USB-NVMe quirks)
-       - Restore from a Continual/Occasional USB NVMe Backup drive
+       - Restore from a Continual/Occasional USB NVMe Backup drive (including optional
+         Safe Bench / DR Clone Isolation when testing while a live portal is active)
        - Restore from a Single-Snapshot Backup
        - Import a saved config.json, lanes.csv spreadsheet, or .pmtiles basemap
        - Run a clean site installation (with optional static IP staging)
      You can also re-open the wizard anytime via: sudo oscar-wizard
+
+Hardware Power Tip for 1-4 TB M.2 NVMe USB Backup Enclosures:
+  High-capacity PCIe NVMe USB enclosures draw 6-8W inrush at spin-up. Connect them
+  via a mains-powered USB 3.2 Gen 2 hub/dock or a dedicated rear/15W USB-C port
+  rather than a 4.5W laptop USB-A port or a shared dual USB-C port next to another
+  USB-C dongle.
 EOF
 
 sync
@@ -503,6 +525,12 @@ umount "$media_mnt"
 if [[ -n $loop_dev ]]; then
     losetup -d "$loop_dev"
     loop_dev=''
+elif [[ -n ${real_dev:-} && -b $real_dev ]]; then
+    # Ensure desktop udisks2 automounters do not leave any partition mounted
+    udevadm settle 2>/dev/null || sleep 1
+    for mp_dev in $(lsblk -lnpo NAME "$real_dev" | tail -n +2); do
+        umount "$mp_dev" 2>/dev/null || true
+    done
 fi
 sync
 
