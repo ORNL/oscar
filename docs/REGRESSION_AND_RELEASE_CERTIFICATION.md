@@ -1,6 +1,6 @@
 # OSCAR End-to-End Regression Suite & Release Certification Guide
 
-[`ORNL/oscar-regression`](https://github.com/ORNL/oscar-regression) provides automated end-to-end functional, fault-injection, multi-pass vehicle OCR, `PARQUET_PRIMARY` storage-lifecycle, destructive backup/restore, and 24/7 UI endurance validation for OSCAR 3.11.0 test deployments.
+[`ORNL/oscar-regression`](https://github.com/ORNL/oscar-regression) provides automated end-to-end functional, fault-injection, multi-pass vehicle OCR, `PARQUET_PRIMARY` storage-lifecycle, destructive backup/restore, and 24/7 UI endurance validation for OSCAR 3.11.1 test deployments.
 
 For a captioned 1080p walkthrough, watch [Module 22 (`22-regression-suite-setup-and-certification.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/22-regression-suite-setup-and-certification.mp4) in [VIDEO_GUIDES.md](VIDEO_GUIDES.md).
 
@@ -57,19 +57,19 @@ chmod 600 .env
 | `VEHICLE_OCR_WORKFLOW` | `required` *(or `auto` / `disabled`)* | Gates PP-OCRv3 container/plate auto-fill (`EXPECTED_VEHICLE_OCR_CONTAINER=EGHU3972694` or `ANY`), `Compare Passes`, Linked Adjudication, and `VEHICLE_INCIDENT` reports |
 | `SPECTROSCOPIC_WORKFLOW` | `auto` *(or `required` / `disabled`)* | Uploads local `.spe` / `.n42` files from `spectroscopic-files/`, verifying `N42 Report` and Sandia WebID |
 | `EML_WORKFLOW` | `auto` *(or `required` / `disabled`)* | Uploads `OSCAR_EML_PLUGIN_PATH` (`.jar`) and verifies `Code 9999: EML Non-Threat` auto-adjudication |
-| `STORAGE_WORKFLOW` | `required` | Gates OSCAR 3.11.0 `PARQUET_PRIMARY`, 5-JPEG retention, atomic publisher, and schema checks |
+| `STORAGE_WORKFLOW` | `required` | Gates OSCAR 3.11.1 `PARQUET_PRIMARY`, 5-JPEG retention, atomic publisher, and schema checks |
 | `OSCAR_BACKUP_MODE` | `disabled` *(or `single`)* | Certifies fail-closed disabled backups or single-snapshot backup behavior (`STORAGE_BACKUP_WORKFLOW`) |
 | `OSCAR_SSH_TARGET` | `oscar@oscar-test.example.org` | SSH host used for the remote mutation lease, Docker resource sampling, and storage probes |
-| `OSCAR_RELEASE_DIR` | `/srv/oscar-test/oscar-3.11.0` | Canonical non-symlinked release path on `OSCAR_SSH_TARGET` |
+| `OSCAR_RELEASE_DIR` | `/srv/oscar-test/oscar-3.11.1` | Canonical non-symlinked release path on `OSCAR_SSH_TARGET` |
 | `OSCAR_STORAGE_TARGET_ACK` | `<host>\|<ssh>\|<dir>\|DISPOSABLE-STORAGE` | **Safety interlock #4:** Required before any storage probe executes |
 
 ### Rebinding After Deploying a New Release Directory
 
-Whenever you unpack and deploy a new OSCAR 3.11.0 build into a clean versioned folder, preview and apply the release rebind helper (which verifies the running container provenance over strict SSH without touching secrets):
+Whenever you unpack and deploy a new OSCAR 3.11.1 build into a clean versioned folder, preview and apply the release rebind helper (which verifies the running container provenance over strict SSH without touching secrets):
 
 ```sh
-./scripts/rebind-active-release.sh --build-label 3.11.0-rc1
-./scripts/rebind-active-release.sh --apply --build-label 3.11.0-rc1
+./scripts/rebind-active-release.sh --build-label 3.11.1-rc1
+./scripts/rebind-active-release.sh --apply --build-label 3.11.1-rc1
 ```
 
 ---

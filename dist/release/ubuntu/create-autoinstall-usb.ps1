@@ -48,7 +48,7 @@ Usage (run from an Administrator PowerShell or .\oscar.bat):
   .\oscar.bat create-autoinstall-usb -ListDrives                  (List safe external USB drives)
   .\oscar.bat create-autoinstall-usb `
       -IsoPath C:\Downloads\ubuntu-24.04.5-live-server-amd64.iso `
-      -OfflineBundlePath C:\Downloads\oscar-3.11.0-ubuntu-x86_64-offline-full.zip `
+      -OfflineBundlePath C:\Downloads\oscar-3.11.1-ubuntu-x86_64-offline-full.zip `
       -DiskNumber 2 `
       -Hostname oscar-host `
       -Username oscaradmin `

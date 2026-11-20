@@ -525,7 +525,7 @@ EOF
         if [[ $offline_mode == true ]]; then
             info "Preparing packages from local offline bundle (zero internet required)..."
             if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
-                [[ -d $docker_deb_dir ]] || fail "Offline mode requested, but ${docker_deb_dir} was not found. Use oscar-3.11.0-ubuntu-x86_64-offline-full.zip."
+                [[ -d $docker_deb_dir ]] || fail "Offline mode requested, but ${docker_deb_dir} was not found. Use oscar-3.11.1-ubuntu-x86_64-offline-full.zip."
                 install_packages_offline_dir "$docker_deb_dir"
             fi
             [[ -d $tools_deb_dir ]] && install_packages_offline_dir "$tools_deb_dir" || true
