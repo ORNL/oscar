@@ -105,11 +105,13 @@ If you want a **single-stick unattended bare-metal installer** that installs Ubu
      ```
    Select your removable external USB drive (`16 GB+`), point to `ubuntu-24.04.x-live-server-amd64.iso` and `oscar-3.11.1-ubuntu-x86_64-offline-full.zip`, and optionally supply a `seed/` folder containing `config.json`, `lanes.csv`, `site-network.env`, `*.pmtiles`, or `backup-key.txt`.
 2. **Boot the Target Server Offline:** Insert the USB drive, choose it from the UEFI One-Time Boot Menu (`F9`/`F11`/`F12`), and wait ~4 minutes while Ubuntu 24.04 + `/srv/oscar/` install with zero prompts. Remove the installer USB when prompted and press `Enter`.
-3. **Interactive First-Boot Provisioning & Recovery Wizard (`sudo oscar-wizard`):** On your first login as `oscaradmin` (or anytime via `sudo oscar-wizard` / `sudo bash oscar.sh wizard`), OSCAR automatically runs offline host optimization (Docker Engine, sysctl, UFW, LVM, and USB-NVMe quirks), scans attached USB drives read-only (`-o ro` — zero manual `mount`/`cp`/`umount` commands), and lets you pick:
-   - **Restore from Continual / Occasional USB NVMe Backup** (`usb-backup restore`)
-   - **Restore from Single-Snapshot Backup** (`oscar restore`)
+3. **Interactive First-Boot Provisioning & Recovery Wizard (`sudo oscar-wizard`):** On your first login as `oscaradmin` (or anytime via `sudo oscar-wizard` / `sudo bash oscar.sh wizard`), OSCAR mutes kernel console `printk` noise so `tty1` dialogs stay crisp, runs offline host optimization (Docker Engine, sysctl, UFW, LVM, and USB-NVMe quirks), scans attached USB drives read-only (`-o ro` — zero manual `mount`/`cp`/`umount` commands, automatically skipping EFI `ESP` boot partitions and cleaning up unplugged sticks on `RESCAN`), and lets you pick:
+   - **Restore from Continual / Occasional USB NVMe Backup** (`usb-backup restore`, including an interactive **Safe Bench / DR Clone Isolation** option that blocks outbound sensor/tunnel traffic via `DOCKER-USER` when testing a backup on the same network as an active portal)
+   - **Restore from Single-Snapshot Backup** (`oscar restore`, with optional `--bench-isolation`)
    - **Fresh Install + Import Configuration** (`config.json` lanes/sensors, `lanes.csv` spreadsheet, and/or `.pmtiles` offline basemap)
    - **Clean Fresh Site Installation** (`oscar init`, with optional hotel/site static IP setup)
+
+> **Hardware Power Tip When Restoring from `1–4 TB` M.2 NVMe USB Enclosures on Laptops:** High-capacity M.2 PCIe NVMe SSDs in USB 3.2 bridge enclosures draw **`6–8 W` (`1.1–1.6 A`)** at spin-up. Standard laptop USB-A ports (`4.5 W`) or shared dual Thunderbolt/USB-C ports that already have a USB-C Ethernet dongle plugged in first can brown out the drive (`state=not attached` / enclosure LED off). Connect `1–4 TB` NVMe backup enclosures through a **mains-powered USB 3.2 Gen 2 hub/dock** (or plug the NVMe enclosure into a dedicated `15 W` USB-C port *before* plugging in low-power USB Ethernet adapters).
 
 ---
 

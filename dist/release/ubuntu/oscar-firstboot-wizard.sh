@@ -24,14 +24,40 @@ compose_project=${OSCAR_COMPOSE_PROJECT_NAME:-oscar}
 state_volume=${OSCAR_STATE_VOLUME:-oscar_oscar_state}
 wizard_mount_root="/run/oscar-wizard-mounts.$$"
 declare -a temp_mounts=()
+saved_printk_level=''
 
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 info() { printf '\n==> %s\n' "$*"; }
 warn() { printf 'WARNING: %s\n' "$*" >&2; }
 
+prune_disconnected_wizard_mounts() {
+    [[ -d $wizard_mount_root ]] || return 0
+    local m src_dev
+    for m in "$wizard_mount_root"/*; do
+        [[ -d $m ]] || continue
+        if mountpoint -q "$m" 2>/dev/null; then
+            src_dev=$(findmnt -rn -o SOURCE --target "$m" 2>/dev/null || true)
+            if [[ $src_dev == /dev/* && ! -b $src_dev ]]; then
+                umount -l "$m" 2>/dev/null || true
+                rmdir "$m" 2>/dev/null || true
+            fi
+        fi
+    done
+}
+
 cleanup_wizard() {
     local m
     set +e
+    if [[ -n $saved_printk_level && -w /proc/sys/kernel/printk ]]; then
+        printf '%s\n' "$saved_printk_level" >/proc/sys/kernel/printk 2>/dev/null || true
+    fi
+    if [[ -d $wizard_mount_root ]]; then
+        for m in "$wizard_mount_root"/*; do
+            if [[ -d $m ]] && mountpoint -q "$m" 2>/dev/null; then
+                umount "$m" 2>/dev/null || umount -l "$m" 2>/dev/null || true
+            fi
+        done
+    fi
     for (( idx=${#temp_mounts[@]}-1 ; idx>=0 ; idx-- )); do
         m=${temp_mounts[idx]}
         if [[ -n $m ]] && mountpoint -q "$m" 2>/dev/null; then
@@ -49,7 +75,7 @@ Usage:
   sudo bash oscar.sh wizard --scan-only             (Scan & print detected USB backups, keys, and seed files)
   sudo bash oscar.sh wizard --non-interactive \
       --mode usb-restore|single-restore|import-config|clean-init \
-      [--skip-prepare-host] \
+      [--skip-prepare-host] [--bench-isolation] \
       [--from PATH] [--backup-id ID] [--backup-key FILE] \
       [--hostname oscar-host] [--port 443] \
       [--import-json FILE] [--import-csv FILE] [--import-pmtiles FILE] \
@@ -111,12 +137,13 @@ ensure_host_prepared() {
 discover_search_roots() {
     mkdir -p "$wizard_mount_root"
     chmod 0700 "$wizard_mount_root"
+    prune_disconnected_wizard_mounts
 
     local -a roots=()
     [[ -d /srv/oscar/seed ]] && roots+=("/srv/oscar/seed")
     [[ -d /srv/oscar-usb-backup ]] && roots+=("/srv/oscar-usb-backup")
 
-    local line NAME PATH_VAL TYPE TRAN RM FSTYPE LABEL MOUNTPOINT
+    local line NAME PATH_VAL TYPE TRAN RM SIZE FSTYPE LABEL MOUNTPOINT
     while IFS= read -r line; do
         [[ -n $line ]] || continue
         NAME=$(sed -n 's/.*\<NAME="\([^"]*\)".*/\1/p' <<<"$line")
@@ -124,13 +151,18 @@ discover_search_roots() {
         TYPE=$(sed -n 's/.*\<TYPE="\([^"]*\)".*/\1/p' <<<"$line")
         TRAN=$(sed -n 's/.*\<TRAN="\([^"]*\)".*/\1/p' <<<"$line")
         RM=$(sed -n 's/.*\<RM="\([^"]*\)".*/\1/p' <<<"$line")
+        SIZE=$(sed -n 's/.*\<SIZE="\([^"]*\)".*/\1/p' <<<"$line")
         FSTYPE=$(sed -n 's/.*\<FSTYPE="\([^"]*\)".*/\1/p' <<<"$line")
         LABEL=$(sed -n 's/.*\<LABEL="\([^"]*\)".*/\1/p' <<<"$line")
         MOUNTPOINT=$(sed -n 's/.*\<MOUNTPOINT="\([^"]*\)".*/\1/p' <<<"$line")
 
         [[ $TYPE == part || $TYPE == disk ]] || continue
         [[ -n $FSTYPE && $FSTYPE != LVM2_member && $FSTYPE != swap && $FSTYPE != iso9660 && $FSTYPE != squashfs ]] || continue
-        [[ $LABEL != CIDATA && $LABEL != UBUNTU_LIVE ]] || continue
+        [[ $LABEL != CIDATA && $LABEL != UBUNTU_LIVE && $LABEL != ESP && $LABEL != EFI ]] || continue
+        # Skip tiny (< 32 MiB) FAT EFI system partitions on installer sticks
+        if [[ $FSTYPE == vfat && ${SIZE:-0} =~ ^[0-9]+$ ]] && (( SIZE > 0 && SIZE < 33554432 )); then
+            continue
+        fi
 
         # Check parent transport if partition
         local parent_tran=$TRAN
@@ -151,9 +183,11 @@ discover_search_roots() {
                 temp_mounts+=("$mp")
                 roots+=("$mp")
                 [[ -d "$mp/seed" ]] && roots+=("$mp/seed")
+            else
+                rmdir "$mp" 2>/dev/null || true
             fi
         fi
-    done < <(lsblk -P -o NAME,PATH,TYPE,TRAN,RM,FSTYPE,LABEL,MOUNTPOINT -e 7 2>/dev/null || true)
+    done < <(lsblk -P -b -o NAME,PATH,TYPE,TRAN,RM,SIZE,FSTYPE,LABEL,MOUNTPOINT -e 7 2>/dev/null || true)
 
     local u_home=${SUDO_USER:+$(getent passwd "$SUDO_USER" | cut -d: -f6)}
     [[ -n $u_home && -d $u_home ]] && roots+=("$u_home")
@@ -489,12 +523,46 @@ import_pmtiles=''
 keep_imported_users=false
 site_net_env=''
 apply_site_net=false
+bench_isolation=false
+
+apply_bench_isolation_guard() {
+    info "Enabling Safe Bench / DR Clone Isolation (DOCKER-USER tcp-reset outbound sensor guard)..."
+    if command -v iptables >/dev/null 2>&1; then
+        iptables -F DOCKER-USER 2>/dev/null || true
+        iptables -I DOCKER-USER 1 -s 172.16.0.0/12 ! -d 172.16.0.0/12 -p tcp -m conntrack --ctstate NEW -j REJECT --reject-with tcp-reset 2>/dev/null || true
+        iptables -I DOCKER-USER 2 -s 172.16.0.0/12 ! -d 172.16.0.0/12 -m conntrack --ctstate NEW -j REJECT 2>/dev/null || true
+    fi
+}
+
+disable_restored_tunnel_for_bench() {
+    if [[ -f "$release_dir/.env" ]]; then
+        sed -i -e 's/^OCTELIUM_ENABLED=.*/OCTELIUM_ENABLED=false/' "$release_dir/.env" 2>/dev/null || true
+    fi
+}
+
+prompt_bench_isolation_if_interactive() {
+    $bench_isolation && return 0
+    $non_interactive && return 0
+    if $has_tui; then
+        if whiptail --title "Live Network Sensor & Tunnel Safety Check" \
+            --yesno "Is the original OSCAR server still running LIVE on this same network?\n\n- Choose <Yes> (Safe Bench / DR Drill Mode) to isolate outbound container traffic so this test restore CANNOT steal single-client RPM sockets or tunnel sessions from the active portal.\n\n- Choose <No> if this server is replacing the old hardware in production." \
+            15 80; then
+            bench_isolation=true
+        fi
+    else
+        printf '\nIs the original OSCAR server still running LIVE on this network? [y/N] (y = Safe Bench Isolation): '
+        local iso_ans
+        IFS= read -r iso_ans
+        [[ ${iso_ans^^} == Y* ]] && bench_isolation=true
+    fi
+}
 
 while (($# > 0)); do
     case "$1" in
         --scan-only) scan_only=true; shift ;;
         --non-interactive) non_interactive=true; shift ;;
         --skip-prepare-host) skip_prepare_host=true; shift ;;
+        --bench-isolation) bench_isolation=true; shift ;;
         --mode) mode_val=${2:?missing --mode}; shift 2 ;;
         --from) from_path=${2:?missing --from}; shift 2 ;;
         --backup-id) backup_id=${2:?missing --backup-id}; shift 2 ;;
@@ -513,6 +581,11 @@ while (($# > 0)); do
 done
 
 [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run with sudo: sudo bash oscar.sh wizard"
+
+if $has_tui && ! $scan_only && ! $non_interactive && [[ -r /proc/sys/kernel/printk && -w /proc/sys/kernel/printk ]]; then
+    saved_printk_level=$(awk '{print $1}' /proc/sys/kernel/printk 2>/dev/null || true)
+    dmesg --console-off 2>/dev/null || printf '1\n' >/proc/sys/kernel/printk 2>/dev/null || true
+fi
 
 if $scan_only; then
     ensure_usb_nvme_quirks_live
@@ -601,12 +674,21 @@ case "$mode_val" in
                         items+=("$b_root" "$b_dev — snap $b_snap ($b_time)")
                     done
                     items+=("RESCAN" "Plug in OSCAR_BACKUP USB drive and rescan")
+                    menu_prompt="Detected read-only OSCAR USB NVMe backup drives:"
+                    menu_h=18
+                    if ((${#usb_bks[@]} == 0)); then
+                        menu_prompt="No OSCAR_BACKUP drive detected yet.\n\nPower tip: 1-4 TB M.2 NVMe USB enclosures draw 6-8W at spin-up. Use a mains-powered USB 3.2 hub/dock or a dedicated 15W USB-C port (avoid 4.5W laptop USB-A ports or shared dual USB-C ports next to another USB-C dongle), confirm the enclosure LED is lit, then select RESCAN:"
+                        menu_h=22
+                    fi
                     sel_b=$(whiptail --title "Select USB Backup Drive" \
-                        --menu "Detected read-only OSCAR USB NVMe backup drives:" 18 82 8 "${items[@]}" 3>&1 1>&2 2>&3) || exit 1
+                        --menu "$menu_prompt" "$menu_h" 82 6 "${items[@]}" 3>&1 1>&2 2>&3) || exit 1
                     [[ $sel_b == RESCAN ]] && continue
                     from_path=$sel_b
                 else
                     printf '\nDetected USB Backup Drives:\n'
+                    if ((${#usb_bks[@]} == 0)); then
+                        printf '  (None detected yet — Note: 1-4 TB M.2 NVMe USB enclosures draw 6-8W inrush; use a mains-powered USB 3.2 hub/dock or dedicated 15W USB-C port and confirm the enclosure LED is lit.)\n'
+                    fi
                     idx=1
                     for row in "${usb_bks[@]}"; do
                         printf '  [%d] %s\n' "$idx" "$row"
@@ -628,12 +710,21 @@ case "$mode_val" in
             staged_key=$(select_backup_key_interactive)
         fi
 
+        prompt_bench_isolation_if_interactive
+        $bench_isolation && apply_bench_isolation_guard
+
         info "Restoring OSCAR from read-only USB backup at $from_path..."
         bash "$release_dir/oscar.sh" usb-backup restore --from "$from_path" --backup-key "$staged_key" --confirm RESTORE
+        if $bench_isolation; then
+            disable_restored_tunnel_for_bench
+        fi
         bash "$release_dir/oscar.sh" refresh-tls
         bash "$release_dir/oscar.sh" verify
         mark_wizard_completed
         info "USB Backup Restore & Verification COMPLETE."
+        if $bench_isolation; then
+            info "NOTE: Safe Bench / DR Clone Isolation is active (outbound container sensor/tunnel traffic blocked via DOCKER-USER). Run 'sudo iptables -F DOCKER-USER' when cutting over to live site hardware."
+        fi
         ;;
 
     single-restore)
@@ -677,6 +768,9 @@ case "$mode_val" in
             staged_key=$(select_backup_key_interactive)
         fi
 
+        prompt_bench_isolation_if_interactive
+        $bench_isolation && apply_bench_isolation_guard
+
         # Seed minimal .env & backup-key if restoring onto an uninitialized host
         if [[ ! -f "$release_dir/.env" ]]; then
             cp -f -- "$release_dir/.env.example" "$release_dir/.env"
@@ -692,10 +786,16 @@ case "$mode_val" in
 
         OSCAR_BACKUP_MODE=single OSCAR_BACKUP_DIR="$from_path" \
             bash "$release_dir/oscar.sh" restore --backup "$backup_id" --confirm "$backup_id"
+        if $bench_isolation; then
+            disable_restored_tunnel_for_bench
+        fi
         bash "$release_dir/oscar.sh" refresh-tls
         bash "$release_dir/oscar.sh" verify
         mark_wizard_completed
         info "Single-Snapshot Restore & Verification COMPLETE."
+        if $bench_isolation; then
+            info "NOTE: Safe Bench / DR Clone Isolation is active (outbound container sensor/tunnel traffic blocked via DOCKER-USER). Run 'sudo iptables -F DOCKER-USER' when cutting over to live site hardware."
+        fi
         ;;
 
     import-config)
