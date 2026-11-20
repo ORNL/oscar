@@ -30,7 +30,7 @@ Usage:
   sudo bash oscar.sh create-autoinstall-usb --list-drives           (List candidate removable USB drives)
   sudo bash oscar.sh create-autoinstall-usb \
       --iso /path/to/ubuntu-24.04.5-live-server-amd64.iso \
-      [--offline-bundle /path/to/oscar-3.11.0-ubuntu-x86_64-offline-full.zip] \
+      [--offline-bundle /path/to/oscar-3.11.1-ubuntu-x86_64-offline-full.zip] \
       (--device /dev/sdX | --output-image /path/to/autoinstall.img) \
       [--hostname oscar-host] \
       [--username oscaradmin] \

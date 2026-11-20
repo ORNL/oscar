@@ -14,7 +14,7 @@ installers/
       chrony*.deb, ethtool*.deb, nmap*.deb, arp-scan*.deb, jq*.deb, ...
 ```
 
-OSCAR 3.11.0 storage deployment is not supported on macOS; no macOS prerequisite
+OSCAR 3.11.1 storage deployment is not supported on macOS; no macOS prerequisite
 payload is part of a supported release bundle.
 
 Run `tools/offline/build-offline-bundle.ps1 -BundleProfile Both -CreateArchive` to create both Windows production artifacts (`offline-full` and `offline-images`, pinned in `tools/offline/components.windows-x86_64.json`), and run `tools/offline/build-ubuntu-offline-bundle.sh --create-archive` on Linux with Docker available to create the air-gapped Ubuntu 24.04 LTS full bundle (`oscar-<version>-ubuntu-x86_64-offline-full.zip`, recording exact `.deb` versions and SHA-256 digests in `installers/components.ubuntu-24.04-x86_64.json`). The offline OSCAR CLI never downloads software or container images.
