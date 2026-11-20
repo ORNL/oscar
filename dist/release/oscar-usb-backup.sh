@@ -675,24 +675,35 @@ cmd_sync() {
         extra_vols+=(--volume "$ra_dir:/remote-access-src:ro")
     fi
 
+    local sync_scratch
+    sync_scratch=$(mktemp -d "${TMPDIR:-/var/tmp}/oscar-usb-sync-scratch.XXXXXX")
+    chmod 0700 "$sync_scratch"
+
     docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --security-opt no-new-privileges \
         --cpus=1 --cpu-shares=128 \
-        --tmpfs /tmp:rw,noexec,nosuid,nodev,size=512m \
+        --tmpfs /tmp:rw,noexec,nosuid,nodev,size=1024m \
+        --env OSCAR_USB_ENGINE_SCRATCH=/scratch \
         --user 0:0 --entrypoint bash \
         --volume "$engine_script:/engine.sh:ro" \
+        --volume "$sync_scratch:/scratch" \
         --volume "${state_volume}:/state:ro" \
         --volume "$archive_real:/archive:ro" \
         --volume "$script_dir:/deployment:ro" \
         --volume "$key_path:/backup-key.txt:ro" \
         --volume "$mount_path:/backup" \
         "${extra_vols[@]}" \
-        "$img" /engine.sh pack-sync "$snap_id" "$dep_id" "$ver" "$mode" "$lsn" "$epoch_id" "$ts_iso"
+        "$img" /engine.sh pack-sync "$snap_id" "$dep_id" "$ver" "$mode" "$lsn" "$epoch_id" "$ts_iso" || {
+        local sync_rc=$?
+        rm -rf -- "$sync_scratch"
+        exit "$sync_rc"
+    }
+    rm -rf -- "$sync_scratch"
 
     mv -- "$work" "$mount_path/OSCAR-Backup/snapshots/$snap_id"
 
     docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --security-opt no-new-privileges \
         --cpus=1 --cpu-shares=128 \
-        --tmpfs /tmp:rw,noexec,nosuid,nodev,size=128m \
+        --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m \
         --user 0:0 --entrypoint bash \
         --volume "$engine_script:/engine.sh:ro" \
         --volume "$key_path:/backup-key.txt:ro" \
@@ -702,7 +713,7 @@ cmd_sync() {
     # Verify committed snapshot HMAC + manifest digests
     docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --security-opt no-new-privileges \
         --cpus=1 --cpu-shares=128 \
-        --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m \
+        --tmpfs /tmp:rw,noexec,nosuid,nodev,size=512m \
         --user 0:0 --entrypoint bash \
         --volume "$engine_script:/engine.sh:ro" \
         --volume "$key_path:/backup-key.txt:ro" \
@@ -880,7 +891,7 @@ cmd_verify() {
     pg_img="oscar-postgis:$ver"
 
     snap_id=$(docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --security-opt no-new-privileges \
-        --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m \
+        --tmpfs /tmp:rw,noexec,nosuid,nodev,size=512m \
         --user 0:0 --entrypoint bash \
         --volume "$engine_script:/engine.sh:ro" \
         --volume "$(realpath -- "$key_path"):/backup-key.txt:ro" \
@@ -1043,14 +1054,24 @@ EOF
     chmod 0600 "$target_archive/.oscar-storage-root"
 
     heading 'Step 3/5 — Extracting cold Parquet archive packs & OSCAR application state'
+    local restore_scratch
+    restore_scratch=$(mktemp -d "${TMPDIR:-/var/tmp}/oscar-usb-restore-scratch.XXXXXX")
+    chmod 0700 "$restore_scratch"
     docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --security-opt no-new-privileges \
-        --tmpfs /tmp:rw,noexec,nosuid,nodev,size=512m \
+        --tmpfs /tmp:rw,noexec,nosuid,nodev,size=1024m \
+        --env OSCAR_USB_ENGINE_SCRATCH=/scratch \
         --user 0:0 --entrypoint bash \
         --volume "$engine_script:/engine.sh:ro" \
+        --volume "$restore_scratch:/scratch" \
         --volume "$from_path:/backup:ro" \
         --volume "${state_volume}:/state" \
         --volume "$target_archive:/archive" \
-        "oscar:$ver" /engine.sh extract-restore "$snap_id"
+        "oscar:$ver" /engine.sh extract-restore "$snap_id" || {
+        local restore_rc=$?
+        rm -rf -- "$restore_scratch"
+        exit "$restore_rc"
+    }
+    rm -rf -- "$restore_scratch"
 
     heading 'Step 4/5 — Restoring PostgreSQL cluster & promoting onto clean timeline'
     docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --security-opt no-new-privileges \

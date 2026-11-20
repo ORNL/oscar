@@ -554,19 +554,20 @@ function Invoke-Sync([string[]]$Tokens) {
 
             $stateScript = @'
 set -Eeuo pipefail
-mkdir -p /stage/out /tmp/work
-: >/tmp/work/live.tsv
+mkdir -p /stage/out /stage/work
+export TMPDIR=/stage/work
+: >/stage/work/live.tsv
 for rel_root in "files/dailyfiles" "files/.dailyfile-journal/segments" "files/videos/retained-media/v1/events" "files/ocr/crops" "files/adjudication" "files/reports" "extensions/maps-storage"; do
     if [[ -d "/state/$rel_root" ]]; then
-        (cd /state && find "$rel_root" -ignore_readdir_race -type f -printf '%p\t%s\t%Ts\n' 2>/dev/null) >>/tmp/work/live.tsv || true
+        (cd /state && find "$rel_root" -ignore_readdir_race -type f -printf '%p\t%s\t%Ts\n' 2>/dev/null) >>/stage/work/live.tsv || true
     fi
 done
-LC_ALL=C sort -t $'\t' -k1,1 /tmp/work/live.tsv -o /tmp/work/live.tsv
-cut -f1 /tmp/work/live.tsv | gzip -1 >/stage/out/live-immutable-paths.txt.gz
-wc -l </tmp/work/live.tsv | tr -d '[:space:]' >/stage/out/imm-count.txt
+LC_ALL=C sort -t $'\t' -k1,1 /stage/work/live.tsv -o /stage/work/live.tsv
+cut -f1 /stage/work/live.tsv | gzip -1 >/stage/out/live-immutable-paths.txt.gz
+wc -l </stage/work/live.tsv | tr -d '[:space:]' >/stage/out/imm-count.txt
 
-LC_ALL=C sort -t $'\t' -k1,1 /stage/catalog.tsv -o /tmp/work/catalog.sorted
-awk -F'\t' -v OFS='\t' -v delta_out="/tmp/work/delta.paths" -v kept_out="/stage/out/kept.tsv" '
+LC_ALL=C sort -t $'\t' -k1,1 /stage/catalog.tsv -o /stage/work/catalog.sorted
+awk -F'\t' -v OFS='\t' -v delta_out="/stage/work/delta.paths" -v kept_out="/stage/out/kept.tsv" '
     FILENAME == ARGV[1] { cat_size[$1]=$2; cat_mtime[$1]=$3; cat_pack[$1]=$4; next }
     {
         p=$1; sz=$2; mt=$3
@@ -577,15 +578,17 @@ awk -F'\t' -v OFS='\t' -v delta_out="/tmp/work/delta.paths" -v kept_out="/stage/
             print p, sz, mt, "__NEW_PACK__" > kept_out
         }
     }
-' /tmp/work/catalog.sorted /tmp/work/live.tsv
-[[ -f /tmp/work/delta.paths ]] || : >/tmp/work/delta.paths
+' /stage/work/catalog.sorted /stage/work/live.tsv
+rm -f -- /stage/work/live.tsv /stage/work/catalog.sorted
+[[ -f /stage/work/delta.paths ]] || : >/stage/work/delta.paths
 [[ -f /stage/out/kept.tsv ]] || : >/stage/out/kept.tsv
-if [[ -s /tmp/work/delta.paths ]]; then
-    (cd /state && tar --ignore-failed-read --warning=no-file-changed --warning=no-file-removed -cf /stage/out/new-state-pack.tar --files-from /tmp/work/delta.paths) || {
+if [[ -s /stage/work/delta.paths ]]; then
+    (cd /state && tar --ignore-failed-read --warning=no-file-changed --warning=no-file-removed -cf /stage/out/new-state-pack.tar --files-from /stage/work/delta.paths) || {
         rc=$?; ((rc <= 1)) || exit "$rc"
     }
     printf '1\n' >/stage/out/has-new-pack.txt
 fi
+rm -f -- /stage/work/delta.paths
 (
     cd /state
     tar --ignore-failed-read --warning=no-file-changed --warning=no-file-removed \
@@ -638,7 +641,7 @@ tar --format=ustar -C /stage/out -cf /stage/out/meta.tar "${meta_items[@]}"
                 '--label', 'com.docker.compose.service=usb-backup-engine',
                 '--network', 'none', '--read-only', '--security-opt', 'no-new-privileges',
                 '--cpus=1', '--cpu-shares=128',
-                '--tmpfs', '/tmp:rw,noexec,nosuid,nodev,size=256m',
+                '--tmpfs', '/tmp:rw,noexec,nosuid,nodev,size=1024m',
                 '--user', '0:0', '--entrypoint', 'bash',
                 '--volume', 'oscar_oscar_state:/state:ro',
                 '--volume', "${stateStageVol}:/stage",
@@ -1097,8 +1100,14 @@ function Invoke-Restore([string[]]$Tokens) {
             }
         }
         $liveImmGz = Join-Path $snapDir 'live-immutable-paths.txt.gz'
-        & cmd.exe /c "type `"$liveImmGz`" | docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine -i --network none --tmpfs /tmp:rw,noexec,nosuid,nodev,size=128m --user 0:0 -v oscar_oscar_state:/state --entrypoint bash oscar:$ver -eu -c `"gzip -dc | LC_ALL=C sort -u >/tmp/exp && : >/tmp/ext && for r in 'files/dailyfiles' 'files/.dailyfile-journal/segments' 'files/videos/retained-media/v1/events' 'files/ocr/crops' 'files/adjudication' 'files/reports' 'extensions/maps-storage'; do if [ -d /state/`$r ]; then (cd /state && find `$r -type f -printf '%p\n' 2>/dev/null) >>/tmp/ext || true; fi; done && LC_ALL=C sort -u /tmp/ext -o /tmp/ext && LC_ALL=C comm -23 /tmp/ext /tmp/exp >/tmp/prune && if [ -s /tmp/prune ]; then (cd /state && xargs -d '\n' rm -f -- </tmp/prune); fi && for l in lib web rules models documentation trusted_certificates config logback.xml; do rm -rf /state/`$l && ln -s /opt/oscar/`$l /state/`$l; done && chown -R 10001:10001 /state && if [ -f /state/config.json ]; then chmod 0600 /state/config.json; fi`""
-        if ($LASTEXITCODE -ne 0) { Fail 'Failed finalizing restored OSCAR state volume.' }
+        $restoreScratchVol = "oscar_usb_rscratch_$([Guid]::NewGuid().ToString('N').Substring(0,8))"
+        & docker volume create $restoreScratchVol | Out-Null
+        try {
+            & cmd.exe /c "type `"$liveImmGz`" | docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine -i --network none --tmpfs /tmp:rw,noexec,nosuid,nodev,size=1024m --user 0:0 -v oscar_oscar_state:/state -v ${restoreScratchVol}:/scratch --entrypoint bash oscar:$ver -eu -c `"export TMPDIR=/scratch && gzip -dc | LC_ALL=C sort -u >/scratch/exp && : >/scratch/ext && for r in 'files/dailyfiles' 'files/.dailyfile-journal/segments' 'files/videos/retained-media/v1/events' 'files/ocr/crops' 'files/adjudication' 'files/reports' 'extensions/maps-storage'; do if [ -d /state/`$r ]; then (cd /state && find `$r -type f -printf '%p\n' 2>/dev/null) >>/scratch/ext || true; fi; done && LC_ALL=C sort -u /scratch/ext -o /scratch/ext && LC_ALL=C comm -23 /scratch/ext /scratch/exp >/scratch/prune && if [ -s /scratch/prune ]; then (cd /state && xargs -d '\n' rm -f -- </scratch/prune); fi && for l in lib web rules models documentation trusted_certificates config logback.xml; do rm -rf /state/`$l && ln -s /opt/oscar/`$l /state/`$l; done && chown -R 10001:10001 /state && if [ -f /state/config.json ]; then chmod 0600 /state/config.json; fi`""
+            if ($LASTEXITCODE -ne 0) { Fail 'Failed finalizing restored OSCAR state volume.' }
+        } finally {
+            & docker volume rm -f $restoreScratchVol 2>$null | Out-Null
+        }
 
         Write-Heading 'Step 4/5 - Restoring PostgreSQL cluster & promoting onto clean timeline'
         $pgTar = Join-Path $snapDir 'postgres.tar'

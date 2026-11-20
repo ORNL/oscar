@@ -1,19 +1,23 @@
 #cloud-config
-# OSCAR Declarative Bare-Metal Ubuntu Server 24.04 LTS Autoinstall Profile
+# OSCAR Declarative Bare-Metal Ubuntu Server 24.04 LTS Offline Autoinstall Profile
 #
-# HOW TO USE (Zero-Touch Bare-Metal USB Install):
-#   1. Format a small second USB stick (or second FAT32 partition) with volume label: CIDATA
+# HOW TO USE (Zero-Touch / Air-Gapped Bare-Metal USB Install):
+#   1. Format a small second USB stick (or appended FAT32 partition) with volume label: CIDATA
 #   2. Copy THIS file onto that partition renamed to: user-data   (no .yaml extension!)
 #   3. Copy ubuntu/autoinstall/meta-data alongside it named: meta-data
-#   4. Boot the server from a stock Ubuntu Server 24.04 LTS USB stick with the CIDATA stick plugged in.
+#   4. Boot the server from a stock Ubuntu Server 24.04 LTS USB stick/SSD with CIDATA attached.
 #
 # WHAT THIS SOLVES AUTOMATICALLY:
-#   - Allocates 100% of the NVMe/SSD ('sizing-policy: all') instead of Ubuntu's 100 GiB LVM cap.
+#   - Works 100% offline with zero internet or DHCP required ('apt.fallback: offline-install',
+#     'geoip: false', 'source.search_drivers: false', and zero non-ISO-pool APT dependencies;
+#     'oscar.sh prepare-host --offline' installs Docker CE, chrony, ethtool, jq, ntfs-3g, etc.).
+#   - Dynamically pins LVM ('sizing-policy: all' — 100% of disk) strictly to the target server's
+#     internal non-USB NVMe/SSD so USB installer or backup drives can never be selected or wiped.
 #   - Never installs Snap-confined Docker.
-#   - Enables OpenSSH server and configures non-blocking 'optional: true' networking so offline sites
-#     with no internet and no DHCP boot in seconds instead of hanging 2 minutes.
+#   - Enables OpenSSH server from the Ubuntu ISO pool and configures non-blocking 'optional: true'
+#     networking so air-gapped sites boot in seconds instead of hanging 2 minutes.
 #
-# BEFORE USING: Replace 'password' below with a fresh SHA-512 hash generated via:
+# BEFORE PRODUCTION USE: Replace 'password' below with a fresh SHA-512 hash generated via:
 #   openssl passwd -6 'ChangeMeBeforeInstall!'
 
 autoinstall:
@@ -23,16 +27,93 @@ autoinstall:
   keyboard:
     layout: us
 
+  source:
+    id: ubuntu-server
+    search_drivers: false
+
+  apt:
+    geoip: false
+    fallback: offline-install
+    preserve_sources_list: false
+
+  drivers:
+    install: false
+
+  codecs:
+    install: false
+
   identity:
     hostname: oscar-host
     username: oscaradmin
     # Default hash corresponds to 'OscarChangeMe!24' — replace with `openssl passwd -6` before production use!
-    password: "$6$rounds=4096$oscarfieldinit$N7n8X7pB5p8wV0xR9u6eW5zY3kL2mQ1tH4jF6dG8sA0cV9bN2mK4lP7oI5uY3tR1eW9qA2sD4fG6hJ8kL0zX1."
+    password: "$6$oscar3110field$B6BEPK3spFszW4DqG2E2K5g4MRdho0pjvuQJ8BtTfd9UJMZgCDHRhXeLvm2DQPTc8l47rUnfFDzkt8jRPUcVG0"
 
   ssh:
     install-server: true
     allow-pw: true
     authorized-keys: []
+
+  # Dynamically pin storage.layout to the largest internal non-USB NVMe/SSD (>= 32 GiB)
+  # so USB installer sticks/SSDs and OSCAR_BACKUP drives can never be touched.
+  early-commands:
+    - |
+      python3 - <<'EOS'
+      import json, os, subprocess, sys, yaml
+
+      out = subprocess.check_output(
+          ["lsblk", "-J", "-b", "-p", "-o", "NAME,PKNAME,TRAN,RM,TYPE,SIZE,LABEL,MOUNTPOINT,MOUNTPOINTS"],
+          text=True,
+      )
+      data = json.loads(out)
+      excluded_disks = set()
+
+      def walk(nodes, top_disk=None):
+          for n in nodes or []:
+              cur_top = n["name"] if n.get("type") == "disk" else top_disk
+              lbl = (n.get("label") or "").upper()
+              mps = [m for m in (n.get("mountpoints") or [n.get("mountpoint")]) if m]
+              if lbl in {"CIDATA", "OSCAR_MEDIA", "OSCAR_BACKUP"} or any(
+                  m.startswith("/cdrom") or m.startswith("/media") for m in mps
+              ):
+                  if cur_top:
+                      excluded_disks.add(cur_top)
+              walk(n.get("children"), cur_top)
+
+      walk(data.get("blockdevices"))
+
+      candidates = []
+      for n in data.get("blockdevices") or []:
+          if n.get("type") != "disk":
+              continue
+          name = n["name"]
+          tran = (n.get("tran") or "").lower()
+          size = int(n.get("size") or 0)
+          if name in excluded_disks or tran == "usb" or size < 32 * 1024**3:
+              continue
+          is_nvme = 1 if (tran == "nvme" or "nvme" in name) else 0
+          candidates.append((is_nvme, size, name))
+
+      if not candidates:
+          sys.stderr.write(
+              f"FATAL: No internal non-USB target disk >=32GiB found (excluded={sorted(excluded_disks)})! Refusing to touch USB media.\n"
+          )
+          sys.exit(1)
+
+      candidates.sort(reverse=True)
+      target_disk = candidates[0][2]
+      cfg_path = os.environ.get("OSCAR_AUTOINSTALL_CFG", "/autoinstall.yaml")
+      with open(cfg_path, "r", encoding="utf-8") as fh:
+          cfg = yaml.safe_load(fh)
+      root = cfg["autoinstall"] if isinstance(cfg, dict) and "autoinstall" in cfg else cfg
+      root.setdefault("storage", {})["layout"] = {
+          "name": "lvm",
+          "sizing-policy": "all",
+          "match": {"path": target_disk},
+      }
+      with open(cfg_path, "w", encoding="utf-8") as fh:
+          yaml.safe_dump(cfg, fh, sort_keys=False)
+      print(f"Pinned Subiquity target disk to internal drive: {target_disk} (excluded={sorted(excluded_disks)})")
+      EOS
 
   # Use 100% of the primary disk (eliminates Ubuntu's 100 GiB ubuntu-lv root partition trap)
   storage:
@@ -57,18 +138,12 @@ autoinstall:
         dhcp6: false
         optional: true
 
-  # Intentionally empty snaps list: NEVER install snap docker!
+  # Intentionally empty snaps & packages lists so 100% offline ISO installs never fail seeking
+  # online APT mirrors (curl, ca-certificates, ufw, ntfs-3g, lvm2, python3 are in default
+  # ubuntu-server; openssh-server is installed from /cdrom/pool via ssh.install-server; and
+  # `sudo bash oscar.sh prepare-host --offline` installs Docker CE, chrony, ethtool, jq, etc.).
   snaps: []
-
-  packages:
-    - ca-certificates
-    - chrony
-    - curl
-    - ethtool
-    - jq
-    - openssh-server
-    - ufw
-    - unzip
+  packages: []
 
   late-commands:
     # Passwordless sudo for administrative convenience if desired (remove if site policy requires password prompt)
@@ -77,3 +152,34 @@ autoinstall:
     - curtin in-target --target=/target -- sh -c 'printf "Unattended-Upgrade::Automatic-Reboot \"false\";\n" > /etc/apt/apt.conf.d/52oscar-unattended-upgrades'
     - curtin in-target --target=/target -- systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
     - curtin in-target --target=/target -- sh -c 'mkdir -p /etc/systemd/system/systemd-networkd-wait-online.service.d && printf "[Service]\nExecStart=\nExecStart=/lib/systemd/systemd-networkd-wait-online --any --timeout=10\n" > /etc/systemd/system/systemd-networkd-wait-online.service.d/oscar-timeout.conf'
+    # Optional: if an OSCAR_MEDIA partition/stick containing oscar-*-ubuntu-x86_64-offline-full.zip is attached, stage it into /srv/oscar
+    - |
+      bash -euc '
+      DEV=$(blkid -L OSCAR_MEDIA || true)
+      if [ -n "$DEV" ]; then
+        mkdir -p /mnt/oscar-media /target/srv/oscar
+        mount -o ro "$DEV" /mnt/oscar-media
+        for f in /mnt/oscar-media/oscar-*-ubuntu-x86_64-offline-full.zip /mnt/oscar-media/*.sha256 /mnt/oscar-media/*SHA256SUMS* /mnt/oscar-media/*.pdf /mnt/oscar-media/README*.txt; do
+          [ -f "$f" ] && cp -f "$f" /target/srv/oscar/ || true
+        done
+        for sf in /target/srv/oscar/oscar-*-ubuntu-x86_64-offline-full.zip.sha256; do
+          [ -f "$sf" ] && (cd /target/srv/oscar && sha256sum -c "$(basename "$sf")")
+        done
+        for zf_path in /target/srv/oscar/oscar-*-ubuntu-x86_64-offline-full.zip; do
+          [ -f "$zf_path" ] || continue
+          python3 - "$zf_path" <<PYZ
+      import os, stat, sys, zipfile
+      with zipfile.ZipFile(sys.argv[1], "r") as zf:
+          for info in zf.infolist():
+              out_path = zf.extract(info, "/target/srv/oscar")
+              unix_mode = info.external_attr >> 16
+              if unix_mode:
+                  os.chmod(out_path, stat.S_IMODE(unix_mode))
+              elif out_path.endswith(".sh"):
+                  os.chmod(out_path, 0o755)
+      PYZ
+        done
+        umount /mnt/oscar-media
+        curtin in-target --target=/target -- chown -R oscaradmin:oscaradmin /srv/oscar
+      fi
+      '

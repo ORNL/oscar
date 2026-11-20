@@ -5,7 +5,10 @@
 # packs, HMAC manifests, and restores are 100% portable across host platforms.
 set -Eeuo pipefail
 
-ENGINE_SCRATCH=$(mktemp -d /tmp/oscar-usb-engine.XXXXXX)
+ENGINE_SCRATCH_BASE=${OSCAR_USB_ENGINE_SCRATCH:-/tmp}
+mkdir -p "$ENGINE_SCRATCH_BASE"
+ENGINE_SCRATCH=$(mktemp -d "${ENGINE_SCRATCH_BASE%/}/oscar-usb-engine.XXXXXX")
+export TMPDIR="$ENGINE_SCRATCH"
 trap 'rm -rf -- "${ENGINE_SCRATCH:-}"' EXIT HUP INT TERM
 
 fail() {
@@ -226,20 +229,64 @@ coalesce_state_packs_if_needed() {
                 tar --concatenate --file="$merged_path" "$state_packs_dir/${small_packs[$idx]}"
             done
             printf '%s\n' "${small_packs[@]}" >"$scratch/merged_small_packs.list"
-            mv -f -- "$merged_path" "$state_packs_dir/$final_pack"
-            printf '%s  %s\n' "$(sha256_file "$state_packs_dir/$final_pack")" "$final_pack" >"$state_packs_dir/$final_pack.sha256"
-            for p in "${small_packs[@]}"; do
-                [[ $p == "$final_pack" ]] && continue
-                rm -f -- "$state_packs_dir/$p" "$state_packs_dir/$p.sha256"
-            done
             awk -F'\t' -v OFS='\t' -v target="$final_pack" '
                 FILENAME == ARGV[1] { merged[$0] = 1; next }
                 ($4 in merged) { $4 = target }
                 { print }
             ' "$scratch/merged_small_packs.list" "$catalog_file" >"$scratch/catalog.updated"
+            mv -f -- "$merged_path" "$state_packs_dir/$final_pack"
+            printf '%s  %s\n' "$(sha256_file "$state_packs_dir/$final_pack")" "$final_pack" >"$state_packs_dir/$final_pack.sha256"
             mv -f -- "$scratch/catalog.updated" "$catalog_file"
+            rm -f -- "$scratch/merged_small_packs.list"
+            sync
+            for p in "${small_packs[@]}"; do
+                [[ $p == "$final_pack" ]] && continue
+                rm -f -- "$state_packs_dir/$p" "$state_packs_dir/$p.sha256"
+            done
         fi
     done
+}
+
+# Reconcile any catalog rows whose small sub-day pack was previously coalesced into a
+# higher-numbered pack on the same UTC date before catalog.tsv finished updating.
+reconcile_coalesced_catalog_packs() {
+    local state_packs_dir=$1 catalog_file=$2 scratch=$3
+    [[ -s $catalog_file ]] || return 0
+    find "$state_packs_dir" -maxdepth 1 -type f -name 'pack-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9].tar' \
+        -printf '%f\n' 2>/dev/null | LC_ALL=C sort >"$scratch/existing_state_packs.list"
+    [[ -s "$scratch/existing_state_packs.list" ]] || { rm -f -- "$scratch/existing_state_packs.list"; return 0; }
+    cut -f4 "$catalog_file" | LC_ALL=C sort -u >"$scratch/catalog_packs.list"
+    LC_ALL=C comm -23 "$scratch/catalog_packs.list" "$scratch/existing_state_packs.list" >"$scratch/missing_catalog_packs.list"
+    if [[ -s "$scratch/missing_catalog_packs.list" ]]; then
+        awk -F'\t' -v OFS='\t' '
+            FILENAME == ARGV[1] {
+                existing[$0] = 1
+                day = substr($0, 6, 10)
+                seq = substr($0, 17, 6) + 0
+                idx = ++day_cnt[day]
+                day_seq[day, idx] = seq
+                day_pack[day, idx] = $0
+                next
+            }
+            {
+                p = $4
+                if (!(p in existing) && length(p) == 26 && substr(p, 1, 5) == "pack-" && substr(p, 23, 4) == ".tar") {
+                    day = substr(p, 6, 10)
+                    seq = substr(p, 17, 6) + 0
+                    cnt = day_cnt[day] + 0
+                    for (i = 1; i <= cnt; i++) {
+                        if (day_seq[day, i] > seq) {
+                            $4 = day_pack[day, i]
+                            break
+                        }
+                    }
+                }
+                print
+            }
+        ' "$scratch/existing_state_packs.list" "$catalog_file" >"$scratch/catalog.reconciled"
+        mv -f -- "$scratch/catalog.reconciled" "$catalog_file"
+    fi
+    rm -f -- "$scratch/existing_state_packs.list" "$scratch/catalog_packs.list" "$scratch/missing_catalog_packs.list"
 }
 
 cmd_pack_sync() {
@@ -336,9 +383,12 @@ cmd_pack_sync() {
         fi
     done
     LC_ALL=C sort -t $'\t' -k1,1 "$scratch/live.tsv" -o "$scratch/live.tsv"
+    local imm_file_count
+    imm_file_count=$(wc -l <"$scratch/live.tsv" | tr -d '[:space:]')
     cut -f1 "$scratch/live.tsv" | gzip -1 >"$work/live-immutable-paths.txt.gz"
 
     [[ -f $catalog_file ]] || : >"$catalog_file"
+    reconcile_coalesced_catalog_packs "$state_packs" "$catalog_file" "$scratch"
     LC_ALL=C sort -t $'\t' -k1,1 "$catalog_file" -o "$scratch/catalog.sorted"
 
     # Determine new or modified files (size or mtime_sec changed) while pruning deleted catalog rows
@@ -384,6 +434,7 @@ cmd_pack_sync() {
         cp -f -- "$scratch/kept.tsv" "$catalog_file.tmp"
     fi
     mv -f -- "$catalog_file.tmp" "$catalog_file"
+    rm -f -- "$scratch/live.tsv" "$scratch/catalog.sorted" "$scratch/kept.tsv" "$scratch/delta.paths"
 
     coalesce_state_packs_if_needed "$state_packs" "$catalog_file" "$today_utc" "$scratch"
 
@@ -460,10 +511,9 @@ cmd_pack_sync() {
     done
     tar -C /deployment -czf "$work/release-config.tar.gz" "${rel_files[@]}"
 
-    local archive_pack_count state_pack_count imm_file_count
+    local archive_pack_count state_pack_count
     archive_pack_count=$(grep -c '  packs/archive/' "$work/pack-index.txt" || true)
     state_pack_count=$(grep -c '  packs/state/' "$work/pack-index.txt" || true)
-    imm_file_count=$(wc -l <"$scratch/live.tsv" | tr -d '[:space:]')
 
     cat >"$work/epoch.json" <<EOF
 {
