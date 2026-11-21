@@ -27,11 +27,15 @@ $MinAvailRamMib = 3584
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 function Invoke-DockerSafe {
-    param([string[]]$DockerArgs)
+    param([string[]]$DockerArgs, [string]$StdinScript = '')
     $prev = $ErrorActionPreference
     try {
         $ErrorActionPreference = 'Continue'
-        $out = & docker @DockerArgs 2>$null
+        if ($StdinScript) {
+            $out = ($StdinScript -replace "`r`n", "`n") | & docker @DockerArgs 2>$null
+        } else {
+            $out = & docker @DockerArgs 2>$null
+        }
         return @{ ExitCode = $LASTEXITCODE; Output = ($out -join "`n") }
     } finally {
         $ErrorActionPreference = $prev
@@ -160,7 +164,8 @@ function Start-SandboxStack {
         $printedCreds = '(custom -AdminPassword supplied)'
     } else {
         # Extract existing BasicSecurityRealmConfig PBKDF2 hash from oscar_oscar_state via a tiny read-only oscar container probe
-        $hashRes = Invoke-DockerSafe @('run', '--rm', '-v', 'oscar_oscar_state:/prod:ro', '--entrypoint', '/bin/sh', "oscar:$ver", '-c', 'if [ -f /prod/config.json ]; then awk ''/"objClass": "org.sensorhub.impl.security.BasicSecurityRealmConfig"/ { f=1 } f && /"password": "/ { sub(/^.*"password": "/, ""); sub(/".*$/, ""); if ($0 != "" && $0 != "__INITIAL_ADMIN_PASSWORD__") { print; exit } }'' /prod/config.json; fi')
+        $awkStdin = 'if [ -f /prod/config.json ]; then awk ''/"objClass":[ \t]*"org\.sensorhub\.impl\.security\.BasicSecurityRealmConfig"/ { f=1 } f && /"password":[ \t]*"/ { sub(/^.*"password":[ \t]*"/, ""); sub(/".*$/, ""); if ($0 != "" && $0 != "__INITIAL_ADMIN_PASSWORD__") { print; exit } }'' /prod/config.json; fi'
+        $hashRes = Invoke-DockerSafe -DockerArgs @('run', '--rm', '-i', '-v', 'oscar_oscar_state:/prod:ro', '--user', 'root', '--entrypoint', '/bin/sh', "oscar:$ver") -StdinScript $awkStdin
         $extractedHash = $hashRes.Output
         if ($extractedHash -and $extractedHash.Trim().Length -gt 0) {
             [System.IO.File]::WriteAllText((Join-Path $secretsDir 'oscar-admin-password.txt'), "# PBKDF2_PREENCODED:$($extractedHash.Trim())`n", $Utf8NoBom)
@@ -188,8 +193,9 @@ function Start-SandboxStack {
 
     [void](Invoke-DockerSafe @('volume', 'create', 'oscar_sandbox_state'))
     [void](Invoke-DockerSafe @('volume', 'create', 'oscar_sandbox_pg'))
+    [void](Invoke-DockerSafe @('run', '--rm', '-v', 'oscar_sandbox_state:/sb', '--user', 'root', '--entrypoint', '/bin/sh', "oscar:$ver", '-c', 'chown 10001:10001 /sb && chmod 0700 /sb'))
     if (-not $AdminPassword) {
-        [void](Invoke-DockerSafe @('run', '--rm', '-v', 'oscar_oscar_state:/prod:ro', '-v', 'oscar_sandbox_state:/sb', '--user', 'root', '--entrypoint', '/bin/sh', "oscar:$ver", '-c', 'if [ -f /prod/.moduledata/oscar-identity.json ]; then install -d -m 0700 -o 10001 -g 10001 /sb/.moduledata && cp -f /prod/.moduledata/oscar-identity.json /sb/.moduledata/oscar-identity.json && chown 10001:10001 /sb/.moduledata/oscar-identity.json && chmod 0600 /sb/.moduledata/oscar-identity.json; fi'))
+        [void](Invoke-DockerSafe @('run', '--rm', '-v', 'oscar_oscar_state:/prod:ro', '-v', 'oscar_sandbox_state:/sb', '--user', 'root', '--entrypoint', '/bin/sh', "oscar:$ver", '-c', 'chown 10001:10001 /sb && chmod 0700 /sb && if [ -f /prod/.moduledata/oscar-identity.json ]; then install -d -m 0700 -o 10001 -g 10001 /sb/.moduledata && cp -f /prod/.moduledata/oscar-identity.json /sb/.moduledata/oscar-identity.json && chown 10001:10001 /sb/.moduledata/oscar-identity.json && chmod 0600 /sb/.moduledata/oscar-identity.json; fi'))
     }
 
     $utcNow = [DateTime]::UtcNow
@@ -246,16 +252,18 @@ switch ($Action.ToLowerInvariant()) {
         $running = Test-SandboxRunning
         $metaFile = Join-Path $RuntimeDir 'sandbox.meta'
         $p = $Port
+        $t = $TtlMinutes
         $exp = ''
         if (Test-Path -LiteralPath $metaFile) {
             $p = [int](Get-EnvFileValue -Key 'HTTPS_PORT' -DefaultValue '8444' -FilePath $metaFile)
+            $t = [int](Get-EnvFileValue -Key 'TTL_MINUTES' -DefaultValue '120' -FilePath $metaFile)
             $exp = Get-EnvFileValue -Key 'EXPIRES_AT' -DefaultValue '' -FilePath $metaFile
         }
         if ($Json) {
             $obj = @{
                 sandboxRunning = $running
                 httpsPort = $p
-                ttlMinutes = $TtlMinutes
+                ttlMinutes = $t
                 expiresAt = $exp
                 availableRamMib = (Get-AvailableRamMib)
             }
