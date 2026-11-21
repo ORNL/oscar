@@ -1070,8 +1070,51 @@ function Invoke-Restore([string[]]$Tokens) {
         } else {
             Get-ChildItem -LiteralPath $targetArchive -Force | Where-Object { $_.Name -cne '.oscar-storage-root' } | Remove-Item -Recurse -Force
         }
-        $archMarker = "format=oscar-storage-root`nversion=1`nroot_kind=archive`ndeployment_id=$restoredDepId`norigin=created`n"
-        [System.IO.File]::WriteAllText((Join-Path $targetArchive '.oscar-storage-root'), $archMarker, $Utf8NoBom)
+        $claimedNow = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+        $archMarkerPath = Join-Path $targetArchive '.oscar-storage-root'
+        $archMarker = @(
+            'format=oscar-storage-root-identity',
+            'version=1',
+            "deployment_id=$restoredDepId",
+            'root_kind=archive',
+            'adoption=new',
+            "claimed_at=$claimedNow",
+            'adopted_at=none',
+            'adopted_by=none'
+        ) -join "`n"
+        [System.IO.File]::WriteAllText($archMarkerPath, "$archMarker`n", $Utf8NoBom)
+        if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+            $winIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+            $adminsSid = [Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
+            $systemSid = [Security.Principal.SecurityIdentifier]::new('S-1-5-18')
+            $allowType = [Security.AccessControl.AccessControlType]::Allow
+            $fullRights = [Security.AccessControl.FileSystemRights]::FullControl
+            $inheritFlags = [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+            $propFlags = [Security.AccessControl.PropagationFlags]::None
+
+            $dirAcl = New-Object Security.AccessControl.DirectorySecurity
+            $dirAcl.SetOwner($adminsSid)
+            $dirAcl.SetAccessRuleProtection($true, $false)
+            foreach ($p in @($winIdentity.User, $systemSid, $adminsSid)) {
+                [void]$dirAcl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($p, $fullRights, $inheritFlags, $propFlags, $allowType))
+            }
+            foreach ($grpName in @("$env:COMPUTERNAME\docker-users", 'docker-users')) {
+                try {
+                    $dockerSid = ([Security.Principal.NTAccount]::new($grpName)).Translate([Security.Principal.SecurityIdentifier])
+                    [void]$dirAcl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($dockerSid, [Security.AccessControl.FileSystemRights]::Modify, $inheritFlags, $propFlags, $allowType))
+                    break
+                } catch {}
+            }
+            Set-Acl -LiteralPath $targetArchive -AclObject $dirAcl
+
+            $fileAcl = New-Object Security.AccessControl.FileSecurity
+            $fileAcl.SetOwner($adminsSid)
+            $fileAcl.SetAccessRuleProtection($true, $false)
+            foreach ($p in @($winIdentity.User, $systemSid, $adminsSid)) {
+                [void]$fileAcl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($p, $fullRights, $allowType))
+            }
+            Set-Acl -LiteralPath $archMarkerPath -AclObject $fileAcl
+        }
 
         Write-Heading 'Step 3/5 - Extracting cold Parquet archive packs & OSCAR application state'
         foreach ($line in [System.IO.File]::ReadAllLines((Join-Path $snapDir 'pack-index.txt'))) {

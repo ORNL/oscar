@@ -1048,15 +1048,24 @@ cmd_restore() {
         fi
     done
 
-    install -d -o 0 -g 10001 -m 1770 "$target_archive" 2>/dev/null || mkdir -p "$target_archive"
+    install -d -o "${EUID:-$(id -u)}" -g 10001 -m 1770 "$target_archive" 2>/dev/null || {
+        mkdir -p "$target_archive"
+        chown "${EUID:-$(id -u)}:10001" "$target_archive" 2>/dev/null || true
+        chmod 1770 "$target_archive" 2>/dev/null || true
+    }
+    local claimed_now
+    claimed_now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     cat >"$target_archive/.oscar-storage-root" <<EOF
-format=oscar-storage-root
+format=oscar-storage-root-identity
 version=1
-root_kind=archive
 deployment_id=$restored_dep_id
-origin=created
+root_kind=archive
+adoption=new
+claimed_at=$claimed_now
+adopted_at=none
+adopted_by=none
 EOF
-    chown 0:0 "$target_archive/.oscar-storage-root" 2>/dev/null || true
+    chown "${EUID:-$(id -u)}:${EUID:-$(id -u)}" "$target_archive/.oscar-storage-root" 2>/dev/null || true
     chmod 0600 "$target_archive/.oscar-storage-root"
 
     heading 'Step 3/5 — Extracting cold Parquet archive packs & OSCAR application state'

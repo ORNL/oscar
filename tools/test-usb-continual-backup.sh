@@ -68,12 +68,16 @@ arch_b="$work_root/storage-b/archive"
 mkdir -p "$arch_a/datasets/observations/date=2026-10-01/profile=RAW_GATED" "$work_root/server-a/secrets" "$work_root/server-a/tls"
 printf 'PARQUET_GEN_1_PAYLOAD\n' >"$arch_a/datasets/observations/date=2026-10-01/profile=RAW_GATED/gen-001.parquet"
 cat >"$arch_a/.oscar-storage-root" <<EOF
-format=oscar-storage-root
+format=oscar-storage-root-identity
 version=1
-root_kind=archive
 deployment_id=$dep_id
-origin=created
+root_kind=archive
+adoption=new
+claimed_at=2026-10-01T00:00:00Z
+adopted_at=none
+adopted_by=none
 EOF
+chmod 0600 "$arch_a/.oscar-storage-root"
 
 cat >"$work_root/server-a/.env" <<EOF
 OSCAR_VERSION=$ver
@@ -246,5 +250,18 @@ docker run --rm --user 10001:10001 --volume "$arch_b:/archive:ro" --volume "$vol
     test ! -e /state/files/videos/retained-media/v1/events/ev1/frame-01.jpg
     test -f /state/.moduledata/oscar-identity.json
 '
+
+[[ $(wc -l <"$arch_b/.oscar-storage-root" | tr -d '[:space:]') == 8 &&
+   $(grep -Fxc 'format=oscar-storage-root-identity' "$arch_b/.oscar-storage-root") == 1 &&
+   $(grep -Fxc 'version=1' "$arch_b/.oscar-storage-root") == 1 &&
+   $(grep -Fxc "deployment_id=$dep_id" "$arch_b/.oscar-storage-root") == 1 &&
+   $(grep -Fxc 'root_kind=archive' "$arch_b/.oscar-storage-root") == 1 &&
+   $(grep -Fxc 'adoption=new' "$arch_b/.oscar-storage-root") == 1 &&
+   $(grep -Fxc 'adopted_at=none' "$arch_b/.oscar-storage-root") == 1 &&
+   $(grep -Fxc 'adopted_by=none' "$arch_b/.oscar-storage-root") == 1 ]] || {
+    echo "FAIL: restored .oscar-storage-root did not match canonical 8-line identity schema:"
+    cat "$arch_b/.oscar-storage-root"
+    exit 1
+}
 
 echo "ALL CONTINUAL & OCCASIONAL USB NVMe BACKUP / EJECT / LAPTOP-COPY / CATCH-UP / BARE-METAL RESTORE CHECKS PASSED!"
