@@ -1,6 +1,6 @@
-# OSCAR 3.11.1 Pluggable Runtime Extensions & Regional Packs Guide
+# OSCAR 3.11.2 Pluggable Runtime Extensions & Regional Packs Guide
 
-OSCAR 3.11.1 ships out of the box with complete, unrestricted default implementations for **Vehicle Container & License Plate OCR**, **Basemap Layers**, **Secondary-Inspection Gamma Spectroscopy**, **TLS Certificate Trust**, and **Adjudication Disposition Codes**—so every fresh installation and upgrade works immediately with zero extra downloads.
+OSCAR 3.11.2 ships out of the box with complete, unrestricted default implementations for **Vehicle Container & License Plate OCR**, **Basemap Layers**, **Secondary-Inspection Gamma Spectroscopy**, **TLS Certificate Trust**, and **Adjudication Disposition Codes**—so every fresh installation and upgrade works immediately with zero extra downloads.
 
 At the same time, sites operating in non-Latin license-plate regions, air-gapped border facilities without internet map tiles, specialized radiological laboratories, private-PKI enterprise networks, or agencies with standardized national disposition taxonomies can hot-swap or extend any of these subsystems from the browser at **`OSCAR Viewer -> Extensions` (`/extensions`)** (or via the authenticated `/sensorhub/oscar/extensions/*` REST API) **without recompiling OSCAR and without losing customizations across `oscar upgrade`**. *(Developers or hardware vendors adding a new physical Radiation Portal Monitor or radiation detector protocol should see the companion [Radiation Portal Monitor & Detector Driver Integration Guide](RADIATION_DETECTOR_DRIVER_GUIDE.md).)*
 
@@ -16,6 +16,7 @@ At the same time, sites operating in non-Latin license-plate regions, air-gapped
 | **4. Enterprise CA Trust (`trusted-certs`)** | Standard Linux/JVM system `cacerts` root store | Public X.509 Root / Intermediate CA certificates (`.pem`, `.crt`, `.cer`; private keys strictly rejected) | `/var/lib/oscar/extensions/trusted-certs/` *(in `oscar_oscar_state`)* | Removes uploaded custom CAs and reloads clean JVM `cacerts` trust store |
 | **5. Adjudication Policy Packs (`policy-packs`)** | ANSI/OSCAR Disposition Codes `1–11`, `Code 9998: Extended Occupancy Gamma Alarm`, `Code 9999: EML Non-Threat`, plus `config.customAdjudicationCodes` | **`policy-pack.json`** (`.json` or `.zip`) defining agency disposition codes, categories, and `en`/`es`/`fr`/`el` labels | `/var/lib/oscar/extensions/policy-packs/` *(in `oscar_oscar_state`)* | Removes active policy pack and republishes built-in codes + `config.customAdjudicationCodes` |
 | **6. EML Alarm Assessment (`eml`)** | Core portal gross-count & `N-Sigma` alarming (`Code 9999` inactive until a licensed LLNL EML or custom `.jar` is uploaded) | Separately licensed LLNL ERNIE VM-250 archive **or** custom **`EmlAlarmAssessmentAlgorithm` `.jar`** (see [EML Integration Guide](EML_INTEGRATION.md)) | `/var/lib/oscar/eml-plugin/` *(in `oscar_oscar_state`)* | Unloads EML/custom JAR from memory and deletes the stored plugin archive |
+| **7. Cargo NII (`uff`)** | **Disabled (`enabled = false`)** — `0` extra UI buttons/columns, `0` background threads, and `0` network polls (local `.uff` upload in Secondary Inspection remains available) | Read-only **SMBv2/SMBv3 network share** (`\\nas\oscar-uff`) or mounted directory serving **WCO `UFF 2.0` & `UFF 3.0.0`** `.uff` archives (see [Cargo UFF Integration Guide](CARGO_UFF_INTEGRATION.md)) | `/var/lib/oscar/extensions/uff/` (`uff-config.json` AES-256-GCM + `index-cache.json` in `oscar_oscar_state`) | Disables share correlation, clears the incremental index cache, and restores zero-clutter default |
 
 ---
 
@@ -214,7 +215,7 @@ org.example.oscar.ocr.CustomRegionalOcrEngine
 
 On fresh installations, OSCAR's Dashboard, Map, and Operational View maps use online OpenStreetMap Streets and Esri World Imagery tiles (plus any site diagram images uploaded in SensorHub Admin). For **air-gapped deployments**, **restricted border LANs**, or **high-resolution regional/drone orthomosaics**, administrators can upload single-file **PMTiles v3 (`.pmtiles`)** archives in **`/extensions -> Offline Maps`**.
 
-### How `.pmtiles` Basemaps Work in OSCAR 3.11.1
+### How `.pmtiles` Basemaps Work in OSCAR 3.11.2
 
 - **Zero External Network Calls (100% Air-Gapped Safe):**
   - **Vector `.pmtiles` (`MVT`)** render directly onto HTML5 `<canvas>` in the browser using `protomaps-leaflet` with local system UI fonts (`sans-serif`)—making **zero** outbound requests to `protomaps.github.io`, `openstreetmap.org`, or external glyph/sprite CDNs.
