@@ -1048,11 +1048,7 @@ cmd_restore() {
         fi
     done
 
-    install -d -o "${EUID:-$(id -u)}" -g 10001 -m 1770 "$target_archive" 2>/dev/null || {
-        mkdir -p "$target_archive"
-        chown "${EUID:-$(id -u)}:10001" "$target_archive" 2>/dev/null || true
-        chmod 1770 "$target_archive" 2>/dev/null || true
-    }
+    install -d -o "${EUID:-$(id -u)}" -g 10001 -m 1770 "$target_archive" 2>/dev/null || mkdir -p "$target_archive"
     local claimed_now
     claimed_now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     cat >"$target_archive/.oscar-storage-root" <<EOF
