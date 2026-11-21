@@ -1,6 +1,6 @@
 # Adding Support for a Radiation Portal Monitor (RPM) or Radiation Detector
 
-This developer and vendor integration guide explains how to add support in OSCAR (`3.11.1+`) for a new **Radiation Portal Monitor (RPM)**, **spectroscopic portal**, **area radiation monitor**, or **handheld/backpack radiation detector**.
+This developer and vendor integration guide explains how to add support in OSCAR (`3.11.2+`) for a new **Radiation Portal Monitor (RPM)**, **spectroscopic portal**, **area radiation monitor**, or **handheld/backpack radiation detector**.
 
 Because OSCAR is built on [OpenSensorHub](https://github.com/ORNL/osh-core) and discovers radiation streams dynamically via **OGC SWE Common semantic property definitions** rather than hardcoded vendor names in the web client, any new sensor driver that publishes canonical `RADHelper` data structures automatically inherits:
 

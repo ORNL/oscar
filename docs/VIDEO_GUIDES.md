@@ -1,6 +1,6 @@
-# OSCAR 3.11.1 How-To Video Guides
+# OSCAR 3.11.2 How-To Video Guides
 
-Concise, single-task `1920x1080` workflow screen recordings for **OSCAR 3.11.1**, published in [`ORNL/oscar-video-guides`](https://github.com/ORNL/oscar-video-guides) and mounted as a Git submodule at `docs/video-guides` in source checkouts (`git submodule update --init docs/video-guides`).
+Concise, single-task `1920x1080` workflow screen recordings for **OSCAR 3.11.2**, published in [`ORNL/oscar-video-guides`](https://github.com/ORNL/oscar-video-guides) and mounted as a Git submodule at `docs/video-guides` in source checkouts (`git submodule update --init docs/video-guides`).
 
 Every module starts immediately at `00:00` with the workflow action, runs under 2 minutes, includes embedded MP4 `mov_text` soft subtitles plus standalone WebVTT (`.vtt`) and SubRip (`.srt`) caption tracks, and pairs with a 3-to-4-step sequential reference block below.
 
@@ -15,8 +15,8 @@ Every module starts immediately at `00:00` with the workflow action, runs under 
 | Accessibility | Embedded MP4 `mov_text` soft captions + standalone `.vtt` and `.srt` files + 3-to-4-step Markdown blocks |
 
 > **Interactive HTML5 Player & In-App Contextual Video Assistance:**
-> - **Source checkouts:** With submodules initialized, open `docs/video-guides/index.html` in any browser to watch all 26 modules with synchronized closed captions enabled by default.
-> - **Running OSCAR 3.11.1 deployments (offline-ready):** All 26 MP4 recordings and WebVTT/SRT captions are bundled directly in the OSCAR web root (`osh-node-oscar/web/video-guides/`) and served over TLS with HTTP byte-range streaming and zero idle network load:
+> - **Source checkouts:** With submodules initialized, open `docs/video-guides/index.html` in any browser to watch all 27 modules with synchronized closed captions enabled by default.
+> - **Running OSCAR 3.11.2 deployments (offline-ready):** All 27 MP4 recordings and WebVTT/SRT captions are bundled directly in the OSCAR web root (`osh-node-oscar/web/video-guides/`) and served over TLS with HTTP byte-range streaming and zero idle network load:
 >   - **OSCAR Viewer (`?` Help Dialog):** Click `?` on any console page to watch route-matched workflow videos inline with closed captions, trigger per-card/per-glossary video walkthroughs, or open the full local catalog at `/video-guides/index.html`.
 >   - **SensorHub Admin (`/sensorhub/admin`):** Open any supported module's **README** tab (`OSCAR Service`, `Lane Sensor System`, `Rapiscan RPM`, `FFmpeg Video`, or `Durable Daily File Journal`) and expand the collapsed `Video guide (#XX)` disclosures on demand.
 
@@ -50,6 +50,7 @@ Every module starts immediately at `00:00` with the workflow action, runs under 
 | 24 | [Manage Continual & Occasional USB NVMe Backups & Safe Field Eject](#24-continual-and-occasional-usb-backups) ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/24-continual-and-occasional-usb-backups.mp4)) | Track C | 16.7s | 944.6 KiB | [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/24-continual-and-occasional-usb-backups.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/24-continual-and-occasional-usb-backups.srt) |
 | 25 | [Swap Pluggable OCR Packs & Air-Gapped Regional .pmtiles Basemaps](#25-pluggable-runtime-extensions-and-pmtiles) ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/25-pluggable-runtime-extensions-and-pmtiles.mp4)) | Track C | 20.7s | 1473.9 KiB | [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/25-pluggable-runtime-extensions-and-pmtiles.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/25-pluggable-runtime-extensions-and-pmtiles.srt) |
 | 26 | [Stage Ubuntu 24.04 Off-Site & Cut Over to Air-Gapped Portal Subnets](#26-ubuntu-hotel-staging-and-airgapped-cutover) ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/26-ubuntu-hotel-staging-and-airgapped-cutover.mp4)) | Track D | 15.6s | 516.8 KiB | [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/26-ubuntu-hotel-staging-and-airgapped-cutover.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/26-ubuntu-hotel-staging-and-airgapped-cutover.srt) |
+| 27 | [Connect Cargo UFF SMB Shares, Search by UUID & Inspect 16-Bit Radiographs](#27-cargo-uff-smb-and-xray-inspection) ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/27-cargo-uff-smb-and-xray-inspection.mp4)) | Track D | 55.8s | 2,686.5 KiB | [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/27-cargo-uff-smb-and-xray-inspection.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/27-cargo-uff-smb-and-xray-inspection.srt) |
 
 ## Track A — CLI Deployment, Upgrades & Storage Lifecycle
 
@@ -60,7 +61,7 @@ Extract a clean OSCAR release archive, initialize administrator credentials and 
 
 - **Video:** [Watch `01-deployment-init-and-credentials.mp4` (11.2s, 201 KiB)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/01-deployment-init-and-credentials.mp4) · [WebVTT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/01-deployment-init-and-credentials.vtt) · [SRT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/01-deployment-init-and-credentials.srt)
 
-1. Extract `oscar-3.11.1.zip` into a clean release directory on Ubuntu Server 24.04 or Windows 11 and change into `oscar-3.11.1/`.
+1. Extract `oscar-3.11.2.zip` into a clean release directory on Ubuntu Server 24.04 or Windows 11 and change into `oscar-3.11.2/`.
 2. Run `sudo bash oscar.sh init` (or `.\oscar.bat init` on Windows 11) and supply the deployment hostname, IANA timezone, and administrator password (`>= 14` characters).
 3. Allow `init` to generate deployment-bound PostgreSQL secrets, TLS gateway certificates, and external `oscar_oscar_state` / `oscar_postgres_data` volumes.
 4. Run `sudo bash oscar.sh status` (or `.\oscar.bat status`) to confirm `oscar-gateway`, `oscar`, and `oscar-postgis` report `running (healthy)`.
@@ -73,7 +74,7 @@ Verify a pre-upgrade snapshot, copy only .env, secrets/, and tls/ into a newly e
 - **Video:** [Watch `02-clean-directory-upgrade.mp4` (12.8s, 293.5 KiB)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/02-clean-directory-upgrade.mp4) · [WebVTT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/02-clean-directory-upgrade.vtt) · [SRT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/02-clean-directory-upgrade.srt)
 
 1. When `single` backup mode is enabled, run `sudo bash oscar.sh backup` and `sudo bash oscar.sh backup-verify` from the active release directory before upgrading.
-2. Extract the target `oscar-3.11.1.zip` archive into a separate sibling directory — never unzip over an existing release directory.
+2. Extract the target `oscar-3.11.2.zip` archive into a separate sibling directory — never unzip over an existing release directory.
 3. Copy only `.env`, `secrets/`, and `tls/` (plus `.oscar-volume-adoption` if previously adopted) into the newly extracted directory.
 4. Run `sudo bash oscar.sh upgrade` (or `.\oscar.bat upgrade`) and confirm all containers return `healthy` with preserved named volumes and archive roots.
 
@@ -262,7 +263,7 @@ Open Help (?) to browse the localized Operator Quick Guide & Glossary, export th
 
 - **Video:** [Watch `18-operator-help-and-support-bundle.mp4` (16.3s, 2027.5 KiB)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/18-operator-help-and-support-bundle.mp4) · [WebVTT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/18-operator-help-and-support-bundle.vtt) · [SRT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/18-operator-help-and-support-bundle.srt)
 
-1. Click the **Help (`?`)** button in the OSCAR Viewer top navigation bar to open the localized **OSCAR 3.11.1 Operator Quick Guide & Glossary** (`en`, `es`, `fr`, `el`).
+1. Click the **Help (`?`)** button in the OSCAR Viewer top navigation bar to open the localized **OSCAR 3.11.2 Operator Quick Guide & Glossary** (`en`, `es`, `fr`, `el`).
 2. Open **Manual & Video Guides** and click **Export Support Bundle** to merge the 400-event browser Flight Recorder (`client/client-diagnostics.json`) with rolling server logs (`backend/oscar.log`) into `oscar-support-<UTC>.zip` (automatically falling back to `oscar-client-support-<UTC>.zip` if the server is offline).
 3. When containers are stopped or unreachable over HTTPS, run `sudo bash oscar.sh support-bundle` (Ubuntu) or `.\oscar.bat support-bundle` (Windows) on the host to capture `oscar-host-support-<UTC>.zip`.
 4. Inspect `summary.json`, `client/client-diagnostics.json`, and `redaction-report.json` to review recent errors and confirm automatic `[REDACTED]` credential scrubbing.
@@ -359,7 +360,18 @@ Unpack the self-contained Ubuntu 24.04 offline bundle on hotel/office Wi-Fi, ide
 
 - **Video:** [Watch `26-ubuntu-hotel-staging-and-airgapped-cutover.mp4` (15.6s, 516.8 KiB)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/26-ubuntu-hotel-staging-and-airgapped-cutover.mp4) · [WebVTT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/26-ubuntu-hotel-staging-and-airgapped-cutover.vtt) · [SRT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/26-ubuntu-hotel-staging-and-airgapped-cutover.srt)
 
-1. Off-site (hotel or staging bench), extract `oscar-3.11.1-ubuntu-x86_64-offline-full.zip`, verify bundle checksums (`sudo bash verify-bundle.sh`), and run `sudo bash oscar.sh identify-nics --watch` while plugging a patch cord into the target NIC to confirm its Linux interface name (`enp2s0`).
+1. Off-site (hotel or staging bench), extract `oscar-3.11.2-ubuntu-x86_64-offline-full.zip`, verify bundle checksums (`sudo bash verify-bundle.sh`), and run `sudo bash oscar.sh identify-nics --watch` while plugging a patch cord into the target NIC to confirm its Linux interface name (`enp2s0`).
 2. Stage the portal's static IPv4 configuration safely without touching active Wi-Fi/SSH via `sudo bash oscar.sh stage-site-network --interface enp2s0 --ip 198.51.100.10/24 --gateway 198.51.100.1`.
 3. Run `sudo bash oscar.sh prepare-host --offline --expand-lvm` to expand Ubuntu Server's default `100 GiB` LVM logical volume across the full NVMe disk and install offline `.deb` packages, then run `sudo bash oscar.sh init --offline` to load air-gapped container images and initialize credentials.
 4. On-site inside the air-gapped portal rack, apply the pre-staged static subnet with `sudo bash oscar.sh apply-site-network` and scan the sensor LAN with `sudo bash oscar.sh discover-devices --interface enp2s0` to verify Rapiscan RPM (`10001–10050`) and RTSP camera (`554`/`8554`) endpoints.
+
+<a id="27-cargo-uff-smb-and-xray-inspection"></a>
+### 27. Connect Cargo UFF SMB Shares, Search by UUID & Inspect 16-Bit Radiographs
+
+Connect a read-only SMBv2/SMBv3 Cargo NII share in Runtime Extensions (`/extensions`), look up unlabelled WCO `UFF 2.0` / `UFF 3.0.0` scans by UUID or 1-character fuzzy container OCR, inspect 16-bit `uint16` TIFF radiographs with HEMD atomic-number (`Z_eff`) bands aligned to the RPM gamma/neutron count profile, and link scans to adjudications.
+
+- **Video:** [Watch `27-cargo-uff-smb-and-xray-inspection.mp4` (55.8s, 2,686.5 KiB)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/27-cargo-uff-smb-and-xray-inspection.mp4) · [WebVTT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/27-cargo-uff-smb-and-xray-inspection.vtt) · [SRT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/27-cargo-uff-smb-and-xray-inspection.srt)
+
+1. Open **Runtime Extensions (`/extensions`) -> Cargo NII (WCO UFF)**, enter a read-only SMBv2/SMBv3 share URL and credentials, click **Test Connection** to verify latency and indexed `.uff` count, and click **Save & Apply**.
+2. Open **Events (`/event-log`)** and paste an unlabelled **Tier-1** UFF UUID or `<uuid>.uff` filename into the search bar (or open **Browse Cargo UFF** in **Event Details** to filter by scanner lane, alarm window, or `OCR ±1` fuzzy container correlation).
+3. Launch **Open Cargo X-Ray** to adjust `0–65,535` 16-bit Window/Level, **Log Attenuation**, **High-Z Strip**, and **HEMD** `Organic` / `NORM` / `High-Z` bands alongside the synchronized **RPM Gamma & Neutron** strip, then click **Link to Adjudication**.
