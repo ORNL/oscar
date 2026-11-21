@@ -173,21 +173,11 @@ prepare_sandbox_secrets_and_tls() {
         printf '%s\n' "$explicit_password" >"$runtime_dir/secrets/oscar-admin-password.txt"
         printed_sandbox_password="(custom --admin-password supplied)"
     else
-        local extracted_hash=""
+        local extracted_hash="" ver_probe
+        ver_probe=$(oscar_version)
         if docker volume inspect "$prod_state_volume" >/dev/null 2>&1; then
-            local prod_mp
-            prod_mp=$(docker volume inspect --format '{{.Mountpoint}}' "$prod_state_volume" 2>/dev/null || true)
-            if [[ -n $prod_mp && -f "$prod_mp/config.json" ]]; then
-                extracted_hash=$(awk '
-                    /"objClass": "org.sensorhub.impl.security.BasicSecurityRealmConfig"/ { in_realm = 1 }
-                    in_realm && /"password": "/ {
-                        line = $0
-                        sub(/^.*"password": "/, "", line)
-                        sub(/".*$/, "", line)
-                        if (line != "" && line != "__INITIAL_ADMIN_PASSWORD__") { print line; exit }
-                    }
-                ' "$prod_mp/config.json" || true)
-            fi
+            extracted_hash=$(docker run --rm -v "${prod_state_volume}:/prod:ro" --user root --entrypoint /bin/sh "oscar:${ver_probe}" \
+                -c 'if [ -f /prod/config.json ]; then awk '\''/\042objClass\042:[ \t]*\042org\.sensorhub\.impl\.security\.BasicSecurityRealmConfig\042/ { f=1 } f && /\042password\042:[ \t]*\042/ { sub(/^.*\042password\042:[ \t]*\042/, ""); sub(/\042.*$/, ""); if ($0 != "" && $0 != "__INITIAL_ADMIN_PASSWORD__") { print; exit } }'\'' /prod/config.json; fi' 2>/dev/null || true)
         fi
         if [[ -n $extracted_hash ]]; then
             printf '# PBKDF2_PREENCODED:%s\n' "$extracted_hash" >"$runtime_dir/secrets/oscar-admin-password.txt"
@@ -220,18 +210,15 @@ prepare_sandbox_secrets_and_tls() {
 }
 
 seed_identities_one_way() {
+    local ver
+    ver=$(oscar_version)
+    docker run --rm -v oscar_sandbox_state:/sb --user root --entrypoint /bin/sh "oscar:${ver}" \
+        -c 'chown 10001:10001 /sb && chmod 0700 /sb' >/dev/null
     if ! docker volume inspect "$prod_state_volume" >/dev/null 2>&1; then
         return 0
     fi
-    local prod_mp sb_mp
-    prod_mp=$(docker volume inspect --format '{{.Mountpoint}}' "$prod_state_volume" 2>/dev/null || true)
-    sb_mp=$(docker volume inspect --format '{{.Mountpoint}}' oscar_sandbox_state 2>/dev/null || true)
-    if [[ -n $prod_mp && -n $sb_mp && -f "$prod_mp/.moduledata/oscar-identity.json" ]]; then
-        install -d -m 0700 -o 10001 -g 10001 "$sb_mp/.moduledata"
-        cp -f -- "$prod_mp/.moduledata/oscar-identity.json" "$sb_mp/.moduledata/oscar-identity.json"
-        chown 10001:10001 "$sb_mp/.moduledata/oscar-identity.json"
-        chmod 0600 "$sb_mp/.moduledata/oscar-identity.json"
-    fi
+    docker run --rm -v "${prod_state_volume}:/prod:ro" -v oscar_sandbox_state:/sb --user root --entrypoint /bin/sh "oscar:${ver}" \
+        -c 'chown 10001:10001 /sb && chmod 0700 /sb && if [ -f /prod/.moduledata/oscar-identity.json ]; then install -d -m 0700 -o 10001 -g 10001 /sb/.moduledata && cp -f /prod/.moduledata/oscar-identity.json /sb/.moduledata/oscar-identity.json && chown 10001:10001 /sb/.moduledata/oscar-identity.json && chmod 0600 /sb/.moduledata/oscar-identity.json; fi' >/dev/null
 }
 
 do_stop() {
@@ -302,6 +289,8 @@ EOF
 
     docker volume create oscar_sandbox_state >/dev/null
     docker volume create oscar_sandbox_pg >/dev/null
+    docker run --rm -v oscar_sandbox_state:/sb --user root --entrypoint /bin/sh "oscar:${ver}" \
+        -c 'chown 10001:10001 /sb && chmod 0700 /sb' >/dev/null
     if [[ -z $admin_pw ]]; then
         seed_identities_one_way
     fi
