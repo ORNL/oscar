@@ -223,7 +223,7 @@ function Start-SandboxStack {
 
     $hostName = Get-EnvFileValue -Key 'OSCAR_HOSTNAME' -DefaultValue 'localhost'
     Write-Host "`n========================================================================" -ForegroundColor Yellow
-    Write-Host "OSCAR $ver — Hands-On Training Sandbox & Guided Academy ACTIVE" -ForegroundColor Green
+    Write-Host "OSCAR $ver - Hands-On Training Sandbox & Guided Academy ACTIVE" -ForegroundColor Green
     Write-Host "========================================================================" -ForegroundColor Yellow
     Write-Host "  Sandbox URL:      https://${hostName}:${Port}"
     Write-Host "  Credentials:      $printedCreds"
