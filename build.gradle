@@ -2,7 +2,7 @@ apply from: gradle.oshCoreDir + '/common.gradle'
 description = ''
 
 allprojects {
-    version = "3.11.2"
+    version = "3.11.3"
 }
 
 subprojects {
@@ -111,13 +111,14 @@ distributions{
                     include 'PLUGGABLE_EXTENSIONS_GUIDE.md'
                     include 'CARGO_UFF_INTEGRATION.md'
                     include 'RADIATION_DETECTOR_DRIVER_GUIDE.md'
+                    include 'TRAINING_SANDBOX_GUIDE.md'
                     filesMatching('STORAGE_ARCHITECTURE.md') {
                         filter { line ->
                             line.replace('../include/osh-oakridge-modules/docs/', '')
                                 .replace('https://github.com/ORNL/osh-oakridge-modules/blob/main/docs/', '')
                         }
                     }
-                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md', 'LIVE_VIDEO.md', 'UBUNTU_FIELD_SETUP_GUIDE.md', 'CONTINUAL_AND_USB_BACKUP_GUIDE.md', 'PLUGGABLE_EXTENSIONS_GUIDE.md', 'CARGO_UFF_INTEGRATION.md', 'RADIATION_DETECTOR_DRIVER_GUIDE.md']) {
+                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md', 'LIVE_VIDEO.md', 'UBUNTU_FIELD_SETUP_GUIDE.md', 'CONTINUAL_AND_USB_BACKUP_GUIDE.md', 'PLUGGABLE_EXTENSIONS_GUIDE.md', 'CARGO_UFF_INTEGRATION.md', 'RADIATION_DETECTOR_DRIVER_GUIDE.md', 'TRAINING_SANDBOX_GUIDE.md']) {
                         filter { line ->
                             line.replace('../dist/release/ubuntu/', '../../ubuntu/')
                                 .replace('../dist/release/', '')
@@ -172,13 +173,14 @@ distributions{
                     include 'PLUGGABLE_EXTENSIONS_GUIDE.md'
                     include 'CARGO_UFF_INTEGRATION.md'
                     include 'RADIATION_DETECTOR_DRIVER_GUIDE.md'
+                    include 'TRAINING_SANDBOX_GUIDE.md'
                     filesMatching('STORAGE_ARCHITECTURE.md') {
                         filter { line ->
                             line.replace('../include/osh-oakridge-modules/docs/', '')
                                 .replace('https://github.com/ORNL/osh-oakridge-modules/blob/main/docs/', '')
                         }
                     }
-                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md', 'LIVE_VIDEO.md', 'UBUNTU_FIELD_SETUP_GUIDE.md', 'CONTINUAL_AND_USB_BACKUP_GUIDE.md', 'PLUGGABLE_EXTENSIONS_GUIDE.md', 'CARGO_UFF_INTEGRATION.md', 'RADIATION_DETECTOR_DRIVER_GUIDE.md']) {
+                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md', 'LIVE_VIDEO.md', 'UBUNTU_FIELD_SETUP_GUIDE.md', 'CONTINUAL_AND_USB_BACKUP_GUIDE.md', 'PLUGGABLE_EXTENSIONS_GUIDE.md', 'CARGO_UFF_INTEGRATION.md', 'RADIATION_DETECTOR_DRIVER_GUIDE.md', 'TRAINING_SANDBOX_GUIDE.md']) {
                         filter { line ->
                             line.replace('../dist/release/ubuntu/', '../ubuntu/')
                                 .replace('../dist/release/', '')
@@ -221,6 +223,11 @@ distributions{
                     include 'captions/*.srt'
                 }
             }
+            into("osh-node-oscar/web/manual-screenshots") {
+                from('include/osh-oakridge-modules/docs/oscar-operator-manual/images') {
+                    include '*.png'
+                }
+            }
             into("osh-node-oscar/") {
                 from 'README.md'
                 from 'changelog.md'
@@ -252,6 +259,7 @@ distributions{
                 include 'QUICKSTART.md'
                 include 'compose.yaml'
                 include 'compose.octelium.yaml'
+                include 'compose.sandbox.yaml'
                 include 'configure-ubuntu-host.sh'
                 include 'configure-windows-host.ps1'
                 include 'docker/gateway/default.conf'
@@ -264,6 +272,8 @@ distributions{
                 include 'installers/README.md'
                 include 'oscar-remote-access.ps1'
                 include 'oscar-remote-access.sh'
+                include 'oscar-sandbox.ps1'
+                include 'oscar-sandbox.sh'
                 include 'oscar-setup.ps1'
                 include 'oscar-setup.sh'
                 include 'oscar-storage.ps1'

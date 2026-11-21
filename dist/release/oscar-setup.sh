@@ -14,6 +14,9 @@ case "$command_name" in
     usb-backup|continual-backup)
         exec bash "$script_dir/oscar-usb-backup.sh" "$@"
         ;;
+    sandbox|training-sandbox)
+        exec bash "$script_dir/oscar-sandbox.sh" "$@"
+        ;;
     remote-access)
         exec bash "$script_dir/oscar-remote-access.sh" "$@"
         ;;
@@ -83,6 +86,8 @@ OSCAR deployment administration
   sudo ./oscar.sh usb-backup mode continual|occasional|disabled [--interval-minutes 15]
   sudo ./oscar.sh usb-backup verify [--from PATH] [--backup-key FILE] [--deep]
   sudo ./oscar.sh usb-backup restore [--from PATH] [--backup-key FILE] --confirm RESTORE
+  sudo ./oscar.sh sandbox start [--port 8444] [--ttl-minutes 120] [--track operator|supervisor|administrator]
+  sudo ./oscar.sh sandbox stop|reset|status
   sudo ./oscar.sh archive status|verify
   sudo ./oscar.sh archive hold list
   sudo ./oscar.sh archive hold create --store-key KEY --id-scope INT (--generation UUID | --observation ID) --reason TEXT

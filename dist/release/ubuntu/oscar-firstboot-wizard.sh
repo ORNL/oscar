@@ -899,6 +899,7 @@ case "$mode_val" in
         bash "$release_dir/oscar.sh" verify
         mark_wizard_completed
         info "Clean OSCAR Site Installation COMPLETE."
+        info "Tip: Run 'sudo bash oscar.sh sandbox start' anytime to practice safely on :8444 with zero production DB or Parquet impact."
         ;;
 
     *)

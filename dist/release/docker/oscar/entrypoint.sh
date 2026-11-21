@@ -124,13 +124,31 @@ if [ ! -f "${CONFIG_FILE}" ]; then
         -e 's|"passwordFile": ""|"passwordFile": "/run/secrets/oscar_db_password"|' \
         "${CONFIG_FILE}"
 
-    encoded_password="$(java -classpath '/opt/oscar/lib/*' com.botts.impl.security.PBKDF2CredentialProvider < "${ADMIN_PASSWORD_FILE}" | tail -n 1)"
+    if grep -q '^# PBKDF2_PREENCODED:' "${ADMIN_PASSWORD_FILE}"; then
+        encoded_password="$(sed -n 's/^# PBKDF2_PREENCODED://p' "${ADMIN_PASSWORD_FILE}" | head -n 1)"
+    else
+        encoded_password="$(java -classpath '/opt/oscar/lib/*' com.botts.impl.security.PBKDF2CredentialProvider < "${ADMIN_PASSWORD_FILE}" | tail -n 1)"
+    fi
     if [ -z "${encoded_password}" ]; then
         echo "ERROR: failed to encode the initial OSCAR administrator password" >&2
         exit 1
     fi
     escaped_password="$(printf '%s' "${encoded_password}" | sed 's/[&|\\]/\\&/g')"
     sed -i "s|__INITIAL_ADMIN_PASSWORD__|${escaped_password}|" "${CONFIG_FILE}"
+fi
+
+if [ "${OSCAR_SANDBOX_MODE:-false}" = "true" ]; then
+    awk '
+        /"objClass": "org.sensorhub.impl.datastore.postgis.archive.TieredArchiveConfig"/ { in_archive = 1 }
+        in_archive && /"enabled": true/ { sub(/"enabled": true/, "\"enabled\": false") }
+        in_archive && /"storageMode": "PARQUET_PRIMARY"/ { sub(/"storageMode": "PARQUET_PRIMARY"/, "\"storageMode\": \"HOT_RETENTION\""); in_archive = 0 }
+        /"deploymentName": "OSCAR / && !/\(Training Sandbox\)/ {
+            if (sub(/",[ \t]*$/, " (Training Sandbox)\",") == 0) {
+                sub(/"[ \t]*$/, " (Training Sandbox)\"")
+            }
+        }
+        { print }
+    ' "${CONFIG_FILE}" > "${CONFIG_FILE}.sandbox" && mv "${CONFIG_FILE}.sandbox" "${CONFIG_FILE}"
 fi
 
 # The image copy is deliberately read-only. Combined with the restrictive
