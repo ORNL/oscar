@@ -81,6 +81,7 @@ for (const [relative, expected] of Object.entries(backupDisabledMessages)) {
 }
 
 const expected = [
+    'compose.sandbox.yaml', 'oscar-sandbox.sh', 'oscar-sandbox.ps1',
     'oscar-storage.sh', 'oscar-storage.ps1', 'oscar-usb-backup.sh', 'oscar-usb-backup.ps1', 'oscar-usb-backup-engine.sh',
     'configure-ubuntu-host.sh', 'configure-windows-host.ps1', 'validate-storage-archive.sh',
     'ubuntu/README.md', 'ubuntu/site-network.example.env', 'ubuntu/ansible-site-hosts.yml',
@@ -107,6 +108,7 @@ const expected = [
     'documentation/PLUGGABLE_EXTENSIONS_GUIDE.md',
     'documentation/CARGO_UFF_INTEGRATION.md',
     'documentation/RADIATION_DETECTOR_DRIVER_GUIDE.md',
+    'documentation/TRAINING_SANDBOX_GUIDE.md',
     'documentation/daily-file-journal-v1.md',
     'documentation/retained-media-v1.md',
 ];

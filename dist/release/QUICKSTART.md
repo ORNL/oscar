@@ -1,6 +1,6 @@
 # OSCAR Quick Start
 
-OSCAR 3.11.2 deployment and storage operation are supported only on Windows 11 x86-64 with Docker
+OSCAR 3.11.3 deployment and storage operation are supported only on Windows 11 x86-64 with Docker
 Desktop/WSL 2 and Ubuntu Server 24.04 x86-64 with Docker Engine/Compose. macOS is limited to source
 inspection and non-deployment development; initialization, start, restart, upgrade, and storage
 operations fail closed there. Before sizing a host or configuring camera H.264 resolution, frame
@@ -8,7 +8,9 @@ rate, and keyframe intervals for `1–50` RPMs and `2–100` cameras (or optiona
 federation hub VMs), review *Recommended hardware and capacity sizing* in
 [`DEPLOYMENT.md`](DEPLOYMENT.md#recommended-hardware-and-capacity-sizing).
 
-> **Companion Video Guide:** Watch [Module 01 — Initialize OSCAR Deployment, Admin Credentials & TLS (`01-deployment-init-and-credentials.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/01-deployment-init-and-credentials.mp4) ([WebVTT captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/01-deployment-init-and-credentials.vtt)), or browse all 26 captioned workflow guides in [`docs/VIDEO_GUIDES.md`](https://github.com/ORNL/oscar/blob/main/docs/VIDEO_GUIDES.md).
+> **Companion Video Guide:** Watch [Module 01 — Initialize OSCAR Deployment, Admin Credentials & TLS (`01-deployment-init-and-credentials.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/01-deployment-init-and-credentials.mp4) ([WebVTT captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/01-deployment-init-and-credentials.vtt)), or browse all 28 captioned workflow guides in [`docs/VIDEO_GUIDES.md`](https://github.com/ORNL/oscar/blob/main/docs/VIDEO_GUIDES.md).
+>
+> **Try Everything Safely First (`oscar-sandbox`):** After `oscar init`, launch the isolated **Hands-On Training Sandbox & Guided Academy** on `:8444` (`sudo bash oscar.sh sandbox start` on Ubuntu; `.\oscar.bat sandbox start` on Windows) to practice lane setup, live Rapiscan/camera monitoring, OCR, WCO UFF X-ray review, and alarm adjudication with zero writes to operational PostgreSQL or Parquet archives, then wipe 100% of practice data with `sandbox stop`. See [`TRAINING_SANDBOX_GUIDE.md`](../../docs/TRAINING_SANDBOX_GUIDE.md).
 
 ## Windows 11
 
@@ -78,7 +80,7 @@ organization's behalf.
 
 For step-by-step instructions tailored to users unfamiliar with Ubuntu or OSCAR—including bootable USB links, **off-site hotel-room Wi-Fi/DHCP staging with 1-command static-IP on-site cutover**, **bare-metal air-gapped USB setup with zero internet and zero DHCP**, declarative `autoinstall`/Netplan/Ansible YAML files, and **discovering unknown camera/RPM IP addresses**—read [`UBUNTU_FIELD_SETUP_GUIDE.md`](../../docs/UBUNTU_FIELD_SETUP_GUIDE.md).
 
-1. Choose `oscar-3.11.2-ubuntu-x86_64-offline-full.zip` for air-gapped sites without internet (or slow hotel Wi-Fi), or `oscar-3.11.2.zip` when installing over fast internet.
+1. Choose `oscar-3.11.3-ubuntu-x86_64-offline-full.zip` for air-gapped sites without internet (or slow hotel Wi-Fi), or `oscar-3.11.3.zip` when installing over fast internet.
 2. Prepare the Ubuntu 24.04 host (installs official Docker Engine + Compose v2 from bundled `.deb`s or APT, expands Ubuntu's default `100 GiB` LVM root volume if `--expand-lvm` is passed, masks sleep/suspend, disables automatic unattended-upgrade reboots, bounds offline boot-wait timeouts, and tunes socket buffers):
 
 ```sh
@@ -196,7 +198,7 @@ After full acceptance it atomically replaces the HMAC-authenticated `CURRENT` po
 the previous non-current fully accepted schema-v2 snapshot be removed. A confirmation failure
 leaves the previous `CURRENT` authoritative. The explicit
 `backup-verify` command can run with PostgreSQL stopped: it uses a one-shot utility container and
-treats the live catalog receipt as optional. Restore additionally requires matching 3.11.2 backup,
+treats the live catalog receipt as optional. Restore additionally requires matching 3.11.3 backup,
 current-release, and backed-up release-config identities plus every exact local Compose image.
 Plan backup capacity for the old snapshot plus one complete replacement: one snapshot is the
 steady-state logical result, not the peak space required while `CURRENT` is changing. If a crash
@@ -225,10 +227,10 @@ replaces the selected backup's `VERIFIED` marker and normalizes permissions. It 
 one restorable. An optional live catalog update occurs only after deployment-volume ownership is
 proven.
 
-OSCAR 3.11.2's full storage profile is initialized with a new database and standard configuration.
+OSCAR 3.11.3's full storage profile is initialized with a new database and standard configuration.
 An upgrade preserves the old `config.json` and PostgreSQL volume, so it does not silently convert a
 pre-3.11.0 system to the tiered archive or enable PostgreSQL data checksums. Use a fresh deployment
-for the 3.11.2 test systems. Preserve and separately migrate any production history that policy
+for the 3.11.3 test systems. Preserve and separately migrate any production history that policy
 requires.
 
 If a deliberately retained pre-label deployment uses unlabelled Docker volumes, follow the

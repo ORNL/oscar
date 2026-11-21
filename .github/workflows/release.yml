@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 env:
-  RELEASE_VERSION: '3.11.2'
+  RELEASE_VERSION: '3.11.3'
   JAVA_VERSION: '21'
   NODE_VERSION: '22'
   OSCAR_DIR: 'web/oscar-viewer'
@@ -416,8 +416,12 @@ jobs:
             documentation/UBUNTU_FIELD_SETUP_GUIDE.md \
             documentation/CONTINUAL_AND_USB_BACKUP_GUIDE.md \
             documentation/PLUGGABLE_EXTENSIONS_GUIDE.md \
+            documentation/TRAINING_SANDBOX_GUIDE.md \
             documentation/daily-file-journal-v1.md \
             documentation/retained-media-v1.md \
+            compose.sandbox.yaml \
+            oscar-sandbox.sh \
+            oscar-sandbox.ps1 \
             oscar-storage.sh \
             oscar-storage.ps1 \
             oscar-usb-backup.sh \
@@ -539,12 +543,15 @@ jobs:
               QUICKSTART.md
               SHA256SUMS
               compose.octelium.yaml
+              compose.sandbox.yaml
               compose.yaml
               configure-ubuntu-host.sh
               configure-windows-host.ps1
               offline-images.tar
               oscar-remote-access.ps1
               oscar-remote-access.sh
+              oscar-sandbox.ps1
+              oscar-sandbox.sh
               oscar-setup.ps1
               oscar-setup.sh
               oscar-storage.ps1
@@ -572,6 +579,7 @@ jobs:
               documentation/UBUNTU_FIELD_SETUP_GUIDE.md
               documentation/CONTINUAL_AND_USB_BACKUP_GUIDE.md
               documentation/PLUGGABLE_EXTENSIONS_GUIDE.md
+              documentation/TRAINING_SANDBOX_GUIDE.md
               documentation/daily-file-journal-v1.md
               documentation/retained-media-v1.md
               documentation/operator-manual/README.md
@@ -627,6 +635,7 @@ jobs:
                 QUICKSTART.md \
                 SHA256SUMS \
                 compose.octelium.yaml \
+                compose.sandbox.yaml \
                 compose.yaml \
                 configure-ubuntu-host.sh \
                 configure-windows-host.ps1 \
@@ -635,6 +644,8 @@ jobs:
                 offline-images.tar \
                 oscar-remote-access.ps1 \
                 oscar-remote-access.sh \
+                oscar-sandbox.ps1 \
+                oscar-sandbox.sh \
                 oscar-setup.ps1 \
                 oscar-setup.sh \
                 oscar-storage.ps1 \
