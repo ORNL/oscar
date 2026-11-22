@@ -94,11 +94,36 @@ function Test-SandboxRunning {
     return [bool]($res.ExitCode -eq 0 -and $res.Output -and $res.Output.Trim().Length -gt 0)
 }
 
+function Get-RemoteSandboxInfo {
+    $archiveDir = Get-EnvFileValue -Key 'OSCAR_ARCHIVE_DIR' -DefaultValue ''
+    if (-not [string]::IsNullOrWhiteSpace($archiveDir)) {
+        $storageRoot = Split-Path -Parent $archiveDir
+    } else {
+        $storageRoot = Join-Path (Split-Path -Parent $ScriptRoot) 'oscar-storage'
+    }
+    $octFile = Join-Path $storageRoot 'remote-access\octelium.env'
+    $domain = ''
+    $url = ''
+    if (Test-Path -LiteralPath $octFile) {
+        $enabled = (Get-EnvFileValue -Key 'OCTELIUM_ENABLED' -DefaultValue 'false' -FilePath $octFile).ToLowerInvariant()
+        if ($enabled -eq 'true') {
+            $domain = Get-EnvFileValue -Key 'OCTELIUM_DOMAIN' -DefaultValue '' -FilePath $octFile
+            $svc = Get-EnvFileValue -Key 'OCTELIUM_SERVICE' -DefaultValue '' -FilePath $octFile
+            if (-not [string]::IsNullOrWhiteSpace($domain) -and -not [string]::IsNullOrWhiteSpace($svc)) {
+                $url = "https://$svc-sandbox.$domain"
+            }
+        }
+    }
+    return @{ Domain = $domain; Url = $url }
+}
+
 function Invoke-SandboxCompose {
     param([string[]]$ComposeArgs)
+    $ra = Get-RemoteSandboxInfo
     $env:OSCAR_VERSION = Get-OscarVersion
     $env:OSCAR_TIMEZONE = Get-EnvFileValue -Key 'OSCAR_TIMEZONE' -DefaultValue 'UTC'
     $env:OSCAR_SANDBOX_RUNTIME_DIR = $RuntimeDir
+    $env:OSCAR_WEBAUTHN_RP_ID = $ra.Domain
     & docker compose --project-name $SandboxProject --project-directory $ScriptRoot --file (Join-Path $ScriptRoot 'compose.sandbox.yaml') @ComposeArgs
     if ($LASTEXITCODE -ne 0) {
         throw "docker compose ($SandboxProject) exited with code $LASTEXITCODE"
@@ -172,12 +197,19 @@ function Write-BridgeStatusJson {
             $t = [int](Get-EnvFileValue -Key 'TTL_MINUTES' -DefaultValue '120' -FilePath $metaFile)
             $exp = Get-EnvFileValue -Key 'EXPIRES_AT' -DefaultValue '' -FilePath $metaFile
         }
+        $ra = Get-RemoteSandboxInfo
         $statusObj = [ordered]@{
             agentActive     = (Test-BridgeAgentActive)
             sandboxRunning  = $running
             httpsPort       = $p
             ttlMinutes      = $t
             availableRamMib = (Get-AvailableRamMib)
+        }
+        if (-not [string]::IsNullOrWhiteSpace($ra.Domain)) {
+            $statusObj['remoteDomain'] = $ra.Domain
+        }
+        if (-not [string]::IsNullOrWhiteSpace($ra.Url)) {
+            $statusObj['remoteSandboxUrl'] = $ra.Url
         }
         if (-not [string]::IsNullOrWhiteSpace($exp)) {
             $statusObj['expiresAt'] = $exp
@@ -317,9 +349,11 @@ function Stop-SandboxStack {
         $prev = $ErrorActionPreference
         try {
             $ErrorActionPreference = 'Continue'
+            $ra = Get-RemoteSandboxInfo
             $env:OSCAR_VERSION = Get-OscarVersion
             $env:OSCAR_TIMEZONE = Get-EnvFileValue -Key 'OSCAR_TIMEZONE' -DefaultValue 'UTC'
             $env:OSCAR_SANDBOX_RUNTIME_DIR = $RuntimeDir
+            $env:OSCAR_WEBAUTHN_RP_ID = $ra.Domain
             & docker compose --project-name $SandboxProject --project-directory $ScriptRoot --file (Join-Path $ScriptRoot 'compose.sandbox.yaml') down -v --remove-orphans 2>$null | Out-Null
         } catch {} finally {
             $ErrorActionPreference = $prev
@@ -409,7 +443,7 @@ function Start-SandboxStack {
     [void](Invoke-DockerSafe @('volume', 'create', 'oscar_sandbox_pg'))
     [void](Invoke-DockerSafe @('run', '--rm', '-v', 'oscar_sandbox_state:/sb', '--user', 'root', '--entrypoint', '/bin/sh', "oscar:$ver", '-c', 'chown 10001:10001 /sb && chmod 0700 /sb'))
     if (-not $AdminPassword) {
-        [void](Invoke-DockerSafe @('run', '--rm', '-v', 'oscar_oscar_state:/prod:ro', '-v', 'oscar_sandbox_state:/sb', '--user', 'root', '--entrypoint', '/bin/sh', "oscar:$ver", '-c', 'chown 10001:10001 /sb && chmod 0700 /sb && if [ -f /prod/.moduledata/oscar-identity.json ]; then install -d -m 0700 -o 10001 -g 10001 /sb/.moduledata && cp -f /prod/.moduledata/oscar-identity.json /sb/.moduledata/oscar-identity.json && chown 10001:10001 /sb/.moduledata/oscar-identity.json && chmod 0600 /sb/.moduledata/oscar-identity.json; fi'))
+        [void](Invoke-DockerSafe @('run', '--rm', '-v', 'oscar_oscar_state:/prod:ro', '-v', 'oscar_sandbox_state:/sb', '--user', 'root', '--entrypoint', '/bin/sh', "oscar:$ver", '-c', 'chown 10001:10001 /sb && chmod 0700 /sb && install -d -m 0700 -o 10001 -g 10001 /sb/.moduledata && if [ -f /prod/.moduledata/oscar-identity.json ]; then cp -f /prod/.moduledata/oscar-identity.json /sb/.moduledata/oscar-identity.json && chown 10001:10001 /sb/.moduledata/oscar-identity.json && chmod 0600 /sb/.moduledata/oscar-identity.json; fi && if [ -f /prod/config.json ]; then java -classpath "/opt/oscar/lib/*" com.botts.impl.service.oscar.sandbox.SandboxAuthConfigSeeder extract /prod/config.json /sb/.moduledata/sandbox-auth-seed.json >/dev/null 2>&1 || true; if [ -f /sb/.moduledata/sandbox-auth-seed.json ]; then chown 10001:10001 /sb/.moduledata/sandbox-auth-seed.json && chmod 0600 /sb/.moduledata/sandbox-auth-seed.json; fi; fi'))
     }
 
     $utcNow = [DateTime]::UtcNow
@@ -444,10 +478,14 @@ function Start-SandboxStack {
     Write-BridgeStatusJson $null
 
     $hostName = Get-EnvFileValue -Key 'OSCAR_HOSTNAME' -DefaultValue 'localhost'
+    $ra = Get-RemoteSandboxInfo
     Write-Host "`n========================================================================" -ForegroundColor Yellow
     Write-Host "OSCAR $ver - Hands-On Training Sandbox & Guided Academy ACTIVE" -ForegroundColor Green
     Write-Host "========================================================================" -ForegroundColor Yellow
     Write-Host "  Sandbox URL:      https://${hostName}:${Port}"
+    if (-not [string]::IsNullOrWhiteSpace($ra.Url)) {
+        Write-Host "  Remote Tunnel:    $($ra.Url) (Let's Encrypt + Passkeys)"
+    }
     Write-Host "  Credentials:      $printedCreds"
     Write-Host "  Initial Track:    $Track (switchable in-UI: Operator / Supervisor / Admin)"
     Write-Host "  Auto-Flush TTL:   $TtlMinutes minutes ($expUtc)"
@@ -466,6 +504,7 @@ switch ($Action.ToLowerInvariant()) {
     }
     'status' {
         $running = Test-SandboxRunning
+        $ra = Get-RemoteSandboxInfo
         $metaFile = Join-Path $RuntimeDir 'sandbox.meta'
         $p = $Port
         $t = $TtlMinutes
@@ -482,10 +521,14 @@ switch ($Action.ToLowerInvariant()) {
                 ttlMinutes = $t
                 expiresAt = $exp
                 availableRamMib = (Get-AvailableRamMib)
+                remoteSandboxUrl = $ra.Url
             }
             Write-Output ($obj | ConvertTo-Json -Compress)
         } elseif ($running) {
             Write-Host "Training Sandbox: RUNNING on HTTPS port $p (expires: $exp)" -ForegroundColor Green
+            if (-not [string]::IsNullOrWhiteSpace($ra.Url)) {
+                Write-Host "Remote Sandbox URL: $($ra.Url)" -ForegroundColor Cyan
+            }
             & docker ps --filter "label=com.docker.compose.project=$SandboxProject" --format "table {{.Names}}`t{{.Status}}`t{{.Ports}}"
         } else {
             Write-Host 'Training Sandbox: STOPPED (0 sandbox containers, 0 sandbox volumes)'

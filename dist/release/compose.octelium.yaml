@@ -12,6 +12,8 @@ services:
         condition: service_healthy
     networks:
       - frontend
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       TZ: "${OSCAR_TIMEZONE:-UTC}"
       OCTELIUM_DOMAIN: "${OCTELIUM_DOMAIN:?OCTELIUM_DOMAIN is required}"
@@ -21,6 +23,7 @@ services:
       OCTELIUM_IMPLEMENTATION: "${OCTELIUM_IMPLEMENTATION:-gvisor}"
       OCTELIUM_IP_MODE: "${OCTELIUM_IP_MODE:-v4}"
       OCTELIUM_SCOPE: "${OCTELIUM_SCOPE:-}"
+      OSCAR_SANDBOX_PORT: "${OSCAR_SANDBOX_PORT:-8444}"
     secrets:
       - source: octelium_auth_token
         target: octelium_auth_token

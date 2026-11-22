@@ -1,6 +1,6 @@
 # Ubuntu 24.04 Field Setup, Hotel-Room Staging & Air-Gapped Bare-Metal Guide
 
-This guide walks step-by-step through setting up an Ubuntu 24.04 LTS server for **OSCAR 3.11.4** from scratch — **even if you have never used Ubuntu Linux or OSCAR before**.
+This guide walks step-by-step through setting up an Ubuntu 24.04 LTS server for **OSCAR 3.11.5** from scratch — **even if you have never used Ubuntu Linux or OSCAR before**.
 
 It covers all three real-world field deployment scenarios:
 
@@ -26,16 +26,16 @@ Before traveling to a hotel or air-gapped site, prepare **one 32 GB+ USB 3.0 fla
 | **Rufus** *(Alternative single-ISO USB flasher for Windows)* | [https://rufus.ie/](https://rufus.ie/) | Download `rufus-<version>p.exe` (Portable). Writes one `.iso` to one USB stick; put the OSCAR `.zip` on a second USB stick. |
 | **balenaEtcher** *(Alternative USB flasher for macOS / Windows)* | [https://etcher.balena.io/](https://etcher.balena.io/) | Simple 3-click `.iso` USB writer (use a second USB stick for the OSCAR `.zip`). |
 
-### 1.2 Which OSCAR 3.11.4 Release File Should You Put on the USB Stick?
+### 1.2 Which OSCAR 3.11.5 Release File Should You Put on the USB Stick?
 
-Download from **[GitHub Releases — `ORNL/oscar` `v3.11.4`](https://github.com/ORNL/oscar/releases/tag/v3.11.4)**:
+Download from **[GitHub Releases — `ORNL/oscar` `v3.11.5`](https://github.com/ORNL/oscar/releases/tag/v3.11.5)**:
 
 | OSCAR Release Asset | Size | When to Use |
 | --- | --- | --- |
-| **`oscar-3.11.4-ubuntu-x86_64-offline-full.zip`** *(Best all-around field choice)* | `~1.1 GB` | **Works BOTH completely offline on-site AND in a hotel room.** Includes OSCAR 3.11.4, pre-built `oscar`, `oscar-postgis`, and `nginx` Docker images (`offline-images.tar`), *plus* official Ubuntu 24.04 `.deb` installers for Docker Engine, Compose v2, `chrony`, `ethtool`, `nmap`, and `arp-scan`. **Zero hotel Wi-Fi downloads needed!** |
-| **`oscar-3.11.4.zip`** *(Connected release)* | `~611 MB` | Smaller download when you know you will run `prepare-host` and `init` over fast internet (for example, in the office or hotel room). |
+| **`oscar-3.11.5-ubuntu-x86_64-offline-full.zip`** *(Best all-around field choice)* | `~1.1 GB` | **Works BOTH completely offline on-site AND in a hotel room.** Includes OSCAR 3.11.5, pre-built `oscar`, `oscar-postgis`, and `nginx` Docker images (`offline-images.tar`), *plus* official Ubuntu 24.04 `.deb` installers for Docker Engine, Compose v2, `chrony`, `ethtool`, `nmap`, and `arp-scan`. **Zero hotel Wi-Fi downloads needed!** |
+| **`oscar-3.11.5.zip`** *(Connected release)* | `~611 MB` | Smaller download when you know you will run `prepare-host` and `init` over fast internet (for example, in the office or hotel room). |
 
-Also download **`OSCAR-3.11.4-Administrator-Operator-Manual-en.pdf`** and **`OSCAR-3.11.4-SHA256SUMS.txt`** onto the USB stick so you have offline manuals and checksum verification on-site.
+Also download **`OSCAR-3.11.5-Administrator-Operator-Manual-en.pdf`** and **`OSCAR-3.11.5-SHA256SUMS.txt`** onto the USB stick so you have offline manuals and checksum verification on-site.
 
 ### 1.3 Helpful Laptop Apps (If Administering From Your Windows/Mac Laptop)
 
@@ -76,7 +76,7 @@ You can install Ubuntu Server 24.04 either **interactively** (5 minutes with key
    - **Language / Keyboard:** `English` / `US`.
    - **Install type:** `Ubuntu Server` (default).
    - **Network connections:**
-     - *In a hotel room:* Plug in hotel Ethernet (or select your Wi-Fi adapter -> enter hotel Wi-Fi credentials if simple WPA2; if hotel Wi-Fi has a browser captive portal, either install **Ubuntu Desktop 24.04**, tether your phone via USB cable, or use **`oscar-3.11.4-ubuntu-x86_64-offline-full.zip`** so zero internet is needed!).
+     - *In a hotel room:* Plug in hotel Ethernet (or select your Wi-Fi adapter -> enter hotel Wi-Fi credentials if simple WPA2; if hotel Wi-Fi has a browser captive portal, either install **Ubuntu Desktop 24.04**, tether your phone via USB cable, or use **`oscar-3.11.5-ubuntu-x86_64-offline-full.zip`** so zero internet is needed!).
      - *On an offline site with no DHCP:* Select **Continue without network** — you do **not** need network during Ubuntu installation!
    - **Proxy / Mirror:** Leave blank / default (`Done`).
    - **Guided storage configuration:** Keep `[X] Use an entire disk` and `[X] Set up this disk as an LVM group` -> press `Done`. On the **Storage configuration summary** page, if `ubuntu-lv` says `100.000G` on a larger SSD, select `ubuntu-lv` -> **Edit** -> type the full free size shown (or simply let `sudo bash oscar.sh prepare-host --expand-lvm` expand it later) -> `Done` -> `Continue`.
@@ -92,7 +92,7 @@ You can install Ubuntu Server 24.04 either **interactively** (5 minutes with key
 
 ### Option 3B — Declarative Zero-Touch Bare-Metal Install + First-Boot Wizard (`create-autoinstall-usb` + `oscar-wizard`)
 
-If you want a **single-stick unattended bare-metal installer** that installs Ubuntu Server 24.04 LTS onto the target server's internal NVMe/SSD (`100%` LVM capacity, never touching USB drives), configures USB-to-NVMe Bulk-Only Transport + No-LPM stability quirks from first boot, unpacks `oscar-3.11.4-ubuntu-x86_64-offline-full.zip` into `/srv/oscar/`, and launches an interactive menu on first login:
+If you want a **single-stick unattended bare-metal installer** that installs Ubuntu Server 24.04 LTS onto the target server's internal NVMe/SSD (`100%` LVM capacity, never touching USB drives), configures USB-to-NVMe Bulk-Only Transport + No-LPM stability quirks from first boot, unpacks `oscar-3.11.5-ubuntu-x86_64-offline-full.zip` into `/srv/oscar/`, and launches an interactive menu on first login:
 
 1. **Build the Bare-Metal Autoinstall USB Stick** on either **Windows 11** or **Ubuntu**:
    - **On Windows 11 (Administrator prompt, zero third-party tools needed):**
@@ -103,7 +103,7 @@ If you want a **single-stick unattended bare-metal installer** that installs Ubu
      ```bash
      sudo bash oscar.sh create-autoinstall-usb
      ```
-   Select your removable external USB drive (`16 GB+`), point to `ubuntu-24.04.x-live-server-amd64.iso` and `oscar-3.11.4-ubuntu-x86_64-offline-full.zip`, and optionally supply a `seed/` folder containing `config.json`, `lanes.csv`, `site-network.env`, `*.pmtiles`, or `backup-key.txt`.
+   Select your removable external USB drive (`16 GB+`), point to `ubuntu-24.04.x-live-server-amd64.iso` and `oscar-3.11.5-ubuntu-x86_64-offline-full.zip`, and optionally supply a `seed/` folder containing `config.json`, `lanes.csv`, `site-network.env`, `*.pmtiles`, or `backup-key.txt`.
 2. **Boot the Target Server Offline:** Insert the USB drive, choose it from the UEFI One-Time Boot Menu (`F9`/`F11`/`F12`), and wait ~4 minutes while Ubuntu 24.04 + `/srv/oscar/` install with zero prompts. Remove the installer USB when prompted and press `Enter`.
 3. **Interactive First-Boot Provisioning & Recovery Wizard (`sudo oscar-wizard`):** On your first login as `oscaradmin` (or anytime via `sudo oscar-wizard` / `sudo bash oscar.sh wizard`), OSCAR mutes kernel console `printk` noise so `tty1` dialogs stay crisp, runs offline host optimization (Docker Engine, sysctl, UFW, LVM, and USB-NVMe quirks), scans attached USB drives read-only (`-o ro` — zero manual `mount`/`cp`/`umount` commands, automatically skipping EFI `ESP` boot partitions and cleaning up unplugged sticks on `RESCAN`), and lets you pick:
    - **Restore from Continual / Occasional USB NVMe Backup** (`usb-backup restore`, including an interactive **Safe Bench / DR Clone Isolation** option that blocks outbound sensor/tunnel traffic via `DOCKER-USER` when testing a backup on the same network as an active portal)
@@ -129,12 +129,12 @@ sudo chown "$USER:$USER" /srv/oscar
 cd /srv/oscar
 ```
 
-Copy `oscar-3.11.4-ubuntu-x86_64-offline-full.zip` (or `oscar-3.11.4.zip` if downloading over hotel Wi-Fi) into `/srv/oscar` and extract it:
+Copy `oscar-3.11.5-ubuntu-x86_64-offline-full.zip` (or `oscar-3.11.5.zip` if downloading over hotel Wi-Fi) into `/srv/oscar` and extract it:
 
 ```bash
-unzip oscar-3.11.4-ubuntu-x86_64-offline-full.zip
-cd oscar-3.11.4-ubuntu-x86_64-offline-full
-# (Or if using the connected zip: unzip oscar-3.11.4.zip && cd oscar-3.11.4)
+unzip oscar-3.11.5-ubuntu-x86_64-offline-full.zip
+cd oscar-3.11.5-ubuntu-x86_64-offline-full
+# (Or if using the connected zip: unzip oscar-3.11.5.zip && cd oscar-3.11.5)
 ```
 
 ### Step A2 — Run `prepare-host` (Installs Docker, Expands Disk, Disables Sleep & 2 AM Reboots)
@@ -144,7 +144,7 @@ sudo bash oscar.sh prepare-host --expand-lvm --configure-ufw
 ```
 
 What this single command configures automatically:
-- Installs official **Docker Engine + Docker Compose v2** (`docker-ce`, using bundled `.deb`s automatically if you extracted `offline-full`, or official APT over hotel internet if you extracted `oscar-3.11.4.zip`).
+- Installs official **Docker Engine + Docker Compose v2** (`docker-ce`, using bundled `.deb`s automatically if you extracted `offline-full`, or official APT over hotel internet if you extracted `oscar-3.11.5.zip`).
 - Expands Ubuntu's `100 GiB` LVM root volume (`--expand-lvm`) so 100% of your NVMe SSD is available.
 - Configures `/etc/docker/daemon.json` log rotation (`50m` × `5`), masks `sleep`/`suspend`/`hibernate`/lid-close, disables `unattended-upgrades` automatic reboots, tunes RTSP/PostgreSQL kernel socket buffers (`/etc/sysctl.d/90-oscar.conf`), bounds boot network wait to `10s` so offline sites never stall at boot, configures `chrony` offline clock stability, and opens `22/tcp`, `80/tcp`, and `443/tcp` in `ufw`.
 
@@ -198,7 +198,7 @@ When you arrive at the site:
 2. Log in at the server keyboard/monitor (or via hotel/laptop link) and activate your staged static IP plan with **one command**:
 
 ```bash
-cd /srv/oscar/oscar-3.11.4-ubuntu-x86_64-offline-full   # (or /srv/oscar/oscar-3.11.4)
+cd /srv/oscar/oscar-3.11.5-ubuntu-x86_64-offline-full   # (or /srv/oscar/oscar-3.11.5)
 sudo bash oscar.sh apply-site-network
 ```
 
@@ -223,7 +223,7 @@ Follow **[Option 3A](#option-3a--interactive-bare-metal-install-recommended-firs
 
 ### 5.2 Copy the OSCAR Offline Bundle Off Your USB Stick
 
-Plug in the USB stick containing **`oscar-3.11.4-ubuntu-x86_64-offline-full.zip`** and run these 4 commands to mount the USB drive and extract the bundle:
+Plug in the USB stick containing **`oscar-3.11.5-ubuntu-x86_64-offline-full.zip`** and run these 4 commands to mount the USB drive and extract the bundle:
 
 ```bash
 # 1. List attached disks/USB partitions (look for TYPE="part" on a removable USB drive, e.g. sdb1 or sdc1):
@@ -235,11 +235,11 @@ sudo mount -o ro /dev/sdb1 /mnt/usb
 
 # 3. Copy and extract the offline bundle onto the server's internal NVMe SSD:
 sudo chown "$USER:$USER" /srv/oscar
-unzip /mnt/usb/oscar-3.11.4-ubuntu-x86_64-offline-full.zip -d /srv/oscar
+unzip /mnt/usb/oscar-3.11.5-ubuntu-x86_64-offline-full.zip -d /srv/oscar
 sudo umount /mnt/usb
 
 # 4. Enter the extracted release directory and verify every SHA-256 checksum offline:
-cd /srv/oscar/oscar-3.11.4-ubuntu-x86_64-offline-full
+cd /srv/oscar/oscar-3.11.5-ubuntu-x86_64-offline-full
 sudo bash verify-bundle.sh
 ```
 
@@ -260,7 +260,7 @@ sudo bash oscar.sh apply-site-network
 sudo bash oscar.sh init
 ```
 
-OSCAR loads `oscar:3.11.4`, `oscar-postgis:3.11.4`, and `nginx/nginx-unprivileged:1.30.7-alpine` directly from `offline-images.tar`, generates your TLS certificate covering the static NIC IPs, initializes PostgreSQL with `data_checksums=on`, and starts all services cleanly offline.
+OSCAR loads `oscar:3.11.5`, `oscar-postgis:3.11.5`, and `nginx/nginx-unprivileged:1.30.7-alpine` directly from `offline-images.tar`, generates your TLS certificate covering the static NIC IPs, initializes PostgreSQL with `data_checksums=on`, and starts all services cleanly offline.
 
 ---
 

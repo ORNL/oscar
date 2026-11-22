@@ -94,6 +94,33 @@ is_bridge_enabled() {
     return 1
 }
 
+resolve_octelium_env() {
+    local archive_dir storage_root parent
+    archive_dir=$(env_value OSCAR_ARCHIVE_DIR '')
+    if [[ -n $archive_dir && $archive_dir == /* ]]; then
+        storage_root=$(dirname "$archive_dir")
+    else
+        parent=$(CDPATH= cd -P -- "$script_dir/.." && pwd -P)
+        storage_root="$parent/oscar-storage"
+    fi
+    printf '%s/remote-access/octelium.env' "$storage_root"
+}
+
+resolve_remote_sandbox_info() {
+    oct_domain=""
+    oct_sandbox_url=""
+    local oct_env oct_enabled oct_service
+    oct_env=$(resolve_octelium_env)
+    [[ -f $oct_env ]] || return 0
+    oct_enabled=$(env_value OCTELIUM_ENABLED 'false' "$oct_env")
+    [[ ${oct_enabled,,} == "true" ]] || return 0
+    oct_domain=$(env_value OCTELIUM_DOMAIN '' "$oct_env")
+    oct_service=$(env_value OCTELIUM_SERVICE '' "$oct_env")
+    if [[ -n $oct_domain && -n $oct_service ]]; then
+        oct_sandbox_url="https://${oct_service}-sandbox.${oct_domain}"
+    fi
+}
+
 write_bridge_status() {
     local job_id=${1:-} job_action=${2:-} job_state=${3:-} job_msg=${4:-}
     local ctrl_dir
@@ -101,7 +128,7 @@ write_bridge_status() {
     [[ -n $ctrl_dir ]] || return 0
     install -d -m 0700 -o 10001 -g 10001 "$ctrl_dir" 2>/dev/null || install -d -m 0700 "$ctrl_dir"
 
-    local agent_active=false running=false port=8444 ttl=120 expires="" ram_mib
+    local agent_active=false running=false port=8444 ttl=120 expires="" ram_mib oct_domain="" oct_sandbox_url=""
     is_bridge_enabled && agent_active=true
     is_sandbox_running && running=true
     if [[ -f "$runtime_dir/sandbox.meta" ]]; then
@@ -110,6 +137,7 @@ write_bridge_status() {
         expires=$(env_value EXPIRES_AT '' "$runtime_dir/sandbox.meta")
     fi
     ram_mib=$(available_ram_mib)
+    resolve_remote_sandbox_info
 
     local tmp="$ctrl_dir/status.json.tmp.$$"
     {
@@ -119,6 +147,12 @@ write_bridge_status() {
         printf '  "httpsPort": %s,\n' "$port"
         printf '  "ttlMinutes": %s,\n' "$ttl"
         printf '  "availableRamMib": %s' "$ram_mib"
+        if [[ -n $oct_domain ]]; then
+            printf ',\n  "remoteDomain": "%s"' "$(json_escape "$oct_domain")"
+        fi
+        if [[ -n $oct_sandbox_url ]]; then
+            printf ',\n  "remoteSandboxUrl": "%s"' "$(json_escape "$oct_sandbox_url")"
+        fi
         if [[ -n $expires ]]; then
             printf ',\n  "expiresAt": "%s"' "$(json_escape "$expires")"
         fi
@@ -134,12 +168,14 @@ write_bridge_status() {
 }
 
 sandbox_compose() {
-    local ver tz
+    local ver tz oct_domain="" oct_sandbox_url=""
     ver=$(oscar_version)
     tz=$(env_value OSCAR_TIMEZONE 'UTC')
+    resolve_remote_sandbox_info
     OSCAR_VERSION="$ver" \
     OSCAR_TIMEZONE="$tz" \
     OSCAR_SANDBOX_RUNTIME_DIR="$runtime_dir" \
+    OSCAR_WEBAUTHN_RP_ID="${OSCAR_WEBAUTHN_RP_ID:-$oct_domain}" \
     docker compose --project-name "$sandbox_project" --project-directory "$script_dir" \
         --file "$script_dir/compose.sandbox.yaml" "$@"
 }
@@ -219,7 +255,7 @@ seed_identities_one_way() {
         return 0
     fi
     docker run --rm -v "${prod_state_volume}:/prod:ro" -v oscar_sandbox_state:/sb --user root --entrypoint /bin/sh "oscar:${ver}" \
-        -c 'chown 10001:10001 /sb && chmod 0700 /sb && if [ -f /prod/.moduledata/oscar-identity.json ]; then install -d -m 0700 -o 10001 -g 10001 /sb/.moduledata && cp -f /prod/.moduledata/oscar-identity.json /sb/.moduledata/oscar-identity.json && chown 10001:10001 /sb/.moduledata/oscar-identity.json && chmod 0600 /sb/.moduledata/oscar-identity.json; fi' >/dev/null
+        -c 'chown 10001:10001 /sb && chmod 0700 /sb && install -d -m 0700 -o 10001 -g 10001 /sb/.moduledata && if [ -f /prod/.moduledata/oscar-identity.json ]; then cp -f /prod/.moduledata/oscar-identity.json /sb/.moduledata/oscar-identity.json && chown 10001:10001 /sb/.moduledata/oscar-identity.json && chmod 0600 /sb/.moduledata/oscar-identity.json; fi && if [ -f /prod/config.json ]; then java -classpath "/opt/oscar/lib/*" com.botts.impl.service.oscar.sandbox.SandboxAuthConfigSeeder extract /prod/config.json /sb/.moduledata/sandbox-auth-seed.json >/dev/null 2>&1 || true; if [ -f /sb/.moduledata/sandbox-auth-seed.json ]; then chown 10001:10001 /sb/.moduledata/sandbox-auth-seed.json && chmod 0600 /sb/.moduledata/sandbox-auth-seed.json; fi; fi' >/dev/null
 }
 
 do_stop() {
@@ -305,15 +341,19 @@ EOF
     schedule_expiry_timer "$ttl"
     write_bridge_status "" "start" "COMPLETED" "Training Sandbox active on port ${port}"
 
-    local host_display
+    local host_display oct_domain="" oct_sandbox_url="" remote_line=""
     host_display=$(env_value OSCAR_HOSTNAME "$(hostname -I 2>/dev/null | awk '{print $1}' || echo localhost)")
     [[ -n $host_display ]] || host_display="localhost"
+    resolve_remote_sandbox_info
+    if [[ -n $oct_sandbox_url ]]; then
+        remote_line=$'\n'"  Remote Tunnel:    ${oct_sandbox_url} (Let's Encrypt + Passkeys)"
+    fi
     cat <<EOF
 
 ========================================================================
 OSCAR ${ver} — Hands-On Training Sandbox & Guided Academy ACTIVE
 ========================================================================
-  Sandbox URL:      https://${host_display}:${port}
+  Sandbox URL:      https://${host_display}:${port}${remote_line}
   Credentials:      ${printed_sandbox_password}
   Initial Track:    ${track} (switchable in-UI: Operator / Supervisor / Admin)
   Auto-Flush TTL:   ${ttl} minutes (${exp_iso:-auto})
@@ -327,20 +367,24 @@ EOF
 do_status() {
     local json_mode=false
     [[ ${1:-} == "--json" ]] && json_mode=true
-    local running=false port=8444 ttl=120 expires=""
+    local running=false port=8444 ttl=120 expires="" oct_domain="" oct_sandbox_url=""
     is_sandbox_running && running=true
     if [[ -f "$runtime_dir/sandbox.meta" ]]; then
         port=$(env_value HTTPS_PORT 8444 "$runtime_dir/sandbox.meta")
         ttl=$(env_value TTL_MINUTES 120 "$runtime_dir/sandbox.meta")
         expires=$(env_value EXPIRES_AT '' "$runtime_dir/sandbox.meta")
     fi
+    resolve_remote_sandbox_info
     if $json_mode; then
-        printf '{"sandboxRunning":%s,"httpsPort":%s,"ttlMinutes":%s,"expiresAt":"%s","availableRamMib":%s}\n' \
-            "$running" "$port" "$ttl" "$(json_escape "$expires")" "$(available_ram_mib)"
+        printf '{"sandboxRunning":%s,"httpsPort":%s,"ttlMinutes":%s,"expiresAt":"%s","availableRamMib":%s,"remoteSandboxUrl":"%s"}\n' \
+            "$running" "$port" "$ttl" "$(json_escape "$expires")" "$(available_ram_mib)" "$(json_escape "$oct_sandbox_url")"
         return 0
     fi
     if $running; then
         printf 'Training Sandbox: RUNNING on HTTPS port %s (TTL: %sm, expires: %s)\n' "$port" "$ttl" "${expires:-n/a}"
+        if [[ -n $oct_sandbox_url ]]; then
+            printf 'Remote Sandbox URL: %s\n' "$oct_sandbox_url"
+        fi
         docker ps --filter "label=com.docker.compose.project=${sandbox_project}" --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
     else
         printf 'Training Sandbox: STOPPED (0 sandbox containers, 0 sandbox volumes)\n'
