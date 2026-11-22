@@ -16,15 +16,31 @@ param(
     [string]$Track = 'operator',
     [string]$AdminPassword = '',
     [switch]$AllowLowMemory,
-    [switch]$Json
+    [switch]$Json,
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$ExtraArgs = @()
 )
 
 $ErrorActionPreference = 'Stop'
 $ScriptRoot = (Resolve-Path -LiteralPath $PSScriptRoot).ProviderPath
+$SelfScript = Join-Path $ScriptRoot 'oscar-sandbox.ps1'
 $SandboxProject = 'oscar-sandbox'
+$AgentTaskName = 'OSCAR-SandboxAgent'
+$DisabledMarker = Join-Path $env:ProgramData 'OSCAR\sandbox-bridge.disabled'
 $RuntimeDir = if ($env:OSCAR_SANDBOX_RUNTIME_DIR) { $env:OSCAR_SANDBOX_RUNTIME_DIR } else { Join-Path $env:ProgramData 'OSCAR\sandbox-runtime' }
 $MinAvailRamMib = 3584
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+for ($i = 0; $i -lt $ExtraArgs.Count; $i++) {
+    switch ($ExtraArgs[$i].ToLowerInvariant()) {
+        '--port' { if ($i + 1 -lt $ExtraArgs.Count) { $Port = [int]$ExtraArgs[++$i] } }
+        '--ttl-minutes' { if ($i + 1 -lt $ExtraArgs.Count) { $TtlMinutes = [int]$ExtraArgs[++$i] } }
+        '--track' { if ($i + 1 -lt $ExtraArgs.Count) { $Track = [string]$ExtraArgs[++$i] } }
+        '--admin-password' { if ($i + 1 -lt $ExtraArgs.Count) { $AdminPassword = [string]$ExtraArgs[++$i] } }
+        '--allow-low-memory' { $AllowLowMemory = [switch]::Present }
+        '--json' { $Json = [switch]::Present }
+    }
+}
 
 function Invoke-DockerSafe {
     param([string[]]$DockerArgs, [string]$StdinScript = '')
@@ -98,6 +114,203 @@ function New-RandomHex {
     return ($buf | ForEach-Object { $_.ToString('x2') }) -join ''
 }
 
+function Invoke-SandboxControlSh {
+    param([string]$ShCmd, [string]$StdinText = '')
+    $envFile = Join-Path $ScriptRoot '.env'
+    $composeFile = Join-Path $ScriptRoot 'compose.yaml'
+    $oscarCid = ''
+    if (Test-Path -LiteralPath $envFile) {
+        $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        try {
+            $oscarCid = ([string](& docker compose --project-name oscar --project-directory $ScriptRoot --env-file $envFile --file $composeFile ps --quiet oscar 2>$null)).Trim()
+        } catch {} finally { $ErrorActionPreference = $prev }
+    }
+    $tmpIn = $null
+    try {
+        if (-not [string]::IsNullOrEmpty($StdinText)) {
+            $tmpIn = Join-Path $env:TEMP "oscar-sbctrl-in-$([Guid]::NewGuid().ToString('N')).tmp"
+            [System.IO.File]::WriteAllText($tmpIn, $StdinText, $Utf8NoBom)
+        }
+        $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        try {
+            if (-not [string]::IsNullOrWhiteSpace($oscarCid)) {
+                if ($tmpIn) {
+                    return ([string](& cmd.exe /c "type `"$tmpIn`" | docker exec -i $oscarCid sh -eu -c `"$ShCmd`" 2>nul"))
+                }
+                return ([string](& docker exec $oscarCid sh -eu -c $ShCmd 2>$null))
+            }
+            $ver = Get-OscarVersion
+            if ($tmpIn) {
+                return ([string](& cmd.exe /c "type `"$tmpIn`" | docker run --rm --label com.docker.compose.project=oscar-sandbox-bridge -i --network none --user 10001:10001 -v oscar_oscar_state:/var/lib/oscar --entrypoint sh oscar:$ver -eu -c `"$ShCmd`" 2>nul"))
+            }
+            return ([string](& docker run --rm --label com.docker.compose.project=oscar-sandbox-bridge --network none --user 10001:10001 -v oscar_oscar_state:/var/lib/oscar --entrypoint sh "oscar:$ver" -eu -c $ShCmd 2>$null))
+        } finally { $ErrorActionPreference = $prev }
+    } finally {
+        if ($tmpIn) { Remove-Item -LiteralPath $tmpIn -Force -ErrorAction SilentlyContinue }
+    }
+}
+
+function Test-BridgeAgentActive {
+    try {
+        $t = Get-ScheduledTask -TaskName $AgentTaskName -ErrorAction SilentlyContinue
+        return [bool]($null -ne $t -and [string]$t.State -ne 'Disabled')
+    } catch {
+        return $false
+    }
+}
+
+function Write-BridgeStatusJson {
+    param($ActiveJob = $null)
+    try {
+        $running = Test-SandboxRunning
+        $metaFile = Join-Path $RuntimeDir 'sandbox.meta'
+        $p = 8444
+        $t = 120
+        $exp = ''
+        if (Test-Path -LiteralPath $metaFile) {
+            $p = [int](Get-EnvFileValue -Key 'HTTPS_PORT' -DefaultValue '8444' -FilePath $metaFile)
+            $t = [int](Get-EnvFileValue -Key 'TTL_MINUTES' -DefaultValue '120' -FilePath $metaFile)
+            $exp = Get-EnvFileValue -Key 'EXPIRES_AT' -DefaultValue '' -FilePath $metaFile
+        }
+        $statusObj = [ordered]@{
+            agentActive     = (Test-BridgeAgentActive)
+            sandboxRunning  = $running
+            httpsPort       = $p
+            ttlMinutes      = $t
+            availableRamMib = (Get-AvailableRamMib)
+        }
+        if (-not [string]::IsNullOrWhiteSpace($exp)) {
+            $statusObj['expiresAt'] = $exp
+        }
+        if ($null -ne $ActiveJob) {
+            $statusObj['activeJob'] = $ActiveJob
+        }
+        $json = $statusObj | ConvertTo-Json -Depth 5
+        Invoke-SandboxControlSh 'mkdir -p /var/lib/oscar/.moduledata/sandbox-control && chmod 0700 /var/lib/oscar/.moduledata/sandbox-control && cat >/var/lib/oscar/.moduledata/sandbox-control/.status.tmp && mv -f /var/lib/oscar/.moduledata/sandbox-control/.status.tmp /var/lib/oscar/.moduledata/sandbox-control/status.json' $json | Out-Null
+    } catch {}
+}
+
+function Invoke-BridgeTick {
+    param([switch]$StatusOnly)
+    $reqRaw = Invoke-SandboxControlSh 'if [ -f /var/lib/oscar/.moduledata/sandbox-control/request.json ]; then mv -f /var/lib/oscar/.moduledata/sandbox-control/request.json /var/lib/oscar/.moduledata/sandbox-control/.processing.json && cat /var/lib/oscar/.moduledata/sandbox-control/.processing.json && rm -f /var/lib/oscar/.moduledata/sandbox-control/.processing.json; fi'
+    if ([string]::IsNullOrWhiteSpace($reqRaw)) {
+        if ($StatusOnly) { Write-BridgeStatusJson $null }
+        return
+    }
+    $req = $reqRaw | ConvertFrom-Json
+    $act = ([string]$req.action).ToLowerInvariant()
+    $reqId = [string]$req.requestId
+    $reqPort = if ($null -ne $req.PSObject.Properties['httpsPort'] -and $req.httpsPort) { [int]$req.httpsPort } else { 8444 }
+    $reqTtl = if ($null -ne $req.PSObject.Properties['ttlMinutes'] -and $req.ttlMinutes) { [int]$req.ttlMinutes } else { 120 }
+    $startedAt = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+
+    Write-BridgeStatusJson ([ordered]@{
+        requestId = $reqId
+        action    = $act
+        state     = 'RUNNING'
+        startedAt = $startedAt
+        message   = "Executing sandbox '$act'..."
+    })
+
+    $psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    switch ($act) {
+        'start' {
+            if (Test-SandboxRunning) {
+                Write-BridgeStatusJson ([ordered]@{
+                    requestId = $reqId; action = 'start'; state = 'COMPLETED'; startedAt = $startedAt
+                    message = "Training Sandbox already running on port $reqPort."
+                })
+                return
+            }
+            $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+            try {
+                & $psExe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $SelfScript start -Port $reqPort -TtlMinutes $reqTtl 2>&1 | Out-Null
+                $rc = $LASTEXITCODE
+            } catch { $rc = 1 } finally { $ErrorActionPreference = $prev }
+            $st = if ($rc -eq 0) { 'COMPLETED' } else { 'FAILED' }
+            $msg = if ($rc -eq 0) { "Training Sandbox ready on port $reqPort." } else { 'Sandbox start failed; check free RAM or run .\oscar.bat sandbox start.' }
+            Write-BridgeStatusJson ([ordered]@{ requestId = $reqId; action = 'start'; state = $st; startedAt = $startedAt; message = $msg })
+        }
+        'reset' {
+            $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+            try {
+                & $psExe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $SelfScript reset -Port $reqPort -TtlMinutes $reqTtl 2>&1 | Out-Null
+                $rc = $LASTEXITCODE
+            } catch { $rc = 1 } finally { $ErrorActionPreference = $prev }
+            $st = if ($rc -eq 0) { 'COMPLETED' } else { 'FAILED' }
+            $msg = if ($rc -eq 0) { "Training Sandbox reset and ready on port $reqPort." } else { 'Sandbox reset failed.' }
+            Write-BridgeStatusJson ([ordered]@{ requestId = $reqId; action = 'reset'; state = $st; startedAt = $startedAt; message = $msg })
+        }
+        'stop' {
+            Stop-SandboxStack
+            Write-BridgeStatusJson ([ordered]@{ requestId = $reqId; action = 'stop'; state = 'COMPLETED'; startedAt = $startedAt; message = 'Training Sandbox stopped and flushed.' })
+        }
+        default {
+            Write-BridgeStatusJson ([ordered]@{ requestId = $reqId; action = $act; state = 'COMPLETED'; startedAt = $startedAt; message = 'Refreshed status.' })
+        }
+    }
+}
+
+function Invoke-BridgeWatch {
+    $lastStatusAt = [DateTime]::MinValue
+    while ($true) {
+        $doStatus = (((Get-Date) - $lastStatusAt).TotalSeconds -ge 20)
+        try {
+            Invoke-BridgeTick -StatusOnly:$doStatus
+            if ($doStatus) { $lastStatusAt = Get-Date }
+        } catch {}
+        Start-Sleep -Seconds 3
+    }
+}
+
+function Enable-UiBridge {
+    param([switch]$AutoInstall)
+    if ($AutoInstall) {
+        $pref = (Get-EnvFileValue -Key 'OSCAR_SANDBOX_UI_BRIDGE' -DefaultValue 'enabled').ToLowerInvariant()
+        if ((Test-Path -LiteralPath $DisabledMarker) -or $pref -eq 'disabled' -or $env:OSCAR_SANDBOX_SKIP_TASK -eq '1') {
+            Write-BridgeStatusJson $null
+            return
+        }
+    } else {
+        Remove-Item -LiteralPath $DisabledMarker -Force -ErrorAction SilentlyContinue
+    }
+    if ($env:OSCAR_SANDBOX_SKIP_TASK -ne '1') {
+        if (Get-ScheduledTask -TaskName $AgentTaskName -ErrorAction SilentlyContinue) {
+            Stop-ScheduledTask -TaskName $AgentTaskName -ErrorAction SilentlyContinue
+            Unregister-ScheduledTask -TaskName $AgentTaskName -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
+        }
+        try {
+            Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" -ErrorAction SilentlyContinue |
+                Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -match 'oscar-sandbox\.ps1' -and $_.CommandLine -match 'agent-watch' } |
+                ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        } catch {}
+        $psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        $actionObj = New-ScheduledTaskAction -Execute $psExe -Argument "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$SelfScript`" agent-watch" -WorkingDirectory $ScriptRoot
+        $triggerBoot = New-ScheduledTaskTrigger -AtStartup
+        $triggerKeepAlive = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days 3650)
+        $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -Priority 8
+        $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+        Register-ScheduledTask -TaskName $AgentTaskName -Action $actionObj -Trigger @($triggerBoot, $triggerKeepAlive) -Settings $settings -Principal $principal -Force | Out-Null
+        Start-ScheduledTask -TaskName $AgentTaskName -ErrorAction SilentlyContinue
+    }
+    Write-BridgeStatusJson $null
+    if (-not $AutoInstall) {
+        Write-Host 'Enabled 1-click Training Sandbox launch in Guided Walkthrough & Help (?).' -ForegroundColor Green
+    }
+}
+
+function Disable-UiBridge {
+    $markerDir = Split-Path -Parent $DisabledMarker
+    if (-not (Test-Path -LiteralPath $markerDir)) { New-Item -ItemType Directory -Path $markerDir -Force | Out-Null }
+    [System.IO.File]::WriteAllText($DisabledMarker, "disabled`n", $Utf8NoBom)
+    if (Get-ScheduledTask -TaskName $AgentTaskName -ErrorAction SilentlyContinue) {
+        Stop-ScheduledTask -TaskName $AgentTaskName -ErrorAction SilentlyContinue
+        Unregister-ScheduledTask -TaskName $AgentTaskName -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
+    }
+    Write-BridgeStatusJson $null
+    Write-Host 'Disabled Training Sandbox browser UI bridge.' -ForegroundColor Yellow
+}
+
 function Stop-SandboxStack {
     try { Unregister-ScheduledTask -TaskName 'OSCAR-Sandbox-Expiry' -Confirm:$false -ErrorAction SilentlyContinue } catch {}
     if (Test-Path -LiteralPath $RuntimeDir) {
@@ -123,6 +336,7 @@ function Stop-SandboxStack {
     if (Test-Path -LiteralPath $RuntimeDir) {
         Remove-Item -LiteralPath $RuntimeDir -Recurse -Force -ErrorAction SilentlyContinue
     }
+    Write-BridgeStatusJson $null
 }
 
 function Start-SandboxStack {
@@ -222,10 +436,12 @@ function Start-SandboxStack {
 
     try {
         $expireAtLocal = (Get-Date).AddMinutes($TtlMinutes)
-        $taskAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$PSCommandPath`" stop"
+        $psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        $taskAction = New-ScheduledTaskAction -Execute $psExe -Argument "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$SelfScript`" stop"
         $taskTrigger = New-ScheduledTaskTrigger -Once -At $expireAtLocal
         Register-ScheduledTask -TaskName 'OSCAR-Sandbox-Expiry' -Action $taskAction -Trigger $taskTrigger -User 'SYSTEM' -Force | Out-Null
     } catch {}
+    Write-BridgeStatusJson $null
 
     $hostName = Get-EnvFileValue -Key 'OSCAR_HOSTNAME' -DefaultValue 'localhost'
     Write-Host "`n========================================================================" -ForegroundColor Yellow
@@ -276,11 +492,19 @@ switch ($Action.ToLowerInvariant()) {
         }
     }
     'enable-ui-bridge' {
-        $taskAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$PSCommandPath`" status"
-        Write-Host 'Use .\oscar.bat sandbox start / stop on Windows hosts, or open https://<host>:8444 once started.' -ForegroundColor Cyan
+        Enable-UiBridge
+    }
+    'install-agent' {
+        Enable-UiBridge -AutoInstall
     }
     'disable-ui-bridge' {
-        Unregister-ScheduledTask -TaskName 'OSCAR-Sandbox-Agent' -Confirm:$false -ErrorAction SilentlyContinue
+        Disable-UiBridge
+    }
+    'poll-bridge' {
+        Invoke-BridgeTick -StatusOnly
+    }
+    'agent-watch' {
+        Invoke-BridgeWatch
     }
     default {
         Write-Host 'Usage:'
@@ -288,5 +512,6 @@ switch ($Action.ToLowerInvariant()) {
         Write-Host '  .\oscar.bat sandbox stop'
         Write-Host '  .\oscar.bat sandbox reset [-Port 8444] [-TtlMinutes 120]'
         Write-Host '  .\oscar.bat sandbox status [-Json]'
+        Write-Host '  .\oscar.bat sandbox enable-ui-bridge | disable-ui-bridge'
     }
 }

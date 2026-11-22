@@ -87,7 +87,8 @@ is_sandbox_running() {
 
 is_bridge_enabled() {
     if command -v systemctl >/dev/null 2>&1; then
-        systemctl --no-ask-password is-active --quiet oscar-sandbox-agent.timer 2>/dev/null
+        systemctl --no-ask-password is-active --quiet oscar-sandbox-agent.path 2>/dev/null || \
+            systemctl --no-ask-password is-active --quiet oscar-sandbox-agent.timer 2>/dev/null
         return $?
     fi
     return 1
@@ -349,6 +350,12 @@ do_status() {
 enable_ui_bridge() {
     require_root
     command -v systemctl >/dev/null 2>&1 || fail 'systemd is required for enable-ui-bridge.'
+    rm -f -- /etc/oscar-sandbox-bridge.disabled
+    local ctrl_dir
+    ctrl_dir=$(resolve_control_dir || true)
+    if [[ -n $ctrl_dir ]]; then
+        install -d -m 0700 -o 10001 -g 10001 "$ctrl_dir" 2>/dev/null || install -d -m 0700 "$ctrl_dir"
+    fi
     cat >"$systemd_dir/oscar-sandbox-agent.service" <<EOF
 [Unit]
 Description=OSCAR Training Sandbox Host Control Bridge
@@ -356,31 +363,64 @@ After=docker.service
 
 [Service]
 Type=oneshot
-ExecStart=/bin/bash $script_dir/oscar-sandbox.sh poll-bridge
+ExecStart=/bin/bash "$script_dir/oscar-sandbox.sh" poll-bridge
 EOF
+    if [[ -n $ctrl_dir ]]; then
+        cat >"$systemd_dir/oscar-sandbox-agent.path" <<EOF
+[Unit]
+Description=Watch OSCAR Training Sandbox UI Launch Queue
+
+[Path]
+PathExists=$ctrl_dir/request.json
+PathChanged=$ctrl_dir/request.json
+Unit=oscar-sandbox-agent.service
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    fi
     cat >"$systemd_dir/oscar-sandbox-agent.timer" <<EOF
 [Unit]
-Description=Poll OSCAR Training Sandbox UI Launch Queue
+Description=Refresh OSCAR Training Sandbox UI Host Status
 
 [Timer]
-OnBootSec=10s
-OnUnitActiveSec=4s
-AccuracySec=1s
+OnBootSec=15s
+OnUnitActiveSec=30s
+AccuracySec=2s
 
 [Install]
 WantedBy=timers.target
 EOF
     systemctl daemon-reload
+    if [[ -n $ctrl_dir ]]; then
+        systemctl enable --now oscar-sandbox-agent.path >/dev/null 2>&1 || true
+    fi
     systemctl enable --now oscar-sandbox-agent.timer
-    write_bridge_status "" "enable-ui-bridge" "COMPLETED" "1-click Help (?) browser launch enabled."
-    printf 'Enabled 1-click Administrator Training Sandbox control in Help (?).\n'
+    write_bridge_status "" "enable-ui-bridge" "COMPLETED" "1-click Guided Walkthrough & Help (?) browser launch enabled."
+    printf 'Enabled 1-click Training Sandbox launch in Guided Walkthrough & Help (?).\n'
+}
+
+install_agent() {
+    require_root
+    local bridge_pref
+    bridge_pref=$(env_value OSCAR_SANDBOX_UI_BRIDGE 'enabled')
+    if [[ -f /etc/oscar-sandbox-bridge.disabled || ${bridge_pref,,} == "disabled" || ${OSCAR_SANDBOX_SKIP_SYSTEMD:-0} == "1" ]]; then
+        write_bridge_status || true
+        return 0
+    fi
+    if [[ -d /run/systemd/system ]] && command -v systemctl >/dev/null 2>&1; then
+        enable_ui_bridge >/dev/null 2>&1 || true
+    else
+        write_bridge_status || true
+    fi
 }
 
 disable_ui_bridge() {
     require_root
+    touch /etc/oscar-sandbox-bridge.disabled 2>/dev/null || true
     if command -v systemctl >/dev/null 2>&1; then
-        systemctl disable --now oscar-sandbox-agent.timer oscar-sandbox-agent.service >/dev/null 2>&1 || true
-        rm -f -- "$systemd_dir/oscar-sandbox-agent.timer" "$systemd_dir/oscar-sandbox-agent.service"
+        systemctl disable --now oscar-sandbox-agent.path oscar-sandbox-agent.timer oscar-sandbox-agent.service >/dev/null 2>&1 || true
+        rm -f -- "$systemd_dir/oscar-sandbox-agent.path" "$systemd_dir/oscar-sandbox-agent.timer" "$systemd_dir/oscar-sandbox-agent.service"
         systemctl daemon-reload || true
     fi
     write_bridge_status "" "disable-ui-bridge" "COMPLETED" "Browser UI bridge disabled."
@@ -470,6 +510,9 @@ case "$subcmd" in
         ;;
     enable-ui-bridge)
         enable_ui_bridge
+        ;;
+    install-agent)
+        install_agent
         ;;
     disable-ui-bridge)
         disable_ui_bridge
