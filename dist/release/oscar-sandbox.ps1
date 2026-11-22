@@ -224,9 +224,12 @@ function Write-BridgeStatusJson {
 
 function Invoke-BridgeTick {
     param([switch]$StatusOnly)
-    $reqRaw = Invoke-SandboxControlSh 'if [ -f /var/lib/oscar/.moduledata/sandbox-control/request.json ]; then mv -f /var/lib/oscar/.moduledata/sandbox-control/request.json /var/lib/oscar/.moduledata/sandbox-control/.processing.json && cat /var/lib/oscar/.moduledata/sandbox-control/.processing.json && rm -f /var/lib/oscar/.moduledata/sandbox-control/.processing.json; fi'
+    $reqRaw = Invoke-SandboxControlSh 'if [ -f /var/lib/oscar/.moduledata/sandbox-control/request.json ]; then mv -f /var/lib/oscar/.moduledata/sandbox-control/request.json /var/lib/oscar/.moduledata/sandbox-control/.processing.json && touch /var/lib/oscar/.moduledata/sandbox-control/.active-job.lock && cat /var/lib/oscar/.moduledata/sandbox-control/.processing.json && rm -f /var/lib/oscar/.moduledata/sandbox-control/.processing.json; fi'
     if ([string]::IsNullOrWhiteSpace($reqRaw)) {
-        if ($StatusOnly) { Write-BridgeStatusJson $null }
+        if ($StatusOnly) {
+            $locked = Invoke-SandboxControlSh 'if [ -f /var/lib/oscar/.moduledata/sandbox-control/.active-job.lock ]; then age=$(( $(date +%s) - $(stat -c %Y /var/lib/oscar/.moduledata/sandbox-control/.active-job.lock 2>/dev/null || echo 0) )); if [ "$age" -ge 0 ] && [ "$age" -lt 180 ]; then printf LOCKED; else rm -f /var/lib/oscar/.moduledata/sandbox-control/.active-job.lock; fi; fi'
+            if ($locked -ne 'LOCKED') { Write-BridgeStatusJson $null }
+        }
         return
     }
     $req = $reqRaw | ConvertFrom-Json
@@ -245,41 +248,45 @@ function Invoke-BridgeTick {
     })
 
     $psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    switch ($act) {
-        'start' {
-            if (Test-SandboxRunning) {
-                Write-BridgeStatusJson ([ordered]@{
-                    requestId = $reqId; action = 'start'; state = 'COMPLETED'; startedAt = $startedAt
-                    message = "Training Sandbox already running on port $reqPort."
-                })
-                return
+    try {
+        switch ($act) {
+            'start' {
+                if (Test-SandboxRunning) {
+                    Write-BridgeStatusJson ([ordered]@{
+                        requestId = $reqId; action = 'start'; state = 'COMPLETED'; startedAt = $startedAt
+                        message = "Training Sandbox already running on port $reqPort."
+                    })
+                    return
+                }
+                $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+                try {
+                    & $psExe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $SelfScript start -Port $reqPort -TtlMinutes $reqTtl 2>&1 | Out-Null
+                    $rc = $LASTEXITCODE
+                } catch { $rc = 1 } finally { $ErrorActionPreference = $prev }
+                $st = if ($rc -eq 0) { 'COMPLETED' } else { 'FAILED' }
+                $msg = if ($rc -eq 0) { "Training Sandbox ready on port $reqPort." } else { 'Sandbox start failed; check free RAM or run .\oscar.bat sandbox start.' }
+                Write-BridgeStatusJson ([ordered]@{ requestId = $reqId; action = 'start'; state = $st; startedAt = $startedAt; message = $msg })
             }
-            $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-            try {
-                & $psExe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $SelfScript start -Port $reqPort -TtlMinutes $reqTtl 2>&1 | Out-Null
-                $rc = $LASTEXITCODE
-            } catch { $rc = 1 } finally { $ErrorActionPreference = $prev }
-            $st = if ($rc -eq 0) { 'COMPLETED' } else { 'FAILED' }
-            $msg = if ($rc -eq 0) { "Training Sandbox ready on port $reqPort." } else { 'Sandbox start failed; check free RAM or run .\oscar.bat sandbox start.' }
-            Write-BridgeStatusJson ([ordered]@{ requestId = $reqId; action = 'start'; state = $st; startedAt = $startedAt; message = $msg })
+            'reset' {
+                $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+                try {
+                    & $psExe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $SelfScript reset -Port $reqPort -TtlMinutes $reqTtl 2>&1 | Out-Null
+                    $rc = $LASTEXITCODE
+                } catch { $rc = 1 } finally { $ErrorActionPreference = $prev }
+                $st = if ($rc -eq 0) { 'COMPLETED' } else { 'FAILED' }
+                $msg = if ($rc -eq 0) { "Training Sandbox reset and ready on port $reqPort." } else { 'Sandbox reset failed.' }
+                Write-BridgeStatusJson ([ordered]@{ requestId = $reqId; action = 'reset'; state = $st; startedAt = $startedAt; message = $msg })
+            }
+            'stop' {
+                Stop-SandboxStack
+                Write-BridgeStatusJson ([ordered]@{ requestId = $reqId; action = 'stop'; state = 'COMPLETED'; startedAt = $startedAt; message = 'Training Sandbox stopped and flushed.' })
+            }
+            default {
+                Write-BridgeStatusJson ([ordered]@{ requestId = $reqId; action = $act; state = 'COMPLETED'; startedAt = $startedAt; message = 'Refreshed status.' })
+            }
         }
-        'reset' {
-            $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-            try {
-                & $psExe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $SelfScript reset -Port $reqPort -TtlMinutes $reqTtl 2>&1 | Out-Null
-                $rc = $LASTEXITCODE
-            } catch { $rc = 1 } finally { $ErrorActionPreference = $prev }
-            $st = if ($rc -eq 0) { 'COMPLETED' } else { 'FAILED' }
-            $msg = if ($rc -eq 0) { "Training Sandbox reset and ready on port $reqPort." } else { 'Sandbox reset failed.' }
-            Write-BridgeStatusJson ([ordered]@{ requestId = $reqId; action = 'reset'; state = $st; startedAt = $startedAt; message = $msg })
-        }
-        'stop' {
-            Stop-SandboxStack
-            Write-BridgeStatusJson ([ordered]@{ requestId = $reqId; action = 'stop'; state = 'COMPLETED'; startedAt = $startedAt; message = 'Training Sandbox stopped and flushed.' })
-        }
-        default {
-            Write-BridgeStatusJson ([ordered]@{ requestId = $reqId; action = $act; state = 'COMPLETED'; startedAt = $startedAt; message = 'Refreshed status.' })
-        }
+    } finally {
+        Invoke-SandboxControlSh 'rm -f /var/lib/oscar/.moduledata/sandbox-control/.active-job.lock' | Out-Null
     }
 }
 

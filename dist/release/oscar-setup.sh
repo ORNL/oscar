@@ -52,6 +52,9 @@ log_tail=200
 log_tail_explicit=false
 log_follow=false
 support_output_path=''
+reset_user='admin'
+reset_must_change=false
+reset_password_stdin=false
 
 usage() {
     cat <<'EOF'
@@ -73,6 +76,7 @@ OSCAR deployment administration
       [--backup-mode disabled|single] [--backup-dir ABSOLUTE_PATH]
       [--prerequisites auto|existing|bundled]
   sudo ./oscar.sh refresh-tls [--hostname oscar.local] [--tls-san DNS_OR_IP]...
+  sudo ./oscar.sh reset-admin-password [--user admin] [--must-change] [--password-stdin]
   sudo ./oscar.sh check|verify|start|stop|restart|status
   sudo ./oscar.sh upgrade [--adopt-legacy-volumes] [--adopt-legacy-storage-roots]
       [--backup-mode disabled|single] [--backup-dir ABSOLUTE_PATH]
@@ -128,6 +132,12 @@ while (($#)); do
         --tail) log_tail=${2:?missing tail count}; log_tail_explicit=true; shift 2 ;;
         --follow) log_follow=true; shift ;;
         --output|--destination) support_output_path=${2:?missing output path}; shift 2 ;;
+        --user) reset_user=${2:?missing username}; shift 2 ;;
+        --must-change) reset_must_change=true; shift ;;
+        --password-stdin) reset_password_stdin=true; shift ;;
+        --password|--new-password)
+            fail 'Never pass passwords on the command line (visible in process listings and shell history). Prompt interactively or pipe via --password-stdin.'
+            ;;
         --help|-h) usage; exit 0 ;;
         *) fail "Unknown option: $1" ;;
     esac
@@ -1488,7 +1498,7 @@ redaction_report = {
     "generatedAt": generated_at,
     "policy": "automatic-edge-redaction",
     "bundleSource": "host-cli",
-    "neverCollected": ["secrets/*", "/run/secrets/*", "tls/*.key", ".keystore/*", "hivemq-data/*", ".moduledata/oscar-identity.json", "remote-access/*"],
+    "neverCollected": ["secrets/*", "/run/secrets/*", "tls/*.key", ".keystore/*", "hivemq-data/*", ".moduledata/oscar-identity.json", ".moduledata/.break-glass-reset.*", "remote-access/*"],
     "counts": {**stats, "totalRedactions": total_redactions},
 }
 summary = {
@@ -1711,6 +1721,78 @@ case "$command_name" in
         fi
         printf 'TLS certificate refreshed for %s.\n' "$hostname_value"
         print_client_access_instructions
+        ;;
+    reset-admin-password)
+        require_admin
+        require_supported_storage_host
+        assert_deployment_paths_safe
+        require_docker
+        base_configured || fail 'Run init before resetting an OSCAR account password.'
+        assert_deployment_volume_ownership false
+        [[ $reset_user =~ ^[A-Za-z0-9._@-]{2,64}$ ]] || fail "Invalid --user value: $reset_user"
+        [[ ${reset_user,,} != svc-fed-* ]] || fail "Cannot reset password on federation service user: $reset_user"
+
+        new_reset_pw=''
+        if $reset_password_stdin; then
+            IFS= read -r new_reset_pw || fail 'No password supplied on standard input.'
+            new_reset_pw=${new_reset_pw%$'\r'}
+            ((${#new_reset_pw} >= 12)) || fail 'Break-glass password must contain at least 12 characters.'
+        else
+            [[ -t 0 ]] || fail 'Standard input is not a terminal; prompt interactively on a TTY or pass --password-stdin.'
+            printf "Break-glass local password recovery for OSCAR user '%s' (>= 12 characters; input is hidden).\n" "$reset_user" >&2
+            while true; do
+                read -r -s -p "New password for '$reset_user': " pw_one; printf '\n' >&2
+                read -r -s -p "Confirm password for '$reset_user': " pw_two; printf '\n' >&2
+                if ((${#pw_one} < 12)); then
+                    printf 'Use at least 12 characters.\n' >&2
+                    continue
+                fi
+                if [[ $pw_one != "$pw_two" ]]; then
+                    printf 'Passwords do not match.\n' >&2
+                    continue
+                fi
+                new_reset_pw=$pw_one
+                unset pw_one pw_two
+                break
+            done
+        fi
+
+        host_short=$(hostname -s 2>/dev/null || hostname 2>/dev/null || printf 'linux-host')
+        if [[ -n ${SUDO_USER:-} ]]; then
+            reset_actor="sudo:${SUDO_USER}@${host_short}"
+        else
+            reset_actor="root@${host_short}"
+        fi
+
+        reset_tool_args=(--state-dir /var/lib/oscar --user "$reset_user" --actor "$reset_actor")
+        $reset_must_change && reset_tool_args+=(--must-change)
+
+        reset_receipt=''
+        if compose ps --status running oscar 2>/dev/null | grep -q oscar; then
+            if ! reset_receipt=$(printf '%s\n' "$new_reset_pw" | compose exec -T oscar java -classpath '/opt/oscar/lib/*' org.sensorhub.impl.security.session.BreakGlassAdminResetTool apply-live "${reset_tool_args[@]}"); then
+                if ! compose ps --status running oscar 2>/dev/null | grep -q oscar; then
+                    reset_receipt=$(printf '%s\n' "$new_reset_pw" | docker run --rm --interactive --network none --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,nodev --workdir /var/lib/oscar --user 10001:10001 --entrypoint java --volume oscar_oscar_state:/var/lib/oscar "$(oscar_image)" -classpath '/opt/oscar/lib/*' org.sensorhub.impl.security.session.BreakGlassAdminResetTool apply-offline "${reset_tool_args[@]}")
+                else
+                    unset new_reset_pw
+                    fail 'Break-glass live password reset failed (inspect oscar container logs or stop OSCAR and retry).'
+                fi
+            fi
+        else
+            docker image inspect "$(oscar_image)" >/dev/null 2>&1 || fail "OSCAR container image $(oscar_image) is not loaded."
+            reset_receipt=$(printf '%s\n' "$new_reset_pw" | docker run --rm --interactive --network none --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,nodev --workdir /var/lib/oscar --user 10001:10001 --entrypoint java --volume oscar_oscar_state:/var/lib/oscar "$(oscar_image)" -classpath '/opt/oscar/lib/*' org.sensorhub.impl.security.session.BreakGlassAdminResetTool apply-offline "${reset_tool_args[@]}")
+        fi
+        unset new_reset_pw
+
+        if command -v logger >/dev/null 2>&1; then
+            logger -p authpriv.notice -t oscar-security "BREAK_GLASS_PASSWORD_RESET user=${reset_user} actor=${reset_actor}" 2>/dev/null || true
+        fi
+
+        reset_mode=$(printf '%s' "$reset_receipt" | sed -n 's/.*"mode":"\([^"]*\)".*/\1/p')
+        revoked_cnt=$(printf '%s' "$reset_receipt" | sed -n 's/.*"revokedSessions":\([0-9]*\).*/\1/p')
+        printf "\nBreak-glass password reset applied for '%s' (mode=%s, revokedSessions=%s, actor=%s).\n" \
+            "$reset_user" "${reset_mode:-applied}" "${revoked_cnt:-0}" "$reset_actor"
+        printf 'Audit trail recorded in /var/lib/oscar/.moduledata/security-break-glass-audit.log and host syslog.\n'
+        printf 'Sign in at the browser login page, then enroll a new Passkey for the current domain under Users & Access -> My Account.\n'
         ;;
     upgrade)
         require_admin

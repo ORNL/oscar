@@ -35,7 +35,9 @@ Usage:
       [--hostname oscar-host] \
       [--username oscaradmin] \
       [--password-hash '$6$...' | --password-file FILE] \
-      [--ssh-key-file ~/.ssh/id_ed25519.pub]... \
+      [--luks-passphrase-file FILE] \
+      [--require-sudo-password] \
+      [--ssh-key-file ~/.ssh/id_ed25519.pub]... [--ssh-keys-only] \
       [--seed-dir /path/to/seed-folder] \
       [--seed-file /path/to/config.json]... \
       --confirm ERASE-USB
@@ -130,33 +132,53 @@ validate_safe_usb_device() {
 }
 
 render_custom_user_data() {
-    local out_file=$1 host_val=$2 user_val=$3 pass_hash=$4
-    shift 4
+    local out_file=$1 host_val=$2 user_val=$3 pass_hash=$4 luks_pass=$5 req_sudo_pw=$6 ssh_keys_only_flag=$7
+    shift 7
     local -a ssh_keys=("$@")
 
     [[ -f $template_user_data ]] || fail "Missing autoinstall template: $template_user_data"
-    python3 - "$template_user_data" "$out_file" "$host_val" "$user_val" "$pass_hash" "${ssh_keys[@]}" <<'PY'
-import pathlib, re, sys
+    python3 - "$template_user_data" "$out_file" "$host_val" "$user_val" "$pass_hash" "$luks_pass" "$req_sudo_pw" "$ssh_keys_only_flag" "${ssh_keys[@]}" <<'PY'
+import json, pathlib, re, sys
 
-tpl_path, out_path, hostname, username, pass_hash = sys.argv[1:6]
-ssh_keys = [k.strip() for k in sys.argv[6:] if k.strip()]
+tpl_path, out_path, hostname, username, pass_hash, luks_pass, req_sudo_pw, ssh_keys_only_flag = sys.argv[1:9]
+ssh_keys = [k.strip() for k in sys.argv[9:] if k.strip()]
 
 text = pathlib.Path(tpl_path).read_text(encoding="utf-8")
 
 text = re.sub(r'(^\s*hostname:\s*).*$', rf'\g<1>{hostname}', text, count=1, flags=re.M)
 text = re.sub(r'(^\s*username:\s*).*$', rf'\g<1>{username}', text, count=1, flags=re.M)
 if pass_hash:
-    escaped_hash = pass_hash.replace('\\', '\\\\')
     text = re.sub(r'(^\s*password:\s*).*$', lambda m: f'{m.group(1)}"{pass_hash}"', text, count=1, flags=re.M)
 
 if ssh_keys:
     keys_yaml = "    authorized-keys:\n" + "".join(f'      - "{k}"\n' for k in ssh_keys)
     text = re.sub(r'^\s*authorized-keys:\s*\[\]\s*$', keys_yaml.rstrip('\n'), text, count=1, flags=re.M)
 
-# Update sudoers and chown username references if custom username was chosen
-if username != "oscaradmin":
+if ssh_keys_only_flag == "true":
+    text = re.sub(r'(^\s*allow-pw:\s*).*$', r'\g<1>false', text, count=1, flags=re.M)
+    text = text.replace(
+        'PermitRootLogin no\\nX11Forwarding no\\nMaxAuthTries 4\\n',
+        'PermitRootLogin no\\nPasswordAuthentication no\\nKbdInteractiveAuthentication no\\nX11Forwarding no\\nMaxAuthTries 4\\n',
+    )
+
+if luks_pass:
+    luks_json = json.dumps(luks_pass)
+    text = text.replace(
+        '"sizing-policy": "all",\n          "match": {"path": target_disk},',
+        f'"sizing-policy": "all",\n          "password": {luks_json},\n          "match": {{"path": target_disk}},',
+    )
+    text = text.replace(
+        "    layout:\n      name: lvm\n      sizing-policy: all",
+        f"    layout:\n      name: lvm\n      sizing-policy: all\n      password: {luks_json}",
+    )
+
+if req_sudo_pw == "true":
+    text = re.sub(r'^\s*-\s*curtin in-target --target=/target -- sh -c \'echo "oscaradmin ALL=\(ALL\) NOPASSWD:ALL".*$\n?', '', text, count=1, flags=re.M)
+elif username != "oscaradmin":
     text = text.replace("oscaradmin ALL=(ALL) NOPASSWD:ALL", f"{username} ALL=(ALL) NOPASSWD:ALL")
     text = text.replace("90-oscaradmin", f"90-{username}")
+
+if username != "oscaradmin":
     text = text.replace("chown -R oscaradmin:oscaradmin /srv/oscar", f"chown -R {username}:{username} /srv/oscar")
 
 pathlib.Path(out_path).write_text(text, encoding="utf-8", newline="\n")
@@ -173,6 +195,11 @@ hostname_val='oscar-host'
 username_val='oscaradmin'
 password_hash=''
 password_file=''
+luks_passphrase_file=''
+luks_passphrase=''
+require_sudo_password=false
+ssh_keys_only=false
+render_user_data_only=''
 confirm_token=''
 seed_dir=''
 declare -a ssh_key_files=()
@@ -190,6 +217,10 @@ while (($# > 0)); do
         --username) username_val=${2:?missing --username}; shift 2 ;;
         --password-hash) password_hash=${2:?missing --password-hash}; shift 2 ;;
         --password-file) password_file=${2:?missing --password-file}; shift 2 ;;
+        --luks-passphrase-file) luks_passphrase_file=${2:?missing --luks-passphrase-file}; shift 2 ;;
+        --require-sudo-password) require_sudo_password=true; shift ;;
+        --ssh-keys-only) ssh_keys_only=true; shift ;;
+        --render-user-data-only) render_user_data_only=${2:?missing --render-user-data-only}; shift 2 ;;
         --ssh-key-file) ssh_key_files+=("${2:?missing --ssh-key-file}"); shift 2 ;;
         --seed-dir) seed_dir=${2:?missing --seed-dir}; shift 2 ;;
         --seed-file) seed_files+=("${2:?missing --seed-file}"); shift 2 ;;
@@ -198,6 +229,31 @@ while (($# > 0)); do
         *) fail "Unknown option: $1 (run with --help for usage)" ;;
     esac
 done
+
+if [[ -n $luks_passphrase_file ]]; then
+    [[ -f $luks_passphrase_file ]] || fail "LUKS passphrase file not found: $luks_passphrase_file"
+    IFS= read -r luks_passphrase <"$luks_passphrase_file" || true
+    luks_passphrase=${luks_passphrase%$'\r'}
+    ((${#luks_passphrase} >= 12)) || fail "LUKS full-disk encryption passphrase must contain at least 12 characters."
+fi
+
+if [[ -n $render_user_data_only ]]; then
+    [[ $hostname_val =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$ ]] || fail "Invalid --hostname: $hostname_val"
+    [[ $username_val =~ ^[a-z_][a-z0-9_-]{0,30}$ ]] || fail "Invalid Linux --username: $username_val"
+    declare -a render_keys=()
+    for kf in "${ssh_key_files[@]}"; do
+        [[ -f $kf ]] || fail "SSH public key file not found: $kf"
+        while IFS= read -r line; do
+            line=${line%$'\r'}
+            [[ -n $line && $line != \#* ]] && render_keys+=("$line")
+        done <"$kf"
+    done
+    if $ssh_keys_only && ((${#render_keys[@]} == 0)); then
+        fail "--ssh-keys-only requires at least one --ssh-key-file so you cannot lock yourself out of SSH."
+    fi
+    render_custom_user_data "$render_user_data_only" "$hostname_val" "$username_val" "$password_hash" "$luks_passphrase" "$require_sudo_password" "$ssh_keys_only" "${render_keys[@]}"
+    exit 0
+fi
 
 if $list_only; then
     printf 'Protected OS / OSCAR / backup disks (NEVER touched): %s\n\n' "$(protected_disk_names | tr '\n' ' ')"
@@ -374,7 +430,14 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-render_custom_user_data "$work_dir/user-data" "$hostname_val" "$username_val" "$password_hash" "${ssh_keys[@]}"
+if [[ -z $password_hash ]]; then
+    warn "No custom Linux password was set for '$username_val'; the template bootstrap password remains active until changed via 'passwd $username_val'!"
+fi
+if $ssh_keys_only && ((${#ssh_keys[@]} == 0)); then
+    fail "--ssh-keys-only requires at least one SSH public key (--ssh-key-file or ~/.ssh/*.pub)."
+fi
+
+render_custom_user_data "$work_dir/user-data" "$hostname_val" "$username_val" "$password_hash" "$luks_passphrase" "$require_sudo_password" "$ssh_keys_only" "${ssh_keys[@]}"
 cp -f -- "$template_meta_data" "$work_dir/meta-data"
 
 write_target=''

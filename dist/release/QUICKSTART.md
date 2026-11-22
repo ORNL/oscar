@@ -1,6 +1,6 @@
 # OSCAR Quick Start
 
-OSCAR 3.11.5 deployment and storage operation are supported only on Windows 11 x86-64 with Docker
+OSCAR 3.11.6 deployment and storage operation are supported only on Windows 11 x86-64 with Docker
 Desktop/WSL 2 and Ubuntu Server 24.04 x86-64 with Docker Engine/Compose. macOS is limited to source
 inspection and non-deployment development; initialization, start, restart, upgrade, and storage
 operations fail closed there. Before sizing a host or configuring camera H.264 resolution, frame
@@ -40,7 +40,7 @@ federation hub VMs), review *Recommended hardware and capacity sizing* in
    hash on first boot, `init` automatically scrubs the plaintext secret from `secrets/oscar-admin-password.txt`
    (replacing it with a non-empty `# CONSUMED_AT_INIT` marker unless `OSCAR_KEEP_BOOTSTRAP_SECRET=true` is set).
 7. Open the URL printed by setup, normally `https://oscar.local/` (for the OSCAR Viewer and **Users & Access** at `/users`) or `https://oscar.local/sensorhub/admin`. Sessions with **Keep me signed in until I log out** enabled stay signed in across browser restarts, server reboots, and `oscar upgrade` until explicit **Log Out** or administrator revocation; open **Users & Access (`/users`)** in OSCAR Viewer to add individual `Administrator`, `Operator`, or read-only `Viewer` accounts, bulk-enroll a CSV/Excel user list (`Bulk Enroll`) to generate ready-to-send startup text messages and 1-tap Passkey/Password setup QR codes (`/login/enroll?token=oscar_inv_...`, plus readable fallback codes for phone-free facilities), enroll offline WebAuthn / FIDO2 Passkeys or YubiKeys (changing your local OSCAR password is completely independent of any Octelium Zero-Trust tunnel password), or mint scoped Federation Service Tokens (`oscar_fed_...`) and click **Open Servers Page (Federation Token Mode)** (`/servers?auth=bearer`) on the monitoring/HQ viewer to connect remote nodes.
-   - **What LAN & local workstations need for Passkeys:** While PBKDF2 password sign-in works on both domain names and raw LAN IPs, browsers require **(a)** a domain name (such as `https://oscar.local`, or distinct per-node names like `https://oscar.ubuntu` and `https://oscar.win` when running multiple OSCAR servers on the same LAN) mapped in site router Local DNS or client `hosts` files, and **(b)** a trusted HTTPS certificate without bypassed certificate warnings (`certutil -addstore -f Root .\server.crt` on Windows, `sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain server.crt` with an `<= 825`-day leaf/CA certificate on macOS, or `update-ca-certificates` + Chrome NSS `certutil -d sql:$HOME/.pki/nssdb` on Linux). See `DEPLOYMENT.md` (*Enabling local and LAN WebAuthn Passkeys*) for copy-pasteable commands and how to rename an existing node without re-initializing.
+   - **What LAN & local workstations need for Passkeys:** While PBKDF2 password sign-in works on both domain names and raw LAN IPs, browsers require **(a)** a domain name (such as `https://oscar.local`, or distinct per-node names like `https://oscar.ubuntu` and `https://oscar.win` when running multiple OSCAR servers on the same LAN) mapped in site router Local DNS or client `hosts` files, and **(b)** a trusted HTTPS certificate without bypassed certificate warnings (`certutil -addstore -f Root .\server.crt` on Windows, `sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain server.crt` with an `<= 825`-day leaf/CA certificate on macOS, or `update-ca-certificates` + Chrome NSS `certutil -d sql:$HOME/.pki/nssdb` on Linux). If a Passkey-only installation is later moved to a new domain and no administrator remembers a local fallback password, run `sudo bash oscar.sh reset-admin-password` (Ubuntu) or `.\oscar.bat reset-admin-password` (Windows Administrator) on the host to set a local recovery password with zero downtime, sign in once, and enroll a new Passkey for the new domain (see `DEPLOYMENT.md` for bare-metal LUKS2, `sudo`, and SSH hardening).
    - **Optional self-hosted multi-site remote access & centralized SSO (`ORNL/oscar-federation-hub`):** If you want outbound-only HTTPS remote access across firewalled sites plus one place to add or remove users across all federated OSCAR portals (while keeping local offline Passkeys/passwords active on each site), deploy [`ORNL/oscar-federation-hub`](https://github.com/ORNL/oscar-federation-hub) on a central Linux VM (`./oscar-hub.sh init --domain hub.example.org --with-authentik`), register each OSCAR site (`./oscar-hub.sh add-site north-gate --with-trusted-headers`), attach the site's outbound connector (`sudo bash oscar-remote-access.sh configure --domain hub.example.org --service north-gate --token-file north-gate.token` on Ubuntu or `.\oscar-remote-access.ps1 configure` on Windows), and paste the printed OIDC / Trusted Tunnel values into **Users & Access -> Sign-In & SSO Policy**. See `DEPLOYMENT.md` (*Turnkey self-hosted federated remote access & SSO*) for the step-by-step walkthrough.
 
 Setup creates deployment-specific database credentials, defaults `OSCAR_BACKUP_MODE` to `disabled`,
@@ -80,7 +80,7 @@ organization's behalf.
 
 For step-by-step instructions tailored to users unfamiliar with Ubuntu or OSCAR—including bootable USB links, **off-site hotel-room Wi-Fi/DHCP staging with 1-command static-IP on-site cutover**, **bare-metal air-gapped USB setup with zero internet and zero DHCP**, declarative `autoinstall`/Netplan/Ansible YAML files, and **discovering unknown camera/RPM IP addresses**—read [`UBUNTU_FIELD_SETUP_GUIDE.md`](../../docs/UBUNTU_FIELD_SETUP_GUIDE.md).
 
-1. Choose `oscar-3.11.5-ubuntu-x86_64-offline-full.zip` for air-gapped sites without internet (or slow hotel Wi-Fi), or `oscar-3.11.5.zip` when installing over fast internet.
+1. Choose `oscar-3.11.6-ubuntu-x86_64-offline-full.zip` for air-gapped sites without internet (or slow hotel Wi-Fi), or `oscar-3.11.6.zip` when installing over fast internet.
 2. Prepare the Ubuntu 24.04 host (installs official Docker Engine + Compose v2 from bundled `.deb`s or APT, expands Ubuntu's default `100 GiB` LVM root volume if `--expand-lvm` is passed, masks sleep/suspend, disables automatic unattended-upgrade reboots, bounds offline boot-wait timeouts, and tunes socket buffers):
 
 ```sh
@@ -198,7 +198,7 @@ After full acceptance it atomically replaces the HMAC-authenticated `CURRENT` po
 the previous non-current fully accepted schema-v2 snapshot be removed. A confirmation failure
 leaves the previous `CURRENT` authoritative. The explicit
 `backup-verify` command can run with PostgreSQL stopped: it uses a one-shot utility container and
-treats the live catalog receipt as optional. Restore additionally requires matching 3.11.5 backup,
+treats the live catalog receipt as optional. Restore additionally requires matching 3.11.6 backup,
 current-release, and backed-up release-config identities plus every exact local Compose image.
 Plan backup capacity for the old snapshot plus one complete replacement: one snapshot is the
 steady-state logical result, not the peak space required while `CURRENT` is changing. If a crash
@@ -227,10 +227,10 @@ replaces the selected backup's `VERIFIED` marker and normalizes permissions. It 
 one restorable. An optional live catalog update occurs only after deployment-volume ownership is
 proven.
 
-OSCAR 3.11.5's full storage profile is initialized with a new database and standard configuration.
+OSCAR 3.11.6's full storage profile is initialized with a new database and standard configuration.
 An upgrade preserves the old `config.json` and PostgreSQL volume, so it does not silently convert a
 pre-3.11.0 system to the tiered archive or enable PostgreSQL data checksums. Use a fresh deployment
-for the 3.11.5 test systems. Preserve and separately migrate any production history that policy
+for the 3.11.6 test systems. Preserve and separately migrate any production history that policy
 requires.
 
 If a deliberately retained pre-label deployment uses unlabelled Docker volumes, follow the

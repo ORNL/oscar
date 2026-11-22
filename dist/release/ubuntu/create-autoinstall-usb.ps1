@@ -8,6 +8,9 @@ param(
     [string]$Hostname = 'oscar-host',
     [string]$Username = 'oscaradmin',
     [string]$PasswordHash = '',
+    [string]$LuksPassphraseFile = '',
+    [switch]$RequireSudoPassword,
+    [switch]$SshKeysOnly,
     [string[]]$SshKeyFile = @(),
     [string]$SeedDirectory = '',
     [string[]]$SeedFile = @(),
@@ -52,7 +55,9 @@ Usage (run from an Administrator PowerShell or .\oscar.bat):
       -DiskNumber 2 `
       -Hostname oscar-host `
       -Username oscaradmin `
-      -SshKeyFile "$HOME\.ssh\id_ed25519.pub" `
+      -LuksPassphraseFile C:\oscar-seed\luks-passphrase.txt `
+      -RequireSudoPassword `
+      -SshKeyFile "$HOME\.ssh\id_ed25519.pub" -SshKeysOnly `
       -SeedDirectory C:\oscar-seed `
       -ConfirmToken ERASE-USB
 
@@ -73,11 +78,31 @@ function Test-ValidLinuxUsername([string]$Value) {
     return ($Value -match '^[a-z_][a-z0-9_-]{0,30}$')
 }
 
-function Build-CustomUserData([string]$TemplatePath, [string]$HostVal, [string]$UserVal, [string]$PassHash, [string[]]$AuthorizedKeys) {
+function ConvertTo-JsonEscapedScalar([string]$Val) {
+    $escaped = $Val.Replace('\', '\\').Replace('"', '\"')
+    return "`"$escaped`""
+}
+
+function Build-CustomUserData([string]$TemplatePath, [string]$HostVal, [string]$UserVal, [string]$PassHash, [string]$LuksPass, [bool]$ReqSudoPw, [bool]$KeysOnly, [string[]]$AuthorizedKeys) {
     if (-not (Test-Path -LiteralPath $TemplatePath -PathType Leaf)) {
         throw "Missing autoinstall template: $TemplatePath"
     }
     $raw = [IO.File]::ReadAllText($TemplatePath, $Utf8NoBom) -replace "`r`n", "`n"
+    if ($KeysOnly) {
+        $raw = $raw.Replace('allow-pw: true', 'allow-pw: false')
+        $raw = $raw.Replace(
+            'PermitRootLogin no\nX11Forwarding no\nMaxAuthTries 4\n',
+            'PermitRootLogin no\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nX11Forwarding no\nMaxAuthTries 4\n')
+    }
+    if ($LuksPass) {
+        $luksLiteral = ConvertTo-JsonEscapedScalar $LuksPass
+        $raw = $raw.Replace(
+            "`"sizing-policy`": `"all`",`n          `"match`": {`"path`": target_disk},",
+            "`"sizing-policy`": `"all`",`n          `"password`": $luksLiteral,`n          `"match`": {`"path`": target_disk},")
+        $raw = $raw.Replace(
+            "    layout:`n      name: lvm`n      sizing-policy: all",
+            "    layout:`n      name: lvm`n      sizing-policy: all`n      password: $luksLiteral")
+    }
     $lines = $raw -split "`n"
     $outLines = New-Object System.Collections.Generic.List[string]
     $replacedHost = $false
@@ -110,6 +135,9 @@ function Build-CustomUserData([string]$TemplatePath, [string]$HostVal, [string]$
                 }
             }
             $replacedKeys = $true
+            continue
+        }
+        if ($ReqSudoPw -and $line.Contains('oscaradmin ALL=(ALL) NOPASSWD:ALL')) {
             continue
         }
         $modLine = $line
@@ -199,9 +227,23 @@ foreach ($kf in $SshKeyFile) {
     }
 }
 
+$luksPassphrase = ''
+if ($LuksPassphraseFile) {
+    if (-not (Test-Path -LiteralPath $LuksPassphraseFile -PathType Leaf)) {
+        throw "LUKS passphrase file not found: $LuksPassphraseFile"
+    }
+    $luksPassphrase = ([IO.File]::ReadAllLines($LuksPassphraseFile)[0]).TrimEnd([char[]]@([char]13, [char]10))
+    if ($luksPassphrase.Length -lt 12) {
+        throw 'LUKS full-disk encryption passphrase must contain at least 12 characters.'
+    }
+}
+
 # Offline unit-test mode: render user-data cleanly with LF endings without touching disks
 if ($RenderUserDataOnly) {
-    $rendered = Build-CustomUserData $TemplateUserData $Hostname $Username $PasswordHash $resolvedSshKeys.ToArray()
+    if ($SshKeysOnly -and $resolvedSshKeys.Count -eq 0) {
+        throw '-SshKeysOnly requires at least one -SshKeyFile so SSH access is not locked out.'
+    }
+    $rendered = Build-CustomUserData $TemplateUserData $Hostname $Username $PasswordHash $luksPassphrase ([bool]$RequireSudoPassword) ([bool]$SshKeysOnly) $resolvedSshKeys.ToArray()
     [IO.File]::WriteAllText([IO.Path]::GetFullPath($RenderUserDataOnly), $rendered, $Utf8NoBom)
     Write-Host "Rendered cloud-init autoinstall user-data to $RenderUserDataOnly"
     exit 0
@@ -329,7 +371,13 @@ if ($ConfirmToken -cne 'ERASE-USB') {
     }
 }
 
-$userDataContent = Build-CustomUserData $TemplateUserData $Hostname $Username $PasswordHash $resolvedSshKeys.ToArray()
+if (-not $PasswordHash) {
+    Write-Warning "No custom -PasswordHash supplied for '$Username'; change the template bootstrap password immediately after first boot via 'passwd $Username'!"
+}
+if ($SshKeysOnly -and $resolvedSshKeys.Count -eq 0) {
+    throw '-SshKeysOnly requires at least one SSH public key (-SshKeyFile or $HOME\.ssh\*.pub).'
+}
+$userDataContent = Build-CustomUserData $TemplateUserData $Hostname $Username $PasswordHash $luksPassphrase ([bool]$RequireSudoPassword) ([bool]$SshKeysOnly) $resolvedSshKeys.ToArray()
 $metaDataContent = [IO.File]::ReadAllText($TemplateMetaData, $Utf8NoBom) -replace "`r`n", "`n"
 
 $mountedIso = $null

@@ -96,6 +96,29 @@ try {
     Assert-True ($renderedText.Contains('0bda:9210:u') -and $renderedText.Contains('0bda:9210:k')) 'Rendered user-data is missing USB-NVMe BOT + No-LPM quirks.'
     Assert-True ($renderedText.Contains('/usr/local/bin/oscar-wizard')) 'Rendered user-data is missing first-boot oscar-wizard installer.'
 
+    $luksPassFixture = Join-Path $temporaryRoot 'luks-passphrase.txt'
+    [IO.File]::WriteAllText($luksPassFixture, "StrongBareMetalLuks!2026`r`n")
+    $hardenedUserData = Join-Path $temporaryRoot 'rendered-user-data-hardened'
+    & (Join-Path $PSHOME 'powershell.exe') -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+        -File $autoinstallUsbScript `
+        -Hostname 'portal-hardened-01' `
+        -Username 'siteadmin' `
+        -LuksPassphraseFile $luksPassFixture `
+        -RequireSudoPassword `
+        -SshKeyFile $sshPubFixture `
+        -SshKeysOnly `
+        -RenderUserDataOnly $hardenedUserData | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'create-autoinstall-usb.ps1 hardened -RenderUserDataOnly exited non-zero.'
+    $hardenedText = [IO.File]::ReadAllText($hardenedUserData)
+    Assert-True (-not $hardenedText.Contains('NOPASSWD:ALL')) 'Hardened rendered user-data must omit NOPASSWD:ALL when -RequireSudoPassword is set.'
+    Assert-True ($hardenedText.Contains('allow-pw: false') -and $hardenedText.Contains('PasswordAuthentication no')) 'Hardened rendered user-data did not enforce SSH keys only.'
+    Assert-True ($hardenedText.Contains('"StrongBareMetalLuks!2026"')) 'Hardened rendered user-data did not inject LUKS2 full-disk encryption passphrase.'
+
+    $resetCliRejectProcess = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @(
+        '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+        '-File', $setupScript, '-Command', 'reset-admin-password', '-Password', 'LeakedCliPassword!2026') -Wait -PassThru -WindowStyle Hidden
+    Assert-True ($resetCliRejectProcess.ExitCode -ne 0) 'oscar-setup.ps1 reset-admin-password accepted a plaintext -Password on the command line.'
+
     . $setupScript -Command help -TlsSan @('192.168.0.61,oscar-site.example-tailnet.ts.net', '192.168.0.61') -NoAutoNetworkSans | Out-Null
     $resolvedTlsSans = @(Get-TlsSubjectAlternativeNames 'oscar.local')
     Assert-True (($resolvedTlsSans -join '|') -ceq 'oscar.local|192.168.0.61|oscar-site.example-tailnet.ts.net') `

@@ -150,6 +150,7 @@ autoinstall:
     - curtin in-target --target=/target -- sh -c 'echo "oscaradmin ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-oscaradmin && chmod 0440 /etc/sudoers.d/90-oscaradmin'
     # Disable automatic unattended-upgrade reboots and mask sleep/suspend targets from first boot
     - curtin in-target --target=/target -- sh -c 'printf "Unattended-Upgrade::Automatic-Reboot \"false\";\n" > /etc/apt/apt.conf.d/52oscar-unattended-upgrades'
+    - curtin in-target --target=/target -- sh -c 'mkdir -p /etc/ssh/sshd_config.d && printf "PermitRootLogin no\nX11Forwarding no\nMaxAuthTries 4\n" > /etc/ssh/sshd_config.d/90-oscar-hardening.conf && chmod 0644 /etc/ssh/sshd_config.d/90-oscar-hardening.conf'
     - curtin in-target --target=/target -- systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
     - curtin in-target --target=/target -- sh -c 'mkdir -p /etc/systemd/system/systemd-networkd-wait-online.service.d && printf "[Service]\nExecStart=\nExecStart=/lib/systemd/systemd-networkd-wait-online --any --timeout=10\n" > /etc/systemd/system/systemd-networkd-wait-online.service.d/oscar-timeout.conf'
     # Pre-configure USB-to-NVMe Bulk-Only Transport (:u) + No-LPM (:k) quirks from first boot
