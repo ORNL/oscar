@@ -2235,6 +2235,8 @@ try {
                 }
                 $usbScript = Join-Path $ScriptRoot 'oscar-usb-backup.ps1'
                 if (Test-Path -LiteralPath $usbScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $usbScript install-agent | Out-Null } catch {} }
+                $sandboxScript = Join-Path $ScriptRoot 'oscar-sandbox.ps1'
+                if (Test-Path -LiteralPath $sandboxScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $sandboxScript install-agent | Out-Null } catch {} }
             }
             Write-Host "`nOSCAR setup complete: https://${Hostname}:$Port/sensorhub/admin" -ForegroundColor Green
             Write-ClientAccessInstructions $resolvedTlsSans
@@ -2248,6 +2250,8 @@ try {
             Complete-PendingFreshInit
             $usbScript = Join-Path $ScriptRoot 'oscar-usb-backup.ps1'
             if (Test-Path -LiteralPath $usbScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $usbScript install-agent | Out-Null } catch {} }
+            $sandboxScript = Join-Path $ScriptRoot 'oscar-sandbox.ps1'
+            if (Test-Path -LiteralPath $sandboxScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $sandboxScript install-agent | Out-Null } catch {} }
             Invoke-RemoteAccessSubcommand @('sync')
         }
         'stop' {
@@ -2264,6 +2268,8 @@ try {
             Complete-PendingFreshInit
             $usbScript = Join-Path $ScriptRoot 'oscar-usb-backup.ps1'
             if (Test-Path -LiteralPath $usbScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $usbScript install-agent | Out-Null } catch {} }
+            $sandboxScript = Join-Path $ScriptRoot 'oscar-sandbox.ps1'
+            if (Test-Path -LiteralPath $sandboxScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $sandboxScript install-agent | Out-Null } catch {} }
             Invoke-RemoteAccessSubcommand @('sync')
         }
         'status' {
@@ -2320,6 +2326,8 @@ try {
             Complete-PendingFreshInit
             $usbScript = Join-Path $ScriptRoot 'oscar-usb-backup.ps1'
             if (Test-Path -LiteralPath $usbScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $usbScript install-agent | Out-Null } catch {} }
+            $sandboxScript = Join-Path $ScriptRoot 'oscar-sandbox.ps1'
+            if (Test-Path -LiteralPath $sandboxScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $sandboxScript install-agent | Out-Null } catch {} }
             if (Test-Path -LiteralPath (Join-Path $ScriptRoot 'offline-images.tar')) {
                 Invoke-RemoteAccessSubcommand @('sync')
             } else {
