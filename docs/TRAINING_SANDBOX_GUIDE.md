@@ -1,6 +1,6 @@
-# OSCAR 3.11.5 Guided Walkthrough Refresher (`:443`) & Ephemeral Hands-On Training Sandbox (`oscar-sandbox` `:8444`)
+# OSCAR 3.11.6 Guided Walkthrough Refresher (`:443`) & Ephemeral Hands-On Training Sandbox (`oscar-sandbox` `:8444`)
 
-OSCAR 3.11.5 provides two complementary, built-in training and refresher experiences for gatehouse operators, shift supervisors, and system administrators:
+OSCAR 3.11.6 provides two complementary, built-in training and refresher experiences for gatehouse operators, shift supervisors, and system administrators:
 
 1. **Anytime Live Console Guided Walkthrough (`:443` — Read-Only Refresher Mode):** Click **Guided Walkthrough** in the top navigation bar (or inside **Help (`?`) -> Manual & Video Guides**) at any time during a live shift to open the side-by-side coach (`READ-ONLY REFRESHER` badge). Users can browse all **13 role-based labs**, watch offline `1080p` captioned videos, view annotated `1920×1080` reference screenshots, navigate to pages, and click **Highlight Control on Screen** with **zero** simulated alarm injections, **zero** `/stage-track` server mutations, and **zero** background polling when closed.
 2. **Isolated Ephemeral Hands-On Practice Sandbox (`oscar-sandbox` on `:8444`):** Launch a completely isolated disposable practice stack (`1-click` from inside **Guided Walkthrough** or **Help (`?`)** when `enable-ui-bridge` is active on Ubuntu, or via `oscar.sh` / `oscar.bat sandbox start`) to inject simulated radiation alarms and detector faults, upload practice `.n42` / `.uff` / `.csv` / `.pmtiles` files, and practice **Split-Pane SensorHub Admin** edits with 100% zero impact on live PostgreSQL, Parquet archives, `config.json`, or physical RPM relays.
@@ -31,7 +31,7 @@ A core requirement of radiation portal operations is that training data, practic
 | Dimension | Operational OSCAR (`compose.yaml`, `:443`) | Ephemeral Training Sandbox (`compose.sandbox.yaml`, `:8444`) |
 | :--- | :--- | :--- |
 | **Docker Compose Project** | `oscar` | `oscar-sandbox` |
-| **Container Images** | `oscar:3.11.5`, `oscar-postgis:3.11.5`, `nginx-unprivileged:1.30.7-alpine` | Reuses the exact already-installed `3.11.5` images (`0 B` extra image download) |
+| **Container Images** | `oscar:3.11.6`, `oscar-postgis:3.11.6`, `nginx-unprivileged:1.30.7-alpine` | Reuses the exact already-installed `3.11.6` images (`0 B` extra image download) |
 | **PostgreSQL Volume** | `oscar_postgres_data` (persistent, checksummed) | `oscar_sandbox_pg` (disposable, wiped on `stop`/`reset`/TTL) |
 | **Application State Volume** | `oscar_oscar_state` (persistent `config.json`, Passkeys, journals) | `oscar_sandbox_state` (disposable, wiped on `stop`/`reset`/TTL) |
 | **Parquet Cold Archive** | Host bind-mount `OSCAR_ARCHIVE_DIR` (`archive.enabled = true`) | **Zero host bind-mounts**; `tmpfs` `/var/lib/oscar/archive` + `archive.enabled = false` (`0` `.parquet` files written) |
@@ -46,7 +46,7 @@ A core requirement of radiation portal operations is that training data, practic
 
 ### 2.1 Ubuntu Server 24.04 LTS CLI
 
-From the extracted OSCAR 3.11.5 release directory:
+From the extracted OSCAR 3.11.6 release directory:
 
 ```bash
 # Launch the isolated sandbox on HTTPS port 8444 (default 120-minute auto-expiry TTL)
@@ -67,7 +67,7 @@ sudo bash oscar.sh sandbox stop
 
 ### 2.2 Windows 11 + Docker Desktop (WSL 2) CLI
 
-From an Administrator PowerShell or Command Prompt in the OSCAR 3.11.5 release directory:
+From an Administrator PowerShell or Command Prompt in the OSCAR 3.11.6 release directory:
 
 ```powershell
 # Launch the isolated sandbox on HTTPS port 8444
@@ -104,13 +104,13 @@ When `OSCAR_SANDBOX_MODE=true`, `TrainingSandboxManager` starts a zero-hardware 
      - `norm_eml`: Spatially uniform 4-panel distributed cargo profile evaluated by `SandboxEmlTrainingAlgorithm` as `RELEASE` -> automatic **`Code 9999: EML Non-Threat`** disposition.
      - `extended_occupancy`: Holds a gamma-only occupancy past the sandbox extended-occupancy threshold (`8 s` accelerated threshold inside sandbox mode) to trigger live **`Fault - Extended Occupancy`** followed by **`Code 9998: Extended Occupancy Gamma Alarm`** auto-adjudication on exit.
      - `fault_gamma_high` / `fault_tamper` / `clear_faults`: Live `GH` and `TT`/`TC` state-of-health transitions.
-2. **Loopback RTSP Container Camera (`rtsp://127.0.0.1:8554/tutorial-cam` & `/tutorial-cam-2`):**
-   - Encodes deterministic `CC0-1.0` `1280×720` `H.264` gatehouse container clips (`MSCU5285725` / `TN482KMP` and `OSCU4829106` / `VA917TRL`, Modulo-11 valid ISO 6346 container stencils) in-process via JavaCPP JNI (`libopenh264` / `libavformat`) and streams them into loopback `mediamtx` (`< 0.2%` CPU, zero external CLI binary dependencies).
-   - Exercises the full production video pipeline: live HLS playback, 5-JPEG alarm frame extraction (`frame-01.jpg`–`frame-05.jpg`), and asynchronous ONNX Container & License Plate OCR (`vehicleOcr`).
+2. **Loopback RTSP Moving-Truck Container Camera (`rtsp://127.0.0.1:8554/tutorial-cam` & `/tutorial-cam-2`):**
+   - Encodes deterministic `CC0-1.0` `1280×720` (`15 fps`, `0.33 s` GOP) `H.264` gatehouse tractor-trailer drive-through clips (`SCFU8572724` / `SWT03` on `DemoLane01` and `RSTU2402941` / `M50M1` on `DemoLane02`, Modulo-11 valid ISO 6346 container stencils) in-process via JavaCPP JNI (`libopenh264` / `libavformat`) and streams them into loopback `mediamtx` (`< 0.2%` CPU, zero external CLI binary dependencies).
+   - Synchronizes each occupancy injection with a full end-to-end lane transit (empty portal -> tractor cab entering -> 40-ft container traversing between the RPM pillars -> rear doors & trailer bumper exiting -> empty portal) at true `1.0×` real-time RTP timestamps, exercising live HLS playback, progressive 5-JPEG alarm frame extraction (`frame-01.jpg`–`frame-05.jpg`), and asynchronous ONNX Container & License Plate OCR (`vehicleOcr`).
 3. **Downloadable Practice Sample Files (`/sensorhub/oscar/sandbox/samples/*`):**
    - `tutorial-1-lane.csv`: Valid `SpreadsheetParser` V1 CSV pre-targeted at `127.0.0.1:10099` and `127.0.0.1:8554/tutorial-cam` (`archiveEnabled = false`).
    - `sample-cs137-co60.n42`: Synthetic ANSI N42.42 secondary-inspection gamma spectrum (`Cs-137` 662 keV + `Co-60` 1173/1332 keV).
-   - `sample-cargo-uff3.uff`: `CC0-1.0` WCO `UFF 3.0.0` cargo NII package containing a 16-bit `uint16` grayscale TIFF radiograph, 8-bit palettized **HEMD** effective-Z overlay (`Organic`, `Inorganic`, `Metallic`, `High-Z Shielding`), customs declaration, High-Z bounding-box annotation, and embedded `.n42` spectrum (also pre-indexed at `/var/lib/oscar/sandbox-tutorial/uff-share` with both exact and 1-character fuzzy OCR matches).
+   - `sample-cargo-uff3.uff`: `CC0-1.0` WCO `UFF 3.0.0` tractor-trailer truck NII package (`dfb985c4-eb26-41ab-938b-ad2a1f5966d4`, matching `SCFU8572724` / `SWT03`) containing a `2048×600` Deflate-compressed 16-bit `uint16` Beer-Lambert truck radiograph, 8-bit palettized **HEMD** effective-Z overlay (`Organic`, `Intermediate`, `Inorganic`, `High-Z Shielding`), Bill of Lading Trade Manifest `.pdf`, customs declaration, normalized High-Z bounding-box annotation (`94%`), matching optical camera crops, and embedded `.n42` spectrum (also pre-indexed at `/var/lib/oscar/sandbox-tutorial/uff-share` alongside `RSTU2402941` NORM and `SCFU8S72724` 1-character fuzzy OCR packages).
    - `sample-regional-map.pmtiles`: Compact Protomaps PMTiles v3 regional archive for testing air-gapped `/map` basemaps in **Runtime Extensions (`/extensions`)**.
    - `sample-policy-pack.json`: Agency Disposition Policy Pack (`Code 101` & `Code 102` localized across `en`, `es`, `fr`, `el`).
 
@@ -132,12 +132,12 @@ Inside `:8444` (and in Read-Only Refresher Mode via **Guided Walkthrough** on `:
 - **Lab 1.1 — Live Lane Monitoring, Status of Health & Fault Triage:** Verify `Online` RPM/camera health on `/health`, inject `Fault - Gamma High` (`GH`) and `Tamper` (`TT`), clear faults (`TC`), and observe a clean vehicle pass.
 - **Lab 1.2 — Priority Alarm Queue & 5-Frame Alarm Adjudication:** Inject a localized point-source Gamma Alarm, inspect the count profile and 5 retained JPEG frames on `/`, and submit a disposition code.
 - **Lab 1.3 — NORM (`Code 9999`), Extended Occupancy (`Code 9998`) & Neutron Safety:** Compare spatially uniform NORM auto-release (`Code 9999`) and stalled gamma-only holds (`Code 9998`) against mandatory human review on Neutron alarms (`NA`).
-- **Lab 1.4 — Container OCR, Secondary Spectroscopy (`.n42`) & QR Transfer:** Apply an ISO 6346 OCR container chip (`MSCU5285725`), attach `sample-cs137-co60.n42`, and inspect watermarked air-gapped QR packages.
-- **Lab 1.5 — 16-Bit WCO UFF Cargo X-Ray & HEMD Material Inspection:** Search by UFF UUID or container ID, adjust 16-bit TIFF Window/Level contrast, and toggle HEMD High-Z shielding bands aligned with the RPM radiation strip.
+- **Lab 1.4 — Container OCR, Secondary Spectroscopy (`.n42`) & QR Transfer:** Apply an ISO 6346 OCR container chip (`SCFU8572724`), attach `sample-cs137-co60.n42`, and inspect watermarked air-gapped QR packages.
+- **Lab 1.5 — 16-Bit WCO UFF Cargo X-Ray & HEMD Material Inspection:** Search by UFF UUID (`dfb985c4-eb26-41ab-938b-ad2a1f5966d4`) or container ID (`SCFU8572724`), adjust 16-bit TIFF Window/Level contrast, and toggle HEMD High-Z shielding bands aligned with the RPM radiation strip.
 
 ### Track 2 — Shift Supervisor & Analyst (`supervisor`, 3 Labs)
 *Stages 2 lanes (`DemoLane01` `north-gate` & `DemoLane02` `south-gate`) and seeds multi-category `SNM`, `Medical`, `NORM`, and multi-pass container history.*
-- **Lab 2.1 — Operational Views & Multi-Pass Vehicle Correlation:** Scope the console via `Scoped View` (`north-gate` / `south-gate`), correlate multi-pass container `MSCU5285725` in `VehiclePassComparisonDialog`, and bookmark a Saved Query.
+- **Lab 2.1 — Operational Views & Multi-Pass Vehicle Correlation:** Scope the console via `Scoped View` (`north-gate` / `south-gate`), correlate multi-pass container `SCFU8572724` in `VehiclePassComparisonDialog`, and bookmark a Saved Query.
 - **Lab 2.2 — UpSet `SNM` Co-Occurrence Analytics & 6-Type Multi-Format Reports:** Generate watermarked `PDF`, `CSV`, `JSON`, and `XLSX` reports in `/report` and inspect crimson `SNM` intersections on the UpSet chart.
 - **Lab 2.3 — National Node Summary & Secret-Redacted Support Bundles:** Review aggregated KPIs on `/national-view` and export a credential-scrubbed `oscar-support-<UTC>.zip` diagnostic bundle from `Help (?)`.
 

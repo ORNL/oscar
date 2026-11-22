@@ -475,13 +475,22 @@ poll_bridge() {
     local ctrl_dir
     ctrl_dir=$(resolve_control_dir || true)
     [[ -n $ctrl_dir ]] || return 0
+    local lock_file="$ctrl_dir/.active-job.lock"
     local req_file="$ctrl_dir/request.json"
     if [[ ! -f $req_file ]]; then
+        if [[ -f $lock_file ]]; then
+            local lock_age=$(( $(date +%s) - $(stat -c %Y "$lock_file" 2>/dev/null || echo 0) ))
+            if (( lock_age >= 0 && lock_age < 180 )); then
+                return 0
+            fi
+            rm -f -- "$lock_file"
+        fi
         write_bridge_status
         return 0
     fi
     local processing="$ctrl_dir/request.processing.$$"
     mv -f -- "$req_file" "$processing" 2>/dev/null || return 0
+    touch "$lock_file" 2>/dev/null || true
 
     local raw req_id action port ttl
     raw=$(cat "$processing")
@@ -497,25 +506,32 @@ poll_bridge() {
     case "$action" in
         start)
             if is_sandbox_running; then
+                rm -f -- "$lock_file"
                 write_bridge_status "$req_id" "start" "COMPLETED" "Training Sandbox already running on port ${port}."
             elif do_start --port "$port" --ttl-minutes "$ttl" >/dev/null 2>&1; then
+                rm -f -- "$lock_file"
                 write_bridge_status "$req_id" "start" "COMPLETED" "Training Sandbox ready on port ${port}."
             else
+                rm -f -- "$lock_file"
                 write_bridge_status "$req_id" "start" "FAILED" "Sandbox start failed; check host RAM or run sudo bash oscar.sh sandbox start."
             fi
             ;;
         reset)
             if do_start --port "$port" --ttl-minutes "$ttl" >/dev/null 2>&1; then
+                rm -f -- "$lock_file"
                 write_bridge_status "$req_id" "reset" "COMPLETED" "Training Sandbox reset and ready on port ${port}."
             else
+                rm -f -- "$lock_file"
                 write_bridge_status "$req_id" "reset" "FAILED" "Sandbox reset failed; check host RAM or run sudo bash oscar.sh sandbox reset."
             fi
             ;;
         stop)
             do_stop >/dev/null 2>&1 || true
+            rm -f -- "$lock_file"
             write_bridge_status "$req_id" "stop" "COMPLETED" "Training Sandbox stopped and flushed."
             ;;
         *)
+            rm -f -- "$lock_file"
             write_bridge_status "$req_id" "$action" "COMPLETED" "Refreshed status."
             ;;
     esac

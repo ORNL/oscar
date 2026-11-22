@@ -80,6 +80,7 @@ echo   create-autoinstall-usb -ListDrives
 echo   init
 echo   init -Hostname oscar.local -Port 443
 echo   init -Hostname oscar.local -TlsSan oscar-site.example.org
+echo   reset-admin-password
 echo   start
 echo   stop
 echo   restart

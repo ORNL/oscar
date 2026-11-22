@@ -4626,4 +4626,32 @@ ps_accept=$(grep -n -m1 'Complete-NewBackupAcceptance' <<<"$ps_create_body" | cu
     exit 1
 }
 
+# Verify bare-metal autoinstall security hardening flags & break-glass CLI password-argv guard
+autoinstall_sh="$repo_root/dist/release/ubuntu/create-autoinstall-usb.sh"
+setup_sh="$repo_root/dist/release/oscar-setup.sh"
+printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKey fixture@oscar\n' >"$test_root/test_ed25519.pub"
+printf 'StrongBareMetalLuks!2026\n' >"$test_root/test_luks.txt"
+bash "$autoinstall_sh" \
+    --hostname portal-hardened-01 \
+    --username siteadmin \
+    --luks-passphrase-file "$test_root/test_luks.txt" \
+    --require-sudo-password \
+    --ssh-key-file "$test_root/test_ed25519.pub" \
+    --ssh-keys-only \
+    --render-user-data-only "$test_root/hardened-user-data"
+! grep -Fq 'NOPASSWD:ALL' "$test_root/hardened-user-data" || {
+    printf 'create-autoinstall-usb.sh retained NOPASSWD:ALL despite --require-sudo-password.\n' >&2
+    exit 1
+}
+grep -Fq 'allow-pw: false' "$test_root/hardened-user-data" &&
+grep -Fq 'PasswordAuthentication no' "$test_root/hardened-user-data" &&
+grep -Fq '"StrongBareMetalLuks!2026"' "$test_root/hardened-user-data" || {
+    printf 'create-autoinstall-usb.sh did not apply SSH key-only or LUKS2 settings.\n' >&2
+    exit 1
+}
+if bash "$setup_sh" reset-admin-password --password 'LeakedCliPassword!2026' >/dev/null 2>&1; then
+    printf 'oscar-setup.sh reset-admin-password accepted --password on argv.\n' >&2
+    exit 1
+fi
+
 printf 'OSCAR storage script safety tests passed.\n'

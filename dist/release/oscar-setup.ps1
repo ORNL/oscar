@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('init', 'check', 'host-check', 'prepare-host', 'verify', 'start', 'stop', 'restart', 'status', 'logs', 'support-bundle', 'upgrade', 'backup', 'backup-verify', 'backup-prune', 'restore', 'archive', 'help')]
+    [ValidateSet('init', 'check', 'host-check', 'prepare-host', 'verify', 'start', 'stop', 'restart', 'status', 'logs', 'support-bundle', 'reset-admin-password', 'upgrade', 'backup', 'backup-verify', 'backup-prune', 'restore', 'archive', 'help')]
     [string]$Command = 'help',
     [string]$StorageAction,
     [string]$HoldAction,
@@ -59,7 +59,11 @@ param(
     [switch]$ForceWslConfig,
     [switch]$SkipWslConfig,
     [switch]$Json,
-    [switch]$Strict
+    [switch]$Strict,
+    [string]$User = 'admin',
+    [switch]$MustChange,
+    [switch]$PasswordStdin,
+    [string]$Password
 )
 
 Set-StrictMode -Version 2.0
@@ -2013,7 +2017,7 @@ fi
         generatedAt    = $generatedAt
         policy         = 'automatic-edge-redaction'
         bundleSource   = 'host-cli'
-        neverCollected = @('secrets/*', '/run/secrets/*', 'tls/*.key', '.keystore/*', 'hivemq-data/*', '.moduledata/oscar-identity.json', 'remote-access/*')
+        neverCollected = @('secrets/*', '/run/secrets/*', 'tls/*.key', '.keystore/*', 'hivemq-data/*', '.moduledata/oscar-identity.json', '.moduledata/.break-glass-reset.*', 'remote-access/*')
         counts         = [ordered]@{
             jsonFieldsRedacted      = [int]$stats['jsonFieldsRedacted']
             uriCredentialsRedacted  = [int]$stats['uriCredentialsRedacted']
@@ -2116,6 +2120,7 @@ OSCAR deployment administration
       [-BackupMode disabled|single] [-BackupDir ABSOLUTE_PATH]
   .\oscar.bat logs [-Service all|oscar|postgres|gateway] [-Tail 200] [-Follow]
   .\oscar.bat support-bundle [-Tail 2500] [-Destination PATH]
+  .\oscar.bat reset-admin-password [-User admin] [-MustChange] [-PasswordStdin]
   .\oscar.bat backup
   .\oscar.bat backup-verify -BackupId ID
   .\oscar.bat restore -BackupId ID -Confirm ID
@@ -2311,6 +2316,127 @@ try {
         'support-bundle' {
             $effectiveSupportTail = if ($PSBoundParameters.ContainsKey('Tail')) { $Tail } else { 2500 }
             Export-HostSupportBundle $effectiveSupportTail (-not [string]::IsNullOrWhiteSpace($Destination))
+        }
+        'reset-admin-password' {
+            if ($PSBoundParameters.ContainsKey('Password') -or -not [string]::IsNullOrEmpty($Password)) {
+                throw 'Never pass -Password on the command line (visible in process listings and command history). Prompt interactively or pipe via -PasswordStdin.'
+            }
+            Assert-Administrator
+            Assert-DeploymentPathsSafe
+            Assert-Docker
+            Assert-BaseConfigured
+            Assert-DeploymentVolumeOwnership $false
+            $targetUser = if ($User) { $User.Trim() } else { 'admin' }
+            if ($targetUser -cnotmatch '^[A-Za-z0-9._@-]{2,64}$') {
+                throw "Invalid -User value: $targetUser"
+            }
+            if ($targetUser.ToLowerInvariant().StartsWith('svc-fed-')) {
+                throw "Cannot reset password on federation service user: $targetUser"
+            }
+
+            $newResetPassword = $null
+            if ($PasswordStdin) {
+                $stdinLine = [Console]::In.ReadLine()
+                if ([string]::IsNullOrEmpty($stdinLine)) {
+                    throw 'No password supplied on standard input.'
+                }
+                $newResetPassword = $stdinLine.TrimEnd([char[]]@([char]13, [char]10))
+                if ($newResetPassword.Length -lt 12) {
+                    throw 'Break-glass password must contain at least 12 characters.'
+                }
+            } else {
+                if ($NonInteractive) {
+                    throw 'Use -PasswordStdin for non-interactive break-glass password resets.'
+                }
+                Write-Host "Break-glass local password recovery for OSCAR user '$targetUser' (>= 12 characters; input is hidden)."
+                while ($true) {
+                    $firstSec = Read-Host "New password for '$targetUser'" -AsSecureString
+                    $secondSec = Read-Host "Confirm password for '$targetUser'" -AsSecureString
+                    $firstPtr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($firstSec)
+                    $secondPtr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secondSec)
+                    try {
+                        $firstPlain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($firstPtr)
+                        $secondPlain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($secondPtr)
+                        if ($firstPlain.Length -lt 12) {
+                            Write-Warning 'Use at least 12 characters.'
+                            continue
+                        }
+                        if ($firstPlain -cne $secondPlain) {
+                            Write-Warning 'Passwords do not match.'
+                            continue
+                        }
+                        $newResetPassword = $firstPlain
+                        break
+                    } finally {
+                        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($firstPtr)
+                        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($secondPtr)
+                    }
+                }
+            }
+
+            $resetActor = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+            if ([string]::IsNullOrWhiteSpace($resetActor)) {
+                $resetActor = "windows-admin@$env:COMPUTERNAME"
+            }
+            $toolArgs = @('--state-dir', '/var/lib/oscar', '--user', $targetUser, '--actor', $resetActor)
+            if ($MustChange) { $toolArgs += '--must-change' }
+
+            $runningCheck = @()
+            try { $runningCheck = @(Get-ComposeOutput @('ps', '--status', 'running', 'oscar')) } catch { $runningCheck = @() }
+            $oscarIsRunning = [bool]($runningCheck | Where-Object { $_ -match '\boscar\b' })
+            $receiptRaw = ''
+            try {
+                if ($oscarIsRunning) {
+                    try {
+                        $liveOut = @(Get-ComposeInputOutput "$newResetPassword`n" (@(
+                            'exec', '-T', 'oscar', 'java', '-classpath', '/opt/oscar/lib/*',
+                            'org.sensorhub.impl.security.session.BreakGlassAdminResetTool', 'apply-live') + $toolArgs))
+                        $receiptRaw = ($liveOut -join "`n").Trim()
+                    } catch {
+                        $stillRunning = @()
+                        try { $stillRunning = @(Get-ComposeOutput @('ps', '--status', 'running', 'oscar')) } catch { $stillRunning = @() }
+                        if (-not [bool]($stillRunning | Where-Object { $_ -match '\boscar\b' })) {
+                            $offlineOut = @(Get-ExternalInputOutput "$newResetPassword`n" 'docker' (@(
+                                'run', '--rm', '--interactive', '--network', 'none', '--cap-drop', 'ALL',
+                                '--security-opt', 'no-new-privileges', '--tmpfs', '/tmp:rw,noexec,nosuid,nodev',
+                                '--workdir', '/var/lib/oscar', '--user', '10001:10001', '--entrypoint', 'java',
+                                '--volume', 'oscar_oscar_state:/var/lib/oscar', (Get-OscarImage),
+                                '-classpath', '/opt/oscar/lib/*',
+                                'org.sensorhub.impl.security.session.BreakGlassAdminResetTool', 'apply-offline') + $toolArgs))
+                            $receiptRaw = ($offlineOut -join "`n").Trim()
+                        } else {
+                            throw "Break-glass live password reset failed: $($_.Exception.Message)"
+                        }
+                    }
+                } else {
+                    if (-not (Test-ContainerImage (Get-OscarImage))) {
+                        throw "OSCAR container image $(Get-OscarImage) is not loaded."
+                    }
+                    $offlineOut = @(Get-ExternalInputOutput "$newResetPassword`n" 'docker' (@(
+                        'run', '--rm', '--interactive', '--network', 'none', '--cap-drop', 'ALL',
+                        '--security-opt', 'no-new-privileges', '--tmpfs', '/tmp:rw,noexec,nosuid,nodev',
+                        '--workdir', '/var/lib/oscar', '--user', '10001:10001', '--entrypoint', 'java',
+                        '--volume', 'oscar_oscar_state:/var/lib/oscar', (Get-OscarImage),
+                        '-classpath', '/opt/oscar/lib/*',
+                        'org.sensorhub.impl.security.session.BreakGlassAdminResetTool', 'apply-offline') + $toolArgs))
+                    $receiptRaw = ($offlineOut -join "`n").Trim()
+                }
+            } finally {
+                $newResetPassword = $null
+            }
+
+            try {
+                Write-EventLog -LogName Application -Source 'Application' -EntryType Warning -EventId 4724 `
+                    -Message "OSCAR BREAK_GLASS_PASSWORD_RESET applied for user '$targetUser' by '$resetActor'." -ErrorAction SilentlyContinue
+            } catch {}
+
+            $parsedReceipt = $null
+            try { $parsedReceipt = $receiptRaw | ConvertFrom-Json } catch {}
+            $appliedMode = if ($parsedReceipt -and $parsedReceipt.mode) { $parsedReceipt.mode } else { 'applied' }
+            $revokedCnt = if ($parsedReceipt -and $null -ne $parsedReceipt.revokedSessions) { $parsedReceipt.revokedSessions } else { 0 }
+            Write-Host "`nBreak-glass password reset applied for '$targetUser' (mode=$appliedMode, revokedSessions=$revokedCnt, actor=$resetActor)." -ForegroundColor Green
+            Write-Host 'Audit trail recorded in /var/lib/oscar/.moduledata/security-break-glass-audit.log and Windows Application Event Log.'
+            Write-Host 'Sign in at the browser login page, then enroll a new Passkey for the current domain under Users & Access -> My Account.'
         }
         'upgrade' {
             Assert-Administrator

@@ -410,6 +410,34 @@ EOF
         record_check "field-tools" "WARN" "Optional field diagnostic tools missing (${missing_tools[*]}); run 'sudo bash oscar.sh prepare-host'."
     fi
 
+    # 13. Host break-glass & OS security posture checks (bare-metal autoinstall & production hardening)
+    if [[ -r "${etc_dir}/shadow" ]] && grep -Fq '$6$oscar3110field$' "${etc_dir}/shadow" 2>/dev/null; then
+        record_check "os-default-password" "WARN" "An OS account still uses the bare-metal autoinstall template bootstrap password! Run 'sudo passwd oscaradmin' immediately."
+    else
+        record_check "os-default-password" "PASS" "No OS account uses the bare-metal autoinstall template password hash."
+    fi
+
+    local ssh_hardening="${etc_dir}/ssh/sshd_config.d/90-oscar-hardening.conf"
+    if [[ -f $ssh_hardening ]] && grep -Eq '^[[:space:]]*PermitRootLogin[[:space:]]+no' "$ssh_hardening" 2>/dev/null; then
+        if grep -Eq '^[[:space:]]*PasswordAuthentication[[:space:]]+no' "$ssh_hardening" 2>/dev/null; then
+            record_check "ssh-hardening" "PASS" "SSH root login and SSH password login disabled (SSH keys only)."
+        else
+            record_check "ssh-hardening" "PASS" "SSH root login disabled (90-oscar-hardening.conf; pass --ssh-keys-only to disable SSH password login)."
+        fi
+    else
+        record_check "ssh-hardening" "WARN" "SSH root-login hardening drop-in not yet applied; run 'sudo bash oscar.sh prepare-host'."
+    fi
+
+    if compgen -G "${etc_dir}/sudoers.d/90-*" >/dev/null && grep -Rqs 'NOPASSWD:ALL' "${etc_dir}/sudoers.d/90-"* 2>/dev/null; then
+        if $strict; then
+            record_check "sudo-password-policy" "WARN" "Passwordless sudo (NOPASSWD:ALL) is active; run 'sudo bash oscar.sh prepare-host --require-sudo-password' on production sites."
+        else
+            record_check "sudo-password-policy" "PASS" "Passwordless sudo active (for production hardening, run 'sudo bash oscar.sh prepare-host --require-sudo-password')."
+        fi
+    else
+        record_check "sudo-password-policy" "PASS" "Sudo requires explicit authentication (no 90-* NOPASSWD:ALL drop-in)."
+    fi
+
     local pass_count=0 warn_count=0 fail_count=0 i
     for i in "${!check_ids[@]}"; do
         case "${check_statuses[$i]}" in
@@ -478,6 +506,7 @@ install_packages_offline_dir() {
 
 run_prepare_host() {
     local offline_mode=auto expand_lvm=false configure_ufw=false hold_docker=false
+    local require_sudo_pw=false ssh_keys_only=false ufw_ssh_cidr='' ufw_disable_ssh=false
     while (($# > 0)); do
         case "$1" in
             --offline) offline_mode=true; shift ;;
@@ -485,15 +514,23 @@ run_prepare_host() {
             --expand-lvm) expand_lvm=true; shift ;;
             --configure-ufw) configure_ufw=true; shift ;;
             --hold-docker) hold_docker=true; shift ;;
+            --require-sudo-password) require_sudo_pw=true; shift ;;
+            --ssh-keys-only) ssh_keys_only=true; shift ;;
+            --ufw-ssh-cidr) ufw_ssh_cidr=${2:?missing CIDR for --ufw-ssh-cidr}; configure_ufw=true; shift 2 ;;
+            --ufw-disable-ssh) ufw_disable_ssh=true; configure_ufw=true; shift ;;
             -h|--help)
                 cat <<'EOF'
 Usage: sudo bash oscar.sh prepare-host [options]
 
 Options:
-  --expand-lvm     Expand Ubuntu's default 100 GiB root LVM logical volume to 100% of free NVMe space
-  --configure-ufw  Allow OpenSSH (22/tcp), HTTP (80/tcp), and HTTPS (443/tcp) in UFW and enable UFW
-  --offline        Install Docker & field utilities strictly from bundled installers/ubuntu-24.04-x86_64/*.deb
-  --hold-docker    Pin docker-ce & containerd.io via apt-mark hold so background APT runs never restart containers
+  --expand-lvm             Expand Ubuntu's default 100 GiB root LVM logical volume to 100% of free NVMe space
+  --configure-ufw          Allow OpenSSH (22/tcp), HTTP (80/tcp), and HTTPS (443/tcp) in UFW and enable UFW
+  --ufw-ssh-cidr CIDR      Restrict OpenSSH (22/tcp) in UFW strictly to management subnet/host CIDR (implies --configure-ufw)
+  --ufw-disable-ssh        Block inbound OpenSSH (22/tcp) in UFW for local-console-only portals (implies --configure-ufw)
+  --require-sudo-password  Remove autoinstall NOPASSWD:ALL sudoers drop-in so sudo requires OS password re-entry
+  --ssh-keys-only          Disable SSH password login in sshd_config.d (verifies authorized_keys exists first)
+  --offline                Install Docker & field utilities strictly from bundled installers/ubuntu-24.04-x86_64/*.deb
+  --hold-docker            Pin docker-ce & containerd.io via apt-mark hold so background APT runs never restart containers
 EOF
                 return 0
                 ;;
@@ -674,6 +711,51 @@ ACTION=="add|change", SUBSYSTEM=="scsi_disk", DRIVERS=="sd", ENV{ID_BUS}=="usb",
 EOF
     chmod 0644 "${etc_dir}/udev/rules.d/98-oscar-usb-nosuspend.rules"
 
+    # 11. SSH root-login & optional SSH key-only hardening + sudo password enforcement
+    mkdir -p "${etc_dir}/ssh/sshd_config.d"
+    local ssh_dropin="${etc_dir}/ssh/sshd_config.d/90-oscar-hardening.conf"
+    if $ssh_keys_only; then
+        local found_auth_key=false ak_file
+        for ak_file in "${host_root}"/home/*/.ssh/authorized_keys "${host_root}"/root/.ssh/authorized_keys; do
+            if [[ -s $ak_file ]] && grep -Eq '^[[:space:]]*ssh-|^[[:space:]]*ecdsa-|^[[:space:]]*sk-' "$ak_file" 2>/dev/null; then
+                found_auth_key=true
+                break
+            fi
+        done
+        $found_auth_key || fail "Refusing --ssh-keys-only because no non-empty ~/.ssh/authorized_keys file was found (prevents SSH lockout)."
+        cat > "$ssh_dropin" <<'EOF'
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+X11Forwarding no
+MaxAuthTries 4
+EOF
+    elif [[ ! -f $ssh_dropin ]]; then
+        cat > "$ssh_dropin" <<'EOF'
+PermitRootLogin no
+X11Forwarding no
+MaxAuthTries 4
+EOF
+    fi
+    chmod 0644 "$ssh_dropin"
+
+    if $require_sudo_pw; then
+        local sudo_dropin target_sudo_user shadow_pw
+        for sudo_dropin in "${etc_dir}"/sudoers.d/90-*; do
+            [[ -f $sudo_dropin ]] || continue
+            grep -Fq 'NOPASSWD:ALL' "$sudo_dropin" 2>/dev/null || continue
+            target_sudo_user=$(awk '{print $1; exit}' "$sudo_dropin")
+            if [[ -z $host_root && -n $target_sudo_user ]]; then
+                id -nG "$target_sudo_user" 2>/dev/null | tr ' ' '\n' | grep -Fxq 'sudo' || usermod -aG sudo "$target_sudo_user"
+                shadow_pw=$(awk -F: -v u="$target_sudo_user" '$1 == u {print $2; exit}' "${etc_dir}/shadow" 2>/dev/null || true)
+                [[ -n $shadow_pw && $shadow_pw != '!'* && $shadow_pw != '*'* ]] || \
+                    fail "Refusing --require-sudo-password because '$target_sudo_user' has no local password set in /etc/shadow (run 'sudo passwd $target_sudo_user' first)."
+            fi
+            info "Removing passwordless sudo drop-in ${sudo_dropin} so sudo requires OS password authentication..."
+            rm -f -- "$sudo_dropin"
+        done
+    fi
+
     if [[ -z $host_root ]]; then
         modprobe usb_storage 2>/dev/null || true
         [[ -w /sys/module/usb_storage/parameters/quirks ]] && echo "0bda:9210:u,152d:0583:u,174c:2362:u,152d:0562:u,152d:0578:u" >/sys/module/usb_storage/parameters/quirks 2>/dev/null || true
@@ -688,14 +770,25 @@ EOF
             systemctl restart docker || true
         fi
         systemctl enable --now ssh >/dev/null 2>&1 || systemctl enable --now sshd >/dev/null 2>&1 || true
+        systemctl reload ssh >/dev/null 2>&1 || systemctl reload sshd >/dev/null 2>&1 || true
         systemctl enable --now fstrim.timer >/dev/null 2>&1 || true
         if systemctl list-unit-files chrony.service >/dev/null 2>&1; then
             systemctl enable --now chrony >/dev/null 2>&1 || true
             systemctl restart chrony >/dev/null 2>&1 || true
         fi
         if $configure_ufw && command -v ufw >/dev/null 2>&1; then
-            info "Configuring UFW host firewall (allowing 22/tcp SSH, 80/tcp HTTP redirect, 443/tcp HTTPS)..."
-            ufw allow 22/tcp >/dev/null
+            if $ufw_disable_ssh; then
+                info "Configuring UFW host firewall (blocking inbound 22/tcp SSH; allowing 80/tcp HTTP redirect & 443/tcp HTTPS)..."
+                ufw delete allow 22/tcp >/dev/null 2>&1 || true
+                ufw deny 22/tcp >/dev/null
+            elif [[ -n $ufw_ssh_cidr ]]; then
+                info "Configuring UFW host firewall (restricting 22/tcp SSH to ${ufw_ssh_cidr}; allowing 80/tcp & 443/tcp)..."
+                ufw delete allow 22/tcp >/dev/null 2>&1 || true
+                ufw allow from "$ufw_ssh_cidr" to any port 22 proto tcp >/dev/null
+            else
+                info "Configuring UFW host firewall (allowing 22/tcp SSH, 80/tcp HTTP redirect, 443/tcp HTTPS)..."
+                ufw allow 22/tcp >/dev/null
+            fi
             ufw allow 80/tcp >/dev/null
             ufw allow 443/tcp >/dev/null
             ufw --force enable >/dev/null
