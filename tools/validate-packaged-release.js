@@ -109,6 +109,7 @@ const expected = [
     'documentation/CARGO_UFF_INTEGRATION.md',
     'documentation/RADIATION_DETECTOR_DRIVER_GUIDE.md',
     'documentation/TRAINING_SANDBOX_GUIDE.md',
+    'documentation/LANE_WEBRELAY_GUIDE.md',
     'documentation/daily-file-journal-v1.md',
     'documentation/retained-media-v1.md',
 ];
