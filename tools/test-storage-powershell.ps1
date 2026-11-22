@@ -114,9 +114,10 @@ try {
     Assert-True ($hardenedText.Contains('allow-pw: false') -and $hardenedText.Contains('PasswordAuthentication no')) 'Hardened rendered user-data did not enforce SSH keys only.'
     Assert-True ($hardenedText.Contains('"StrongBareMetalLuks!2026"')) 'Hardened rendered user-data did not inject LUKS2 full-disk encryption passphrase.'
 
-    & (Join-Path $PSHOME 'powershell.exe') -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
-        -File $setupScript -Command 'reset-admin-password' -Password 'LeakedCliPassword!2026' *> $null
-    Assert-True ($LASTEXITCODE -ne 0) 'oscar-setup.ps1 reset-admin-password accepted a plaintext -Password on the command line.'
+    $resetCliRejectProcess = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @(
+        '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+        '-File', $setupScript, '-Command', 'reset-admin-password', '-Password', 'LeakedCliPassword!2026') -Wait -PassThru -WindowStyle Hidden
+    Assert-True ($resetCliRejectProcess.ExitCode -ne 0) 'oscar-setup.ps1 reset-admin-password accepted a plaintext -Password on the command line.'
 
     . $setupScript -Command help -TlsSan @('192.168.0.61,oscar-site.example-tailnet.ts.net', '192.168.0.61') -NoAutoNetworkSans | Out-Null
     $resolvedTlsSans = @(Get-TlsSubjectAlternativeNames 'oscar.local')
