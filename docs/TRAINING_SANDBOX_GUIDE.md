@@ -1,22 +1,41 @@
-# OSCAR 3.11.3 Ephemeral Hands-On Training Sandbox & Guided Academy (`oscar-sandbox`)
+# OSCAR 3.11.4 Guided Walkthrough Refresher (`:443`) & Ephemeral Hands-On Training Sandbox (`oscar-sandbox` `:8444`)
 
-OSCAR 3.11.3 includes a built-in, self-contained **Hands-On Training Sandbox & Guided Academy (`oscar-sandbox`)** designed for gatehouse operators, shift supervisors, and system administrators to practice every operational and administrative workflow safely before connecting or modifying live port-of-entry radiation portal monitors (RPMs) and RTSP cameras.
+OSCAR 3.11.4 provides two complementary, built-in training and refresher experiences for gatehouse operators, shift supervisors, and system administrators:
+
+1. **Anytime Live Console Guided Walkthrough (`:443` — Read-Only Refresher Mode):** Click **Guided Walkthrough** in the top navigation bar (or inside **Help (`?`) -> Manual & Video Guides**) at any time during a live shift to open the side-by-side coach (`READ-ONLY REFRESHER` badge). Users can browse all **13 role-based labs**, watch offline `1080p` captioned videos, view annotated `1920×1080` reference screenshots, navigate to pages, and click **Highlight Control on Screen** with **zero** simulated alarm injections, **zero** `/stage-track` server mutations, and **zero** background polling when closed.
+2. **Isolated Ephemeral Hands-On Practice Sandbox (`oscar-sandbox` on `:8444`):** Launch a completely isolated disposable practice stack (`1-click` from inside **Guided Walkthrough** or **Help (`?`)** when `enable-ui-bridge` is active on Ubuntu, or via `oscar.sh` / `oscar.bat sandbox start`) to inject simulated radiation alarms and detector faults, upload practice `.n42` / `.uff` / `.csv` / `.pmtiles` files, and practice **Split-Pane SensorHub Admin** edits with 100% zero impact on live PostgreSQL, Parquet archives, `config.json`, or physical RPM relays.
 
 ---
 
-## 1. Zero-Contamination Architectural Guarantee
+## 1. Zero-Contamination Architectural Guarantee & What Users Need to Know When Launching
 
-A core requirement of radiation portal operations is that training data, practice faults, test users, and simulated alarms **never** mix with evidentiary operational records or cold-tier Parquet archives. `oscar-sandbox` enforces strict OS- and container-level isolation:
+A core requirement of radiation portal operations is that training data, practice faults, test users, and simulated alarms **never** mix with evidentiary operational records or cold-tier Parquet archives. Both the **Guided Walkthrough** and **Help (`?`)** launcher clearly explain the exact rules and automatic shutdown behavior before and during every session:
+
+### What Every User Sees & Should Know Before Launching `:8444`
+
+- **Live Console (`:443`) vs. Practice Sandbox (`:8444`):**
+  - Inside **Guided Walkthrough** on `:443` (`READ-ONLY REFRESHER`), reading steps, playing videos, and highlighting controls is 100% read-only; however, clicking actual operational controls on the underlying `:443` page acts on the live site.
+  - Inside `:8444` (`TRAINING SANDBOX`), every lane (`DemoLane01` / `DemoLane02`), Rapiscan stream, camera feed, database table, and configuration file is disposable — you can freely inject alarms, test faults, and edit lanes without affecting the live portal.
+- **Automatic 2-Hour Shutdown & Complete Data Wipe (`120 min` Default TTL):**
+  - Once launched, `:8444` **automatically shuts down 120 minutes (2 hours) later** (configurable via `--ttl-minutes` / `-TtlMinutes` on CLI) so practice containers can never consume server memory overnight.
+  - Both the `:443` launcher card and the `:8444` top bar / Coach banner display a **live countdown and local shutdown clock time** (for example, `Auto-shutdown in 1h 58m (at 10:59 PM)`).
+  - When the timer reaches `0` (or an Administrator clicks **Stop & Flush** / **Reset**), `docker compose down -v --remove-orphans` **permanently erases all `:8444` practice alarms, uploads, users, and lane edits in `< 2 s`** (`archive.enabled = false`, `0` `.parquet` files written). **Download your 1-page PDF Training Completion Record before the timer expires** if you want a completion record.
+- **Sign-In Credentials, Local HTTPS Prompt & Export Watermarks:**
+  - Clicking **Open Practice Sandbox (`:8444`)** opens `https://<oscar-host>:8444` in a new browser tab. If the site uses a local/self-signed TLS certificate, accept the browser's HTTPS prompt once on port `:8444`.
+  - Sign in with **your existing OSCAR username/password or WebAuthn Passkey** (`oscar-sandbox` performs a one-way read-only seed on startup; changes inside `:8444` never write back to `:443`).
+  - Every `PDF`, `CSV`, `JSON`, `XLSX`, and `QR` file exported from `:8444` is stamped **`TRAINING SANDBOX — NON-OPERATIONAL`**.
+- **Safe Multi-User Role Rules (`Start` vs. `Stop`/`Reset`):**
+  - Any signed-in user (`Viewer`, `Operator`, or `Administrator`) can view `:8444` host status/countdown and click **Launch Practice Sandbox (`:8444`)** when stopped. If `:8444` is already running, `start` is **idempotent** — it joins the active session without resetting another trainee's work. Only **Administrators** can trigger early **Stop & Flush** or **Reset**.
 
 | Dimension | Operational OSCAR (`compose.yaml`, `:443`) | Ephemeral Training Sandbox (`compose.sandbox.yaml`, `:8444`) |
 | :--- | :--- | :--- |
 | **Docker Compose Project** | `oscar` | `oscar-sandbox` |
-| **Container Images** | `oscar:3.11.3`, `oscar-postgis:3.11.3`, `nginx-unprivileged:1.30.7-alpine` | Reuses the exact already-installed `3.11.3` images (`0 B` extra image download) |
-| **PostgreSQL Volume** | `oscar_postgres_data` (persistent, checksummed) | `oscar_sandbox_pg` (disposable, wiped on `stop`/`reset`) |
-| **Application State Volume** | `oscar_oscar_state` (persistent `config.json`, Passkeys, journals) | `oscar_sandbox_state` (disposable, wiped on `stop`/`reset`) |
+| **Container Images** | `oscar:3.11.4`, `oscar-postgis:3.11.4`, `nginx-unprivileged:1.30.7-alpine` | Reuses the exact already-installed `3.11.4` images (`0 B` extra image download) |
+| **PostgreSQL Volume** | `oscar_postgres_data` (persistent, checksummed) | `oscar_sandbox_pg` (disposable, wiped on `stop`/`reset`/TTL) |
+| **Application State Volume** | `oscar_oscar_state` (persistent `config.json`, Passkeys, journals) | `oscar_sandbox_state` (disposable, wiped on `stop`/`reset`/TTL) |
 | **Parquet Cold Archive** | Host bind-mount `OSCAR_ARCHIVE_DIR` (`archive.enabled = true`) | **Zero host bind-mounts**; `tmpfs` `/var/lib/oscar/archive` + `archive.enabled = false` (`0` `.parquet` files written) |
 | **Export Watermarking** | Clean operational exports | All sandbox PDF, CSV, JSON, XLSX, and QR exports stamped with `TRAINING SANDBOX — NON-OPERATIONAL` |
-| **Production Overhead When Stopped** | Normal operation | **`0` threads, `0` open sockets, `0` memory, and `0` extra UI banners/buttons** |
+| **Production Overhead When Stopped** | Normal operation + optional 0-polling **Guided Walkthrough** button | **`0` threads, `0` open sockets, and `0` sandbox containers/volumes** |
 | **Host RAM Protection** | Full host allocation | Preflight check verifies `>= 3.5 GiB` (`3584 MiB`) available RAM + bounded `-Xmx2g` JVM & `128 MB` Postgres `shared_buffers` |
 | **Automatic Idle Cleanup** | Runs `24/7` (`restart: unless-stopped`) | Automatic TTL shutdown timer (default `120 minutes`) + `< 2 s` `down -v --remove-orphans` wipe |
 
@@ -26,7 +45,7 @@ A core requirement of radiation portal operations is that training data, practic
 
 ### 2.1 Ubuntu Server 24.04 LTS CLI
 
-From the extracted OSCAR 3.11.3 release directory:
+From the extracted OSCAR 3.11.4 release directory:
 
 ```bash
 # Launch the isolated sandbox on HTTPS port 8444 (default 120-minute auto-expiry TTL)
@@ -47,7 +66,7 @@ sudo bash oscar.sh sandbox stop
 
 ### 2.2 Windows 11 + Docker Desktop (WSL 2) CLI
 
-From an Administrator PowerShell or Command Prompt in the OSCAR 3.11.3 release directory:
+From an Administrator PowerShell or Command Prompt in the OSCAR 3.11.4 release directory:
 
 ```powershell
 # Launch the isolated sandbox on HTTPS port 8444
@@ -64,7 +83,7 @@ From an Administrator PowerShell or Command Prompt in the OSCAR 3.11.3 release d
 ### 2.3 Sign-In Convenience & Optional 1-Click Browser Launch (`Help (?)`)
 
 - **Seamless Existing Credentials:** When launched on an initialized OSCAR host, `oscar-sandbox` performs a **one-way read-only seed** of the site's TLS certificate (`tls/server.crt`) and user identity store (`.moduledata/oscar-identity.json`) into `/run/oscar-sandbox` / `oscar_sandbox_state`. Administrators and operators open `https://<oscar-host>:8444` and sign in using their **existing username, password, or offline WebAuthn Passkey** — while any password changes, practice user invites, or deletions inside `:8444` never touch production `oscar_oscar_state`. (Pass `--admin-password <password>` / `-AdminPassword <password>` to use an independent password instead, or launch on an uninitialized host to receive an auto-generated `Sandbox-<hex>` password.)
-- **Optional 1-Click Browser Launcher in `Help (?)`:** Clicking **Help (`?`) -> Manual & Video Guides** on any node displays the **Hands-On Training Sandbox (`oscar-sandbox`)** card with 1-click copyable Linux/Windows start commands. Administrators who want 1-click browser **Launch / Reset / Stop** buttons without opening SSH can enable the lightweight host queue watcher once via `sudo bash oscar.sh sandbox enable-ui-bridge` (disable anytime with `sudo bash oscar.sh sandbox disable-ui-bridge`).
+- **Optional 1-Click Browser Launcher in `Guided Walkthrough` & `Help (?)`:** Clicking **Guided Walkthrough** in the top bar or **Help (`?`) -> Manual & Video Guides** displays live `:8444` status, auto-shutdown countdown, and 1-click copyable Linux/Windows start commands. Administrators on Ubuntu 24.04 who want 1-click browser **Launch** (available to any signed-in user, idempotent if already running) and Administrator-only **Reset / Stop** buttons without opening SSH can enable the lightweight host queue watcher once via `sudo bash oscar.sh sandbox enable-ui-bridge` (disable anytime with `sudo bash oscar.sh sandbox disable-ui-bridge`).
 
 ![Hands-On Training Sandbox Coach and Operator Lab](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/51-training-sandbox-coach-and-operator-lab.png)
 
@@ -96,9 +115,9 @@ When `OSCAR_SANDBOX_MODE=true`, `TrainingSandboxManager` starts a zero-hardware 
 
 ---
 
-## 4. Multi-Modal Guided Academy Curriculum (3 Role Tracks · 12 Hands-On Labs)
+## 4. Multi-Modal Guided Academy Curriculum (3 Role Tracks · 13 Guided Labs)
 
-Inside `:8444`, the single-row top bar displays a high-contrast **`TRAINING SANDBOX`** badge with remaining TTL alongside the collapsible **Training Coach** dock (`en`, `es`, `fr`, `el`). Every lab combines **four learning modalities** (`Watch · Read · Do · Auto-Verify`):
+Inside `:8444` (and in Read-Only Refresher Mode via **Guided Walkthrough** on `:443`), the collapsible **Training Coach** dock (`en`, `es`, `fr`, `el`) covers **13 guided labs** across three role tracks. Every lab combines **four learning modalities** (`Watch · Read · Do · Auto-Verify`):
 
 1. **Watch:** Inline click-to-play `1080p` workflow video guide (`/video-guides/videos/*.mp4`) with synchronized `.vtt` closed captions (`preload="none"`).
 2. **Read:** Annotated `1920×1080` reference screenshot (`/manual-screenshots/*.png`) + plain-language **Operational Why**.
@@ -121,12 +140,13 @@ Inside `:8444`, the single-row top bar displays a high-contrast **`TRAINING SAND
 - **Lab 2.2 — UpSet `SNM` Co-Occurrence Analytics & 6-Type Multi-Format Reports:** Generate watermarked `PDF`, `CSV`, `JSON`, and `XLSX` reports in `/report` and inspect crimson `SNM` intersections on the UpSet chart.
 - **Lab 2.3 — National Node Summary & Secret-Redacted Support Bundles:** Review aggregated KPIs on `/national-view` and export a credential-scrubbed `oscar-support-<UTC>.zip` diagnostic bundle from `Help (?)`.
 
-### Track 3 — System Administrator (`administrator`, 4 Labs)
+### Track 3 — System Administrator (`administrator`, 5 Labs)
 *Resets to a Day-1 Blank Slate (`0` lanes configured) while loopback Rapiscan `127.0.0.1:10099` and RTSP `127.0.0.1:8554/tutorial-cam` run in the background.*
 - **Lab 3.1 — Manual Lane, Rapiscan RPM & Loopback RTSP Camera Setup:** Open **Split-Pane SensorHub Admin** (`/sensorhub/admin` side-by-side with the Training Coach) and configure `DemoLane01` from scratch.
 - **Lab 3.2 — 1-Click Bulk Lane Spreadsheet Import (`tutorial-1-lane.csv`):** Download `tutorial-1-lane.csv` and provision lanes in bulk via `Services -> OSCAR Service`.
 - **Lab 3.3 — Users, RBAC View Scoping, QR Enrollment & Offline Passkeys:** Practice creating view-scoped operators, printable QR enrollment invites, and `oscar_fed_...` tokens in `/users`.
 - **Lab 3.4 — Runtime Extensions (`.pmtiles` Maps, Policy Packs & Cargo NII):** Upload `sample-regional-map.pmtiles` and `sample-policy-pack.json` (`Code 101` & `Code 102`) in `/extensions`, and review `/usb-backups`.
+- **Lab 3.5 — Per-Lane Physical RPM Lights & Sound (`WebRelay-Quad`):** Review per-lane ControlByWeb `WebRelay-Quad` operating modes (`AUTO` EML `Code 9999` / `Code 9998` suppression, `PASS_THROUGH` `0,0,0,0` fail-safe, `MUTED`), live `R1–R4` coil telemetry, and timed commissioning pulses on `/health` and `/lane-view`.
 
 ---
 
@@ -135,6 +155,7 @@ Inside `:8444`, the single-row top bar displays a high-contrast **`TRAINING SAND
 - [Quick Start Guide](../dist/release/QUICKSTART.md)
 - [Administrator Deployment Guide](../dist/release/DEPLOYMENT.md)
 - [Operator & Administrator Manual (English)](https://github.com/ORNL/osh-oakridge-modules/blob/main/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README.md)
-- [How-To Video Guides (`#01`–`#28`)](VIDEO_GUIDES.md)
+- [How-To Video Guides (`#01`–`#29`)](VIDEO_GUIDES.md)
+- [Per-Lane Physical RPM Lights & Sound (`WebRelay-Quad`) Guide](LANE_WEBRELAY_GUIDE.md)
 - [Cargo Non-Intrusive Inspection (WCO UFF 2.0 & 3.0) Guide](CARGO_UFF_INTEGRATION.md)
 - [Pluggable Runtime Extensions & Regional Packs Guide](PLUGGABLE_EXTENSIONS_GUIDE.md)

@@ -370,6 +370,7 @@ for (const relativePath of [
     'docs/PLUGGABLE_EXTENSIONS_GUIDE.md',
     'docs/CARGO_UFF_INTEGRATION.md',
     'docs/TRAINING_SANDBOX_GUIDE.md',
+    'docs/LANE_WEBRELAY_GUIDE.md',
     'include/osh-oakridge-modules/README.md',
     'include/osh-oakridge-modules/docs/oscar-operator-manual/README.md',
     'include/osh-oakridge-modules/services/sensorhub-service-oscar/src/main/resources/README.md',

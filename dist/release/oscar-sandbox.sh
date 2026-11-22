@@ -411,11 +411,20 @@ poll_bridge() {
 
     write_bridge_status "$req_id" "$action" "RUNNING" "Executing sandbox '${action}'..."
     case "$action" in
-        start|reset)
-            if do_start --port "$port" --ttl-minutes "$ttl" >/dev/null 2>&1; then
-                write_bridge_status "$req_id" "$action" "COMPLETED" "Training Sandbox ready on port ${port}."
+        start)
+            if is_sandbox_running; then
+                write_bridge_status "$req_id" "start" "COMPLETED" "Training Sandbox already running on port ${port}."
+            elif do_start --port "$port" --ttl-minutes "$ttl" >/dev/null 2>&1; then
+                write_bridge_status "$req_id" "start" "COMPLETED" "Training Sandbox ready on port ${port}."
             else
-                write_bridge_status "$req_id" "$action" "FAILED" "Sandbox start failed; check host RAM or run sudo bash oscar.sh sandbox start."
+                write_bridge_status "$req_id" "start" "FAILED" "Sandbox start failed; check host RAM or run sudo bash oscar.sh sandbox start."
+            fi
+            ;;
+        reset)
+            if do_start --port "$port" --ttl-minutes "$ttl" >/dev/null 2>&1; then
+                write_bridge_status "$req_id" "reset" "COMPLETED" "Training Sandbox reset and ready on port ${port}."
+            else
+                write_bridge_status "$req_id" "reset" "FAILED" "Sandbox reset failed; check host RAM or run sudo bash oscar.sh sandbox reset."
             fi
             ;;
         stop)

@@ -1,6 +1,6 @@
 # OSCAR Diagnostic Flight Recorder & Redacted Support Bundle Guide
 
-OSCAR 3.11.3 includes a built-in, zero-configuration **Diagnostic Flight Recorder** and **Redacted Support Bundle (`.zip`)** system spanning both the browser console (`SupportDiagnostics.ts`) and the OpenSensorHub/Docker backend (`SupportBundleHandler.java` + `oscar.sh` / `oscar.bat support-bundle`). Operators and site administrators can export a complete, secret-scrubbed troubleshooting archive in one click from the web UI—or from the host command line even when containers are stopped, degraded, or unable to boot.
+OSCAR 3.11.4 includes a built-in, zero-configuration **Diagnostic Flight Recorder** and **Redacted Support Bundle (`.zip`)** system spanning both the browser console (`SupportDiagnostics.ts`) and the OpenSensorHub/Docker backend (`SupportBundleHandler.java` + `oscar.sh` / `oscar.bat support-bundle`). Operators and site administrators can export a complete, secret-scrubbed troubleshooting archive in one click from the web UI—or from the host command line even when containers are stopped, degraded, or unable to boot.
 
 For a captioned 1080p walkthrough, watch [Module 18 (`18-operator-help-and-support-bundle.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/18-operator-help-and-support-bundle.mp4) in [VIDEO_GUIDES.md](VIDEO_GUIDES.md) or directly inside the OSCAR Viewer via **Help (`?`) -> Manual & Video Guides**.
 
@@ -75,7 +75,7 @@ Unzipping an exported bundle (`unzip -l oscar-support-<UTC>.zip`) reveals determ
 
 | Entry Path | Source | Contents |
 | --- | --- | --- |
-| `summary.json` | Combined / CLI | Schema version (`1`), `bundleType`, `bundleSource` (`combined`, `client-only`, or `host-cli`), `oscarVersion` (`3.11.3`), UTC timestamp, event/error counts, and module health totals |
+| `summary.json` | Combined / CLI | Schema version (`1`), `bundleType`, `bundleSource` (`combined`, `client-only`, or `host-cli`), `oscarVersion` (`3.11.4`), UTC timestamp, event/error counts, and module health totals |
 | `redaction-report.json` | Combined / CLI | Audit trail of `automatic-edge-redaction` counts (`clientRedactions`, `backendRedactions`, `totalRedactions`) and the explicit `neverCollected` exclusion list |
 | `client/client-diagnostics.json` | Viewer UI | Sanitized current route, low-entropy browser environment, node list (without credentials), `eventCounts`, and the `events[]` flight-recorder ring buffer |
 | `backend/modules.json` | Server API | Every OpenSensorHub module and nested lane/RPM/camera state (`STARTED`, `INITIALIZED`, fault/error strings, and bounded stack frames) |
