@@ -82,7 +82,8 @@ function Invoke-TunnelCompose([string[]]$ComposeArgs) {
     $keys = @(
         'OSCAR_VERSION', 'OSCAR_TIMEZONE', 'OCTELIUM_DOMAIN', 'OCTELIUM_SERVICE',
         'OCTELIUM_TOKEN_FILE', 'OCTELIUM_INSECURE_TLS', 'OCTELIUM_TUNNEL_MODE',
-        'OCTELIUM_IMPLEMENTATION', 'OCTELIUM_IP_MODE', 'OCTELIUM_SCOPE'
+        'OCTELIUM_IMPLEMENTATION', 'OCTELIUM_IP_MODE', 'OCTELIUM_SCOPE',
+        'OSCAR_WEBAUTHN_RP_ID', 'OSCAR_SANDBOX_PORT'
     )
     foreach ($k in $keys) {
         if (Test-Path "Env:$k") { $saved[$k] = (Get-Item "Env:$k").Value }
@@ -94,6 +95,8 @@ function Invoke-TunnelCompose([string[]]$ComposeArgs) {
     $env:OSCAR_TIMEZONE = if ($tz) { $tz } else { 'UTC' }
     $env:OCTELIUM_DOMAIN = Get-EnvFileValue $cfgFile 'OCTELIUM_DOMAIN'
     $env:OCTELIUM_SERVICE = Get-EnvFileValue $cfgFile 'OCTELIUM_SERVICE'
+    $env:OSCAR_WEBAUTHN_RP_ID = $env:OCTELIUM_DOMAIN
+    if (-not $env:OSCAR_SANDBOX_PORT) { $env:OSCAR_SANDBOX_PORT = '8444' }
     $env:OCTELIUM_TOKEN_FILE = (Get-EnvFileValue $cfgFile 'OCTELIUM_TOKEN_FILE') -replace '\\', '/'
     $insecure = Get-EnvFileValue $cfgFile 'OCTELIUM_INSECURE_TLS'
     $tmode = Get-EnvFileValue $cfgFile 'OCTELIUM_TUNNEL_MODE'
@@ -189,7 +192,12 @@ OSCAR Remote Access Administration (Octelium Zero Trust Sidecar)
         $ver = Get-EnvFileValue (Join-Path $ScriptRoot '.env') 'OSCAR_VERSION'
         Ensure-TunnelImage $ver
         Invoke-TunnelCompose @('up', '--detach', '--no-build', 'tunnel')
+        $sbScript = Join-Path $ScriptRoot 'oscar-sandbox.ps1'
+        if (Test-Path -LiteralPath $sbScript) {
+            try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $sbScript poll-bridge *> $null } catch {}
+        }
         Write-Host "OSCAR Octelium tunnel enabled: https://$service.$domain"
+        Write-Host "Practice Sandbox tunnel ready: https://$service-sandbox.$domain"
     }
     'rotate-token' {
         $tokenFile = ''
@@ -233,6 +241,10 @@ OSCAR Remote Access Administration (Octelium Zero Trust Sidecar)
             [System.IO.File]::WriteAllLines($cfgFile, $lines, [System.Text.UTF8Encoding]::new($false))
             if ($purge) { Remove-Item -LiteralPath (Join-Path $raDir 'octelium-token.txt') -Force -ErrorAction SilentlyContinue }
         }
+        $sbScript = Join-Path $ScriptRoot 'oscar-sandbox.ps1'
+        if (Test-Path -LiteralPath $sbScript) {
+            try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $sbScript poll-bridge *> $null } catch {}
+        }
         Write-Host 'OSCAR Octelium remote-access tunnel disabled.'
     }
     'status' {
@@ -247,6 +259,7 @@ OSCAR Remote Access Administration (Octelium Zero Trust Sidecar)
         $service = Get-EnvFileValue $cfgFile 'OCTELIUM_SERVICE'
         Write-Host "Remote Access (Octelium): $enabled"
         Write-Host "Public Service URL:       https://$service.$domain"
+        Write-Host "Sandbox Service URL:      https://$service-sandbox.$domain"
         & docker ps --filter 'name=^/oscar-tunnel-1$' --format 'Tunnel Container:         {{.Names}} ({{.Status}})'
     }
     'logs' {
@@ -273,6 +286,10 @@ OSCAR Remote Access Administration (Octelium Zero Trust Sidecar)
             $ver = Get-EnvFileValue (Join-Path $ScriptRoot '.env') 'OSCAR_VERSION'
             Ensure-TunnelImage $ver $rebuild
             Invoke-TunnelCompose @('up', '--detach', '--force-recreate', '--no-build', 'tunnel')
+        }
+        $sbScript = Join-Path $ScriptRoot 'oscar-sandbox.ps1'
+        if (Test-Path -LiteralPath $sbScript) {
+            try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $sbScript poll-bridge *> $null } catch {}
         }
     }
     'stop-if-enabled' {

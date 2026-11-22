@@ -74,6 +74,8 @@ run_tunnel_compose() {
             OCTELIUM_IMPLEMENTATION="${impl:-gvisor}" \
             OCTELIUM_IP_MODE="${ip_mode:-v4}" \
             OCTELIUM_SCOPE="${scope:-}" \
+            OSCAR_WEBAUTHN_RP_ID="$domain" \
+            OSCAR_SANDBOX_PORT="${OSCAR_SANDBOX_PORT:-8444}" \
             docker compose --project-name oscar \
                 --env-file "$script_dir/.env" \
                 --file "$script_dir/compose.yaml" \
@@ -195,7 +197,11 @@ EOF
 
         ensure_tunnel_image
         run_tunnel_compose up --detach --no-build tunnel
+        if [[ -f $script_dir/oscar-sandbox.sh ]]; then
+            bash "$script_dir/oscar-sandbox.sh" poll-bridge >/dev/null 2>&1 || true
+        fi
         printf 'OSCAR Octelium tunnel enabled: https://%s.%s\n' "$service" "$domain"
+        printf 'Practice Sandbox tunnel ready: https://%s-sandbox.%s\n' "$service" "$domain"
         ;;
     rotate-token)
         src_token_file=""
@@ -241,6 +247,9 @@ EOF
         else
             docker rm -f oscar-tunnel-1 >/dev/null 2>&1 || true
         fi
+        if [[ -f $script_dir/oscar-sandbox.sh ]]; then
+            bash "$script_dir/oscar-sandbox.sh" poll-bridge >/dev/null 2>&1 || true
+        fi
         printf 'OSCAR Octelium remote-access tunnel disabled.\n'
         ;;
     status)
@@ -255,6 +264,7 @@ EOF
         service=$(read_kv_file "$config_file" OCTELIUM_SERVICE)
         printf 'Remote Access (Octelium): %s\n' "${enabled:-false}"
         printf 'Public Service URL:       https://%s.%s\n' "$service" "$domain"
+        printf 'Sandbox Service URL:      https://%s-sandbox.%s\n' "$service" "$domain"
         docker ps --filter "name=^/oscar-tunnel-1$" --format "Tunnel Container:         {{.Names}} ({{.Status}})"
         ;;
     logs)
@@ -288,6 +298,9 @@ EOF
             else
                 printf 'WARNING: Skipping optional Octelium remote-access tunnel on offline host (core OSCAR HTTPS services remain active).\n' >&2
             fi
+        fi
+        if [[ -f $script_dir/oscar-sandbox.sh ]]; then
+            bash "$script_dir/oscar-sandbox.sh" poll-bridge >/dev/null 2>&1 || true
         fi
         ;;
     stop-if-enabled)
@@ -337,11 +350,11 @@ spec:
     - name: deny-sensorhub-admin-by-default
       effect: DENY
       condition:
-        match: 'ctx.http.path.startsWith("/sensorhub/admin")'
+        match: 'ctx.service.metadata.name in ["${service}", "${service}.default"] && ctx.http.path.startsWith("/sensorhub/admin")'
     - name: allow-oscar-viewer-and-apis
       effect: ALLOW
       condition:
-        match: 'ctx.service.metadata.name in ["${service}", "${service}.default"]'
+        match: 'ctx.service.metadata.name in ["${service}", "${service}.default", "${service}-sandbox", "${service}-sandbox.default"]'
 ---
 kind: Group
 metadata:
@@ -377,6 +390,23 @@ spec:
     upstream:
       user: ${workload_user}
       url: https://gateway:8443
+---
+kind: Service
+metadata:
+  name: ${service}-sandbox
+  displayName: ${display_name} Practice Sandbox
+spec:
+  mode: WEB
+  isPublic: true
+  config:
+    http:
+      header:
+        authorizationMode: PASS
+        host:
+          preserve: true
+    upstream:
+      user: ${workload_user}
+      url: http://127.0.0.1:18444
 EOF
 )
         if [[ -n $output_file ]]; then

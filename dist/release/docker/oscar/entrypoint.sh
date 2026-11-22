@@ -138,6 +138,12 @@ if [ ! -f "${CONFIG_FILE}" ]; then
 fi
 
 if [ "${OSCAR_SANDBOX_MODE:-false}" = "true" ]; then
+    if [ -f "${STATE_DIR}/.moduledata/sandbox-auth-seed.json" ]; then
+        java -classpath '/opt/oscar/lib/*' \
+            com.botts.impl.service.oscar.sandbox.SandboxAuthConfigSeeder \
+            apply "${STATE_DIR}/.moduledata/sandbox-auth-seed.json" "${CONFIG_FILE}" || true
+        rm -f -- "${STATE_DIR}/.moduledata/sandbox-auth-seed.json"
+    fi
     awk '
         /"objClass": "org.sensorhub.impl.datastore.postgis.archive.TieredArchiveConfig"/ { in_archive = 1 }
         in_archive && /"enabled": true/ { sub(/"enabled": true/, "\"enabled\": false") }

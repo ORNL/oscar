@@ -946,12 +946,24 @@ configured() {
 compose() {
     assert_deployment_paths_safe
     require_managed_environment_bindings
+    local oct_rp_id="" archive_dir storage_root oct_env
+    archive_dir=$(get_env_value OSCAR_ARCHIVE_DIR)
+    if [[ -n $archive_dir && $archive_dir == /* ]]; then
+        storage_root=$(dirname "$archive_dir")
+    else
+        storage_root="$(CDPATH= cd -- "$script_dir/.." && pwd -P)/oscar-storage"
+    fi
+    oct_env="$storage_root/remote-access/octelium.env"
+    if [[ -f $oct_env ]] && awk -F= '$1 == "OCTELIUM_ENABLED" && $2 == "true" { found=1 } END { exit !found }' "$oct_env"; then
+        oct_rp_id=$(awk -F= '$1 == "OCTELIUM_DOMAIN" { print substr($0, index($0, "=") + 1); exit }' "$oct_env" | tr -d '\r')
+    fi
     (
         cd "$script_dir"
         env -u COMPOSE_FILE -u COMPOSE_PROJECT_NAME -u COMPOSE_ENV_FILES -u COMPOSE_PROFILES \
             -u OSCAR_VERSION -u OSCAR_DEPLOYMENT_ID -u OSCAR_ARCHIVE_DIR -u OSCAR_BACKUP_DIR \
             -u OSCAR_BACKUP_MODE -u OSCAR_WAL_ARCHIVE_DIR -u OSCAR_SECRETS_DIR -u OSCAR_TLS_DIR -u OSCAR_BACKUP_KEY_FILE \
             -u OSCAR_HTTPS_PORT -u OSCAR_TIMEZONE -u OSCAR_JAVA_OPTS -u OSCAR_POSTGIS_PLATFORM \
+            OSCAR_WEBAUTHN_RP_ID="$oct_rp_id" \
             docker compose --project-name oscar --env-file "$script_dir/.env" --file "$script_dir/compose.yaml" "$@"
     )
 }

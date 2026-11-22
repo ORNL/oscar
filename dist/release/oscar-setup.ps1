@@ -1163,11 +1163,30 @@ function Invoke-Compose([string[]]$Arguments) {
     Assert-ManagedEnvironmentBindings
     Push-Location $ScriptRoot
     $saved = Clear-ComposeOverrideEnvironment
+    $hadRpId = Test-Path -LiteralPath 'Env:OSCAR_WEBAUTHN_RP_ID'
+    $prevRpId = if ($hadRpId) { $env:OSCAR_WEBAUTHN_RP_ID } else { '' }
     try {
+        $octRpId = ''
+        $archiveDir = Get-EnvValue 'OSCAR_ARCHIVE_DIR'
+        $storageRoot = if (-not [string]::IsNullOrWhiteSpace($archiveDir)) { Split-Path -Parent $archiveDir } else { Join-Path (Split-Path -Parent $ScriptRoot) 'oscar-storage' }
+        $octEnv = Join-Path $storageRoot 'remote-access\octelium.env'
+        if (Test-Path -LiteralPath $octEnv) {
+            $octEnabled = ''
+            $octDomain = ''
+            foreach ($line in [System.IO.File]::ReadAllLines($octEnv)) {
+                if ($line -match '^OCTELIUM_ENABLED=(.*)$') { $octEnabled = $Matches[1].Trim() }
+                elseif ($line -match '^OCTELIUM_DOMAIN=(.*)$') { $octDomain = $Matches[1].Trim() }
+            }
+            if ($octEnabled -eq 'true' -and -not [string]::IsNullOrWhiteSpace($octDomain)) {
+                $octRpId = $octDomain
+            }
+        }
+        $env:OSCAR_WEBAUTHN_RP_ID = $octRpId
         Invoke-External 'docker' (@(
             'compose', '--project-name', 'oscar', '--env-file', (Join-Path $ScriptRoot '.env'),
             '--file', (Join-Path $ScriptRoot 'compose.yaml')) + $Arguments)
     } finally {
+        if ($hadRpId) { $env:OSCAR_WEBAUTHN_RP_ID = $prevRpId } else { Remove-Item -LiteralPath 'Env:OSCAR_WEBAUTHN_RP_ID' -ErrorAction SilentlyContinue }
         Restore-ComposeOverrideEnvironment $saved
         Pop-Location
     }

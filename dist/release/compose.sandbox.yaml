@@ -54,6 +54,7 @@ services:
         target: oscar_db_password
     environment:
       TZ: "${OSCAR_TIMEZONE:-UTC}"
+      OSCAR_WEBAUTHN_RP_ID: "${OSCAR_WEBAUTHN_RP_ID:-}"
       OSCAR_SANDBOX_MODE: "true"
       OSCAR_SANDBOX_PORT: "${OSCAR_SANDBOX_PORT:-8444}"
       OSCAR_SANDBOX_TTL_MINUTES: "${OSCAR_SANDBOX_TTL_MINUTES:-120}"

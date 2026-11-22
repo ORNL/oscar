@@ -1,6 +1,6 @@
-# OSCAR 3.11.4 Guided Walkthrough Refresher (`:443`) & Ephemeral Hands-On Training Sandbox (`oscar-sandbox` `:8444`)
+# OSCAR 3.11.5 Guided Walkthrough Refresher (`:443`) & Ephemeral Hands-On Training Sandbox (`oscar-sandbox` `:8444`)
 
-OSCAR 3.11.4 provides two complementary, built-in training and refresher experiences for gatehouse operators, shift supervisors, and system administrators:
+OSCAR 3.11.5 provides two complementary, built-in training and refresher experiences for gatehouse operators, shift supervisors, and system administrators:
 
 1. **Anytime Live Console Guided Walkthrough (`:443` — Read-Only Refresher Mode):** Click **Guided Walkthrough** in the top navigation bar (or inside **Help (`?`) -> Manual & Video Guides**) at any time during a live shift to open the side-by-side coach (`READ-ONLY REFRESHER` badge). Users can browse all **13 role-based labs**, watch offline `1080p` captioned videos, view annotated `1920×1080` reference screenshots, navigate to pages, and click **Highlight Control on Screen** with **zero** simulated alarm injections, **zero** `/stage-track` server mutations, and **zero** background polling when closed.
 2. **Isolated Ephemeral Hands-On Practice Sandbox (`oscar-sandbox` on `:8444`):** Launch a completely isolated disposable practice stack (`1-click` from inside **Guided Walkthrough** or **Help (`?`)** when `enable-ui-bridge` is active on Ubuntu, or via `oscar.sh` / `oscar.bat sandbox start`) to inject simulated radiation alarms and detector faults, upload practice `.n42` / `.uff` / `.csv` / `.pmtiles` files, and practice **Split-Pane SensorHub Admin** edits with 100% zero impact on live PostgreSQL, Parquet archives, `config.json`, or physical RPM relays.
@@ -20,17 +20,18 @@ A core requirement of radiation portal operations is that training data, practic
   - Once launched, `:8444` **automatically shuts down 120 minutes (2 hours) later** (configurable via `--ttl-minutes` / `-TtlMinutes` on CLI) so practice containers can never consume server memory overnight.
   - Both the `:443` launcher card and the `:8444` top bar / Coach banner display a **live countdown and local shutdown clock time** (for example, `Auto-shutdown in 1h 58m (at 10:59 PM)`).
   - When the timer reaches `0` (or an Administrator clicks **Stop & Flush** / **Reset**), `docker compose down -v --remove-orphans` **permanently erases all `:8444` practice alarms, uploads, users, and lane edits in `< 2 s`** (`archive.enabled = false`, `0` `.parquet` files written). **Download your 1-page PDF Training Completion Record before the timer expires** if you want a completion record.
-- **Sign-In Credentials, Local HTTPS Prompt & Export Watermarks:**
-  - Clicking **Open Practice Sandbox (`:8444`)** opens `https://<oscar-host>:8444` in a new browser tab. If the site uses a local/self-signed TLS certificate, accept the browser's HTTPS prompt once on port `:8444`.
-  - Sign in with **your existing OSCAR username/password or WebAuthn Passkey** (`oscar-sandbox` performs a one-way read-only seed on startup; changes inside `:8444` never write back to `:443`).
-  - Every `PDF`, `CSV`, `JSON`, `XLSX`, and `QR` file exported from `:8444` is stamped **`TRAINING SANDBOX — NON-OPERATIONAL`**.
+- **Sign-In Credentials, Remote Zero-Trust Subdomain (`<site>-sandbox.<hub>`) + Let's Encrypt & Shared Passkeys, and Export Watermarks:**
+  - **Over Remote Zero-Trust Access (`https://<site>.<hub>`):** Clicking **Open Practice Sandbox** opens **`https://<site>-sandbox.<hub>`** over standard HTTPS `:443` using the Hub's public **Let's Encrypt TLS certificate** (zero self-signed browser prompts and zero inbound `:8444` firewall ports), **shared parent-domain WebAuthn Passkeys (`rpId = <hub>`)**, Authentik OIDC SSO, Verified Tunnel SSO, and all operational local user accounts seeded one-way at startup. When the sandbox is stopped, `<site>-sandbox.<hub>` displays a clean status page with a button returning to `<site>.<hub>` to launch it in 1 click.
+  - **On Direct LAN / Tailscale / VPN (`https://<oscar-host>`):** Clicking **Open Practice Sandbox (`:8444`)** opens **`https://<oscar-host>:8444`** directly in a new browser tab (both access paths work simultaneously). If the site uses a local/self-signed TLS certificate on LAN, accept the browser's HTTPS prompt once on port `:8444`.
+  - Sign in with **your existing OSCAR username/password, OIDC SSO, or WebAuthn Passkey** (`oscar-sandbox` performs a one-way read-only seed on startup; changes inside the sandbox never write back to `:443`).
+  - Every `PDF`, `CSV`, `JSON`, `XLSX`, and `QR` file exported from the sandbox is stamped **`TRAINING SANDBOX — NON-OPERATIONAL`**.
 - **Safe Multi-User Role Rules (`Start` vs. `Stop`/`Reset`):**
   - Any signed-in user (`Viewer`, `Operator`, or `Administrator`) can view `:8444` host status/countdown and click **Launch Practice Sandbox (`:8444`)** when stopped. If `:8444` is already running, `start` is **idempotent** — it joins the active session without resetting another trainee's work. Only **Administrators** can trigger early **Stop & Flush** or **Reset**.
 
 | Dimension | Operational OSCAR (`compose.yaml`, `:443`) | Ephemeral Training Sandbox (`compose.sandbox.yaml`, `:8444`) |
 | :--- | :--- | :--- |
 | **Docker Compose Project** | `oscar` | `oscar-sandbox` |
-| **Container Images** | `oscar:3.11.4`, `oscar-postgis:3.11.4`, `nginx-unprivileged:1.30.7-alpine` | Reuses the exact already-installed `3.11.4` images (`0 B` extra image download) |
+| **Container Images** | `oscar:3.11.5`, `oscar-postgis:3.11.5`, `nginx-unprivileged:1.30.7-alpine` | Reuses the exact already-installed `3.11.5` images (`0 B` extra image download) |
 | **PostgreSQL Volume** | `oscar_postgres_data` (persistent, checksummed) | `oscar_sandbox_pg` (disposable, wiped on `stop`/`reset`/TTL) |
 | **Application State Volume** | `oscar_oscar_state` (persistent `config.json`, Passkeys, journals) | `oscar_sandbox_state` (disposable, wiped on `stop`/`reset`/TTL) |
 | **Parquet Cold Archive** | Host bind-mount `OSCAR_ARCHIVE_DIR` (`archive.enabled = true`) | **Zero host bind-mounts**; `tmpfs` `/var/lib/oscar/archive` + `archive.enabled = false` (`0` `.parquet` files written) |
@@ -45,7 +46,7 @@ A core requirement of radiation portal operations is that training data, practic
 
 ### 2.1 Ubuntu Server 24.04 LTS CLI
 
-From the extracted OSCAR 3.11.4 release directory:
+From the extracted OSCAR 3.11.5 release directory:
 
 ```bash
 # Launch the isolated sandbox on HTTPS port 8444 (default 120-minute auto-expiry TTL)
@@ -66,7 +67,7 @@ sudo bash oscar.sh sandbox stop
 
 ### 2.2 Windows 11 + Docker Desktop (WSL 2) CLI
 
-From an Administrator PowerShell or Command Prompt in the OSCAR 3.11.4 release directory:
+From an Administrator PowerShell or Command Prompt in the OSCAR 3.11.5 release directory:
 
 ```powershell
 # Launch the isolated sandbox on HTTPS port 8444
