@@ -1,0 +1,45 @@
+name: oscar-rpm-proxy
+
+services:
+  rpm-proxy:
+    image: "oscar-rpm-proxy:${OSCAR_VERSION:-local}"
+    build:
+      context: .
+      dockerfile: docker/rpm-proxy/Dockerfile
+      args:
+        OSCAR_VERSION: "${OSCAR_VERSION:-local}"
+    restart: always
+    init: true
+    user: "10003:10003"
+    environment:
+      TZ: "${OSCAR_TIMEZONE:-UTC}"
+      OSCAR_RPM_PROXY_WATCHDOG_SECONDS: "${OSCAR_RPM_PROXY_WATCHDOG_SECONDS:-30}"
+    volumes:
+      - "${OSCAR_RPM_PROXY_CONFIG_FILE}:/config/config.json:ro"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-m",
+          "oscar_rpm_proxy",
+          "--check",
+          "http://${OSCAR_RPM_PROXY_STATUS_CHECK_HOST:-127.0.0.1}:${OSCAR_RPM_PROXY_STATUS_PORT:-9090}/healthz"
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

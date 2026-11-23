@@ -1,6 +1,6 @@
 # OSCAR Quick Start
 
-OSCAR 3.11.6 deployment and storage operation are supported only on Windows 11 x86-64 with Docker
+OSCAR 3.11.7 deployment and storage operation are supported only on Windows 11 x86-64 with Docker
 Desktop/WSL 2 and Ubuntu Server 24.04 x86-64 with Docker Engine/Compose. macOS is limited to source
 inspection and non-deployment development; initialization, start, restart, upgrade, and storage
 operations fail closed there. Before sizing a host or configuring camera H.264 resolution, frame
@@ -8,9 +8,11 @@ rate, and keyframe intervals for `1–50` RPMs and `2–100` cameras (or optiona
 federation hub VMs), review *Recommended hardware and capacity sizing* in
 [`DEPLOYMENT.md`](DEPLOYMENT.md#recommended-hardware-and-capacity-sizing).
 
-> **Companion Video Guide:** Watch [Module 01 — Initialize OSCAR Deployment, Admin Credentials & TLS (`01-deployment-init-and-credentials.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/01-deployment-init-and-credentials.mp4) ([WebVTT captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/01-deployment-init-and-credentials.vtt)), or browse all 28 captioned workflow guides in [`docs/VIDEO_GUIDES.md`](https://github.com/ORNL/oscar/blob/main/docs/VIDEO_GUIDES.md).
+> **Companion Video Guide:** Watch [Module 01 — Initialize OSCAR Deployment, Admin Credentials & TLS (`01-deployment-init-and-credentials.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/01-deployment-init-and-credentials.mp4) ([WebVTT captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/01-deployment-init-and-credentials.vtt)), or browse all 29 captioned workflow guides (`en`, `es`, `fr`, `el`) in [`docs/VIDEO_GUIDES.md`](https://github.com/ORNL/oscar/blob/main/docs/VIDEO_GUIDES.md).
 >
-> **Try Everything Safely First (`oscar-sandbox`):** After `oscar init`, launch the isolated **Hands-On Training Sandbox & Guided Academy** on `:8444` (`sudo bash oscar.sh sandbox start` on Ubuntu; `.\oscar.bat sandbox start` on Windows) to practice lane setup, live Rapiscan/camera monitoring, OCR, WCO UFF X-ray review, and alarm adjudication with zero writes to operational PostgreSQL or Parquet archives, then wipe 100% of practice data with `sandbox stop`. See [`TRAINING_SANDBOX_GUIDE.md`](../../docs/TRAINING_SANDBOX_GUIDE.md).
+> **Try Everything Safely First (`oscar-sandbox`):** After `oscar init`, click **Guided Walkthrough** (*graduation-cap icon* in the top bar) or **Help (`?`)** (*circled question-mark icon*) to highlight console icons or launch the isolated **Hands-On Training Sandbox & Guided Academy** on `:8444` (`sudo bash oscar.sh sandbox start` on Ubuntu; `.\oscar.bat sandbox start` on Windows) to practice lane setup, live Rapiscan/camera monitoring, OCR, WCO UFF X-ray review, and alarm adjudication with zero writes to operational PostgreSQL or Parquet archives, then wipe 100% of practice data with `sandbox stop`. See [`TRAINING_SANDBOX_GUIDE.md`](../../docs/TRAINING_SANDBOX_GUIDE.md).
+>
+> **Side-by-Side Central Alarm Station (CAS) Rapiscan RPM Installations (`oscar-rpm-proxy`):** When installing OSCAR alongside an existing CAS across `1–50+` Rapiscan RPMs that accept only one TCP connection on `:1600`, run `sudo bash oscar.sh rpm-proxy configure --from-csv <lanes.csv> --start` (Ubuntu 24.04 recommended for `10–50` lanes or Virtual-IP `:1600` mode; `.\oscar.bat rpm-proxy` supported for small Port-Mapped sites) for real-time dual fan-out with `<= 4.0 s` disconnect detection. See [`RPM_EDGE_PROXY_GUIDE.md`](../../docs/RPM_EDGE_PROXY_GUIDE.md).
 
 ## Windows 11
 
@@ -80,7 +82,7 @@ organization's behalf.
 
 For step-by-step instructions tailored to users unfamiliar with Ubuntu or OSCAR—including bootable USB links, **off-site hotel-room Wi-Fi/DHCP staging with 1-command static-IP on-site cutover**, **bare-metal air-gapped USB setup with zero internet and zero DHCP**, declarative `autoinstall`/Netplan/Ansible YAML files, and **discovering unknown camera/RPM IP addresses**—read [`UBUNTU_FIELD_SETUP_GUIDE.md`](../../docs/UBUNTU_FIELD_SETUP_GUIDE.md).
 
-1. Choose `oscar-3.11.6-ubuntu-x86_64-offline-full.zip` for air-gapped sites without internet (or slow hotel Wi-Fi), or `oscar-3.11.6.zip` when installing over fast internet.
+1. Choose `oscar-3.11.7-ubuntu-x86_64-offline-full.zip` for air-gapped sites without internet (or slow hotel Wi-Fi), or `oscar-3.11.7.zip` when installing over fast internet.
 2. Prepare the Ubuntu 24.04 host (installs official Docker Engine + Compose v2 from bundled `.deb`s or APT, expands Ubuntu's default `100 GiB` LVM root volume if `--expand-lvm` is passed, masks sleep/suspend, disables automatic unattended-upgrade reboots, bounds offline boot-wait timeouts, and tunes socket buffers):
 
 ```sh
@@ -109,6 +111,27 @@ sudo bash oscar.sh init
 ```
 
 On a graphical Ubuntu installation, double-click the executable `oscar.sh` launcher to open the same interactive menu. Ubuntu Server administrators use the terminal commands above (and can run `sudo bash oscar.sh discover-devices --interface <NIC>` if RPM or camera IPs are unknown).
+
+## Console Navigation Bar & Visual Icon Guide
+
+Every page and global tool in OSCAR Viewer pairs its text title with a consistent visual icon symbol (which can also be spotlighted live on screen from **Guided Walkthrough** — *graduation-cap icon* — or **Help (`?`)** — *circled question-mark icon*):
+
+| Page / Tool | Route | Visual Icon Symbol | Purpose |
+| :--- | :--- | :--- | :--- |
+| **Dashboard** | `/` | **Four-tile grid icon** | Live priority alarm queue, compact per-lane health cards, site map & quick adjudication |
+| **Events** | `/event-log` | **Warning-triangle (`!`) icon** | Full-database historical event search, CQL filters, Saved Queries & UpSet analytics |
+| **Status of Health** | `/health` | **Heart-pulse monitor icon** | Per-lane RPM/camera online status, gamma/neutron faults, tamper (`TT`/`TC`), and extended occupancy |
+| **Site Map** | `/map` | **Map-pin icon** | Georeferenced portal lane markers (online vector tiles or offline `.pmtiles` basemaps) |
+| **National Summary** | `/national-view` | **Connected-nodes icon** | Multi-lane / multi-site occupancy, alarm, and fault totals |
+| **Reports & Analytics** | `/report` | **Bar-chart icon** | 6 report types (`PDF`, `CSV`, `JSON`, `XLSX`) and UpSet co-occurrence analytics |
+| **Alarm Transfer** | `/alarm-transfer` | **QR-viewfinder icon** | Offline camera/file import and export of air-gapped QR alarm handoff packages |
+| **Users & Access** | `/users` | **Person-and-gear icon** | Administrator user/role management, bulk enrollment QR invites, Passkeys, and SSO policy |
+| **USB Backups** | `/usb-backups` | **USB-trident icon** | Zero-downtime continual/occasional USB NVMe incremental backups and safe eject |
+| **Runtime Extensions** | `/extensions` | **Puzzle-piece icon** | Hot-swappable OCR rules/models, `.pmtiles` maps, isotope libraries, CAs, policy packs, EML & Cargo UFF |
+| **Servers & Nodes** | `/servers` | **Cloud icon** | Local and federated remote OSCAR nodes (`oscar_fed_...` bearer or same-origin session) |
+| **Guided Walkthrough** | Top bar | **Graduation-cap icon** | Anytime read-only live refresher (`:443`) and 1-click `:8444` Practice Sandbox launcher |
+| **Help (`?`)** | Top bar | **Circled question-mark icon** | 4-language operator quick guide, glossary, 29 captioned videos, icon spotlights & Support Bundle export |
+| **Settings** | Top bar | **Gear icon** | Language selector (`en`, `es`, `fr`, `el`), Light/Dark theme, and alarm audio preferences |
 
 ## Routine administration
 
@@ -198,7 +221,7 @@ After full acceptance it atomically replaces the HMAC-authenticated `CURRENT` po
 the previous non-current fully accepted schema-v2 snapshot be removed. A confirmation failure
 leaves the previous `CURRENT` authoritative. The explicit
 `backup-verify` command can run with PostgreSQL stopped: it uses a one-shot utility container and
-treats the live catalog receipt as optional. Restore additionally requires matching 3.11.6 backup,
+treats the live catalog receipt as optional. Restore additionally requires matching 3.11.7 backup,
 current-release, and backed-up release-config identities plus every exact local Compose image.
 Plan backup capacity for the old snapshot plus one complete replacement: one snapshot is the
 steady-state logical result, not the peak space required while `CURRENT` is changing. If a crash
@@ -227,10 +250,10 @@ replaces the selected backup's `VERIFIED` marker and normalizes permissions. It 
 one restorable. An optional live catalog update occurs only after deployment-volume ownership is
 proven.
 
-OSCAR 3.11.6's full storage profile is initialized with a new database and standard configuration.
+OSCAR 3.11.7's full storage profile is initialized with a new database and standard configuration.
 An upgrade preserves the old `config.json` and PostgreSQL volume, so it does not silently convert a
 pre-3.11.0 system to the tiered archive or enable PostgreSQL data checksums. Use a fresh deployment
-for the 3.11.6 test systems. Preserve and separately migrate any production history that policy
+for the 3.11.7 test systems. Preserve and separately migrate any production history that policy
 requires.
 
 If a deliberately retained pre-label deployment uses unlabelled Docker volumes, follow the

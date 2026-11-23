@@ -84,10 +84,16 @@ elif ! $skip_image_export || [[ ! -s $cached_ubuntu_tar ]]; then
         cd "$expanded_release"
         OSCAR_VERSION="$version" OSCAR_POSTGIS_PLATFORM="linux/amd64" \
             docker compose -f "${expanded_release}/compose.yaml" build oscar postgres
+        docker build --platform linux/amd64 \
+            --build-arg "OSCAR_VERSION=${version}" \
+            --tag "oscar-rpm-proxy:${version}" \
+            --file "${expanded_release}/docker/rpm-proxy/Dockerfile" \
+            "$expanded_release"
         docker pull --platform linux/amd64 nginx/nginx-unprivileged:1.30.7-alpine
         docker save --output "$cached_ubuntu_tar" \
             "oscar:${version}" \
             "oscar-postgis:${version}" \
+            "oscar-rpm-proxy:${version}" \
             "nginx/nginx-unprivileged:1.30.7-alpine"
     )
     image_tar="$cached_ubuntu_tar"
@@ -180,7 +186,7 @@ Platform: Ubuntu Server / Desktop 24.04 LTS x86-64
 Profile: Full
 Contents: Full air-gapped installation media with official Ubuntu 24.04 Docker Engine .deb packages, host/network tools, and container images.
 Generated UTC: $(date -u +%Y-%m-%dT%H:%M:%SZ)
-Images: oscar:${version}, oscar-postgis:${version}, nginx/nginx-unprivileged:1.30.7-alpine
+Images: oscar:${version}, oscar-postgis:${version}, oscar-rpm-proxy:${version}, nginx/nginx-unprivileged:1.30.7-alpine
 
 Extract this archive on the target Ubuntu 24.04 x86-64 machine, then run:
   sudo bash verify-bundle.sh

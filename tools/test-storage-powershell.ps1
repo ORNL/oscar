@@ -12,6 +12,8 @@ $repoRoot = [IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $MyInvocation.
 $storageScript = Join-Path $repoRoot 'dist\release\oscar-storage.ps1'
 $usbBackupScript = Join-Path $repoRoot 'dist\release\oscar-usb-backup.ps1'
 $sandboxScript = Join-Path $repoRoot 'dist\release\oscar-sandbox.ps1'
+$remoteAccessScript = Join-Path $repoRoot 'dist\release\oscar-remote-access.ps1'
+$rpmProxyScript = Join-Path $repoRoot 'dist\release\oscar-rpm-proxy.ps1'
 $setupScript = Join-Path $repoRoot 'dist\release\oscar-setup.ps1'
 $hostPrepScript = Join-Path $repoRoot 'dist\release\configure-windows-host.ps1'
 $verifyScript = Join-Path $repoRoot 'dist\release\verify-bundle.ps1'
@@ -20,7 +22,7 @@ $offlineBuilderScript = Join-Path $repoRoot 'tools\offline\build-offline-bundle.
 $composeFile = Join-Path $repoRoot 'dist\release\compose.yaml'
 $oscarDockerfile = Join-Path $repoRoot 'dist\release\docker\oscar\Dockerfile'
 $oscarEntrypoint = Join-Path $repoRoot 'dist\release\docker\oscar\entrypoint.sh'
-$releasePowerShellScripts = @($storageScript, $usbBackupScript, $sandboxScript, $setupScript, $hostPrepScript, $verifyScript, $autoinstallUsbScript, $offlineBuilderScript)
+$releasePowerShellScripts = @($storageScript, $usbBackupScript, $sandboxScript, $remoteAccessScript, $rpmProxyScript, $setupScript, $hostPrepScript, $verifyScript, $autoinstallUsbScript, $offlineBuilderScript)
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ('oscar-storage-ps5-' + [Guid]::NewGuid().ToString('N'))
 $createdDockerGroup = $false
 
@@ -118,6 +120,23 @@ try {
         '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
         '-File', $setupScript, '-Command', 'reset-admin-password', '-Password', 'LeakedCliPassword!2026') -Wait -PassThru -WindowStyle Hidden
     Assert-True ($resetCliRejectProcess.ExitCode -ne 0) 'oscar-setup.ps1 reset-admin-password accepted a plaintext -Password on the command line.'
+
+    # Regression gate: oscar-setup.ps1 must never reference undefined Get-EnvValue (use Get-EnvironmentValue)
+    $setupRawText = [IO.File]::ReadAllText($setupScript)
+    Assert-True ($setupRawText -notmatch '\bGet-EnvValue\b') 'oscar-setup.ps1 contains undefined Get-EnvValue call; use Get-EnvironmentValue.'
+
+    # Verify oscar-rpm-proxy.ps1 status exits 0 cleanly when unconfigured
+    $rpmStatusDir = Join-Path $temporaryRoot 'rpm-proxy-unconfigured'
+    $prevRpmStateDir = $env:OSCAR_RPM_PROXY_STATE_DIR
+    try {
+        $env:OSCAR_RPM_PROXY_STATE_DIR = $rpmStatusDir
+        $rpmStatusProcess = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @(
+            '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+            '-File', $rpmProxyScript, 'status') -Wait -PassThru -WindowStyle Hidden
+        Assert-True ($rpmStatusProcess.ExitCode -eq 0) 'oscar-rpm-proxy.ps1 status failed when unconfigured.'
+    } finally {
+        $env:OSCAR_RPM_PROXY_STATE_DIR = $prevRpmStateDir
+    }
 
     . $setupScript -Command help -TlsSan @('192.168.0.61,oscar-site.example-tailnet.ts.net', '192.168.0.61') -NoAutoNetworkSans | Out-Null
     $resolvedTlsSans = @(Get-TlsSubjectAlternativeNames 'oscar.local')

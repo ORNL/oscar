@@ -4654,4 +4654,31 @@ if bash "$setup_sh" reset-admin-password --password 'LeakedCliPassword!2026' >/d
     exit 1
 fi
 
+# Verify oscar-rpm-proxy.sh configure --from-csv, validate, and unconfigured/configured status
+rpm_proxy_sh="$repo_root/dist/release/oscar-rpm-proxy.sh"
+rpm_proxy_state="$test_root/rpm-proxy-state"
+OSCAR_RPM_PROXY_STATE_DIR="$rpm_proxy_state" bash "$rpm_proxy_sh" status | grep -Fq 'disabled (not configured)' || {
+    printf 'oscar-rpm-proxy.sh status did not report disabled when unconfigured.\n' >&2
+    exit 1
+}
+cat >"$test_root/sample-lanes.csv" <<'EOF'
+Name,UniqueID,AutoStart,Latitude,Longitude,OperationalViews,RPMConfigType,RPMHost,RPMPort,AspectAddressStart,AspectAddressEnd,EMLEnabled,EMLCollimated,LaneWidth,CameraType0,CameraHost0,CameraPath0,Codec0,Username0,Password0
+North Gate 1,lane-01,true,35.9311,-84.3100,Cargo,Rapiscan,198.51.100.11,1600,,,false,false,4.0,FFMPEG,198.51.100.21,/1,H264,,
+North Gate 2,lane-02,true,35.9312,-84.3101,Cargo,Rapiscan,198.51.100.12,1600,,,false,false,4.0,FFMPEG,198.51.100.22,/1,H264,,
+EOF
+OSCAR_RPM_PROXY_STATE_DIR="$rpm_proxy_state" bash "$rpm_proxy_sh" configure \
+    --from-csv "$test_root/sample-lanes.csv" \
+    --mode port-map \
+    --base-port 11601 \
+    --emit-oscar-csv "$test_root/proxied-lanes.csv" >/dev/null
+OSCAR_RPM_PROXY_STATE_DIR="$rpm_proxy_state" bash "$rpm_proxy_sh" validate | grep -Fq 'configuration valid: 2 enabled service(s)' || {
+    printf 'oscar-rpm-proxy.sh validate did not confirm 2 enabled services.\n' >&2
+    exit 1
+}
+grep -Fq '127.0.0.1,11601' "$test_root/proxied-lanes.csv" &&
+grep -Fq '127.0.0.1,11602' "$test_root/proxied-lanes.csv" || {
+    printf 'oscar-rpm-proxy.sh configure did not emit 20-column proxied OSCAR CSV.\n' >&2
+    exit 1
+}
+
 printf 'OSCAR storage script safety tests passed.\n'
