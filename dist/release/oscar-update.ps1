@@ -501,7 +501,10 @@ function Enable-UiBridge {
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 1)
     # Register-ScheduledTask -Force updates the definition cleanly without killing any currently running upgrade process.
     Register-ScheduledTask -TaskName $AgentTaskName -Action $taskAction -Trigger @($triggerBoot, $triggerRepeat) -Settings $settings -User 'SYSTEM' -Force | Out-Null
-    Write-BridgeStatusJson -State 'IDLE' -Stage 'IDLE' -Pct 0 -Message 'GUI System Update agent active.'
+    $existingStatus = Invoke-UpdateControlSh 'cat /var/lib/oscar/.moduledata/update-control/status.json 2>/dev/null || true'
+    if (-not $AutoInstall -or [string]::IsNullOrWhiteSpace($existingStatus) -or $existingStatus -notmatch '"state"\s*:\s*"(RUNNING|COMPLETED|FAILED|ROLLED_BACK)"') {
+        Write-BridgeStatusJson -State 'IDLE' -Stage 'IDLE' -Pct 0 -Message 'GUI System Update agent active.'
+    }
     if (-not $AutoInstall) {
         Write-Host 'Enabled zero-login GUI System Update bridge (OSCAR-UpdateAgent).' -ForegroundColor Green
     }

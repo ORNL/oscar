@@ -333,7 +333,7 @@ perform_upgrade() {
     local target_ver=${1:-} zip_source=${2:-} expected_sha=${3:-} backup_first=${4:-false} req_id=${5:-cli} action_name=${6:-upgrade}
     require_root
     [[ -f "$script_dir/.env" ]] || fail 'Current OSCAR directory is not initialized (.env not found).'
-    command -v unzip >/dev/null 2>&1 || fail 'unzip is required to extract OSCAR release archives.'
+    command -v unzip >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1 || fail 'unzip or python3 is required to extract OSCAR release archives.'
     command -v sha256sum >/dev/null 2>&1 || fail 'sha256sum is required to verify OSCAR release archives.'
 
     local work_tmp log_file
@@ -364,7 +364,21 @@ perform_upgrade() {
     else
         [[ -f $zip_source && ! -L $zip_source ]] || fail "Bundle zip file not found: $zip_source"
         if [[ -z $target_ver ]]; then
-            target_ver=$(unzip -p "$zip_source" '*/.env.example' 2>/dev/null | awk -F= '$1 == "OSCAR_VERSION" { print $2; exit }' | tr -d '\r')
+            if command -v unzip >/dev/null 2>&1; then
+                target_ver=$(unzip -p "$zip_source" '*/.env.example' 2>/dev/null | awk -F= '$1 == "OSCAR_VERSION" { print $2; exit }' | tr -d '\r')
+            else
+                target_ver=$(python3 - "$zip_source" <<'PY'
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1], "r") as zf:
+    for n in zf.namelist():
+        if n.endswith("/.env.example"):
+            for line in zf.read(n).decode("utf-8", errors="ignore").splitlines():
+                if line.startswith("OSCAR_VERSION="):
+                    print(line.split("=", 1)[1].strip())
+                    raise SystemExit(0)
+PY
+)
+            fi
         fi
         validate_semver_311 "$target_ver"
     fi
@@ -414,7 +428,29 @@ perform_upgrade() {
     write_bridge_status "RUNNING" "EXTRACTING" 64 "$target_ver" "$req_id" "$action_name" "Extracting verified release into clean sibling directory..." "$log_file"
     local extract_stage="$work_tmp/expanded"
     mkdir -p "$extract_stage"
-    if ! unzip -q "$zip_source" -d "$extract_stage" >>"$log_file" 2>&1; then
+    local extract_ok=false
+    if command -v unzip >/dev/null 2>&1; then
+        unzip -q "$zip_source" -d "$extract_stage" >>"$log_file" 2>&1 && extract_ok=true || extract_ok=false
+    else
+        python3 - "$zip_source" "$extract_stage" >>"$log_file" 2>&1 <<'PY' && extract_ok=true || extract_ok=false
+import os, pathlib, stat, sys, zipfile
+zip_path, dst_root = sys.argv[1], pathlib.Path(sys.argv[2]).resolve()
+with zipfile.ZipFile(zip_path, "r") as zf:
+    for info in zf.infolist():
+        unix_mode = info.external_attr >> 16
+        if unix_mode and stat.S_ISLNK(unix_mode):
+            raise SystemExit("Rejected symbolic link entry in release zip")
+        target = (dst_root / info.filename).resolve()
+        if dst_root not in target.parents and target != dst_root:
+            raise SystemExit("Rejected path traversal entry in release zip")
+        out_path = zf.extract(info, str(dst_root))
+        if unix_mode and not info.is_dir():
+            os.chmod(out_path, stat.S_IMODE(unix_mode))
+        elif out_path.endswith(".sh"):
+            os.chmod(out_path, 0o755)
+PY
+    fi
+    if [[ $extract_ok != true ]]; then
         write_bridge_status "FAILED" "FAILED" 0 "$target_ver" "$req_id" "$action_name" "Failed extracting release zip archive." "$log_file"
         rm -rf -- "$work_tmp"
         fail 'Failed extracting release archive.'

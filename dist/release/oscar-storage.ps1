@@ -651,8 +651,22 @@ function Assert-ProtectedAdministratorAcl(
     $acl = Get-Acl -LiteralPath $Path
     $ownerSid = ([Security.Principal.NTAccount]$acl.Owner).Translate([Security.Principal.SecurityIdentifier]).Value
     $currentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-    $administratorSids = @($currentSid, 'S-1-5-18', 'S-1-5-32-544')
-    $allowedSids = @($administratorSids + $AllowedAdditionalWriteSids)
+    $administratorSids = New-Object System.Collections.Generic.List[string]
+    foreach ($baseSid in @($currentSid, 'S-1-5-18', 'S-1-5-32-544')) {
+        if ($baseSid -and -not $administratorSids.Contains($baseSid)) { [void]$administratorSids.Add($baseSid) }
+    }
+    if ($currentSid -eq 'S-1-5-18') {
+        # When invoked by a SYSTEM scheduled task (e.g. OSCAR-UpdateAgent or OSCAR-UsbBackupAgent),
+        # recognize local Administrators who originally initialized the deployment directory.
+        try {
+            foreach ($adm in @(Get-LocalGroupMember -SID 'S-1-5-32-544' -ErrorAction SilentlyContinue)) {
+                if ($adm -and $adm.SID -and $adm.SID.Value -and -not $administratorSids.Contains($adm.SID.Value)) {
+                    [void]$administratorSids.Add($adm.SID.Value)
+                }
+            }
+        } catch {}
+    }
+    $allowedSids = @($administratorSids.ToArray() + $AllowedAdditionalWriteSids)
     if (-not $acl.AreAccessRulesProtected -or $ownerSid -notin $administratorSids) {
         Fail "$Description is not protected and owned by an administrator: $Path"
     }
