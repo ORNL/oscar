@@ -1767,15 +1767,15 @@ case "$command_name" in
         if $reset_password_stdin; then
             IFS= read -r new_reset_pw || fail 'No password supplied on standard input.'
             new_reset_pw=${new_reset_pw%$'\r'}
-            ((${#new_reset_pw} >= 12)) || fail 'Break-glass password must contain at least 12 characters.'
+            ((${#new_reset_pw} >= 14)) || fail 'Break-glass password must contain at least 14 characters.'
         else
             [[ -t 0 ]] || fail 'Standard input is not a terminal; prompt interactively on a TTY or pass --password-stdin.'
-            printf "Break-glass local password recovery for OSCAR user '%s' (>= 12 characters; input is hidden).\n" "$reset_user" >&2
+            printf "Break-glass local password recovery for OSCAR user '%s' (>= 14 characters; input is hidden).\n" "$reset_user" >&2
             while true; do
                 read -r -s -p "New password for '$reset_user': " pw_one; printf '\n' >&2
                 read -r -s -p "Confirm password for '$reset_user': " pw_two; printf '\n' >&2
-                if ((${#pw_one} < 12)); then
-                    printf 'Use at least 12 characters.\n' >&2
+                if ((${#pw_one} < 14)); then
+                    printf 'Use at least 14 characters.\n' >&2
                     continue
                 fi
                 if [[ $pw_one != "$pw_two" ]]; then
