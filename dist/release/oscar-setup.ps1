@@ -2372,14 +2372,14 @@ try {
                     throw 'No password supplied on standard input.'
                 }
                 $newResetPassword = $stdinLine.TrimEnd([char[]]@([char]13, [char]10))
-                if ($newResetPassword.Length -lt 12) {
-                    throw 'Break-glass password must contain at least 12 characters.'
+                if ($newResetPassword.Length -lt 14) {
+                    throw 'Break-glass password must contain at least 14 characters.'
                 }
             } else {
                 if ($NonInteractive) {
                     throw 'Use -PasswordStdin for non-interactive break-glass password resets.'
                 }
-                Write-Host "Break-glass local password recovery for OSCAR user '$targetUser' (>= 12 characters; input is hidden)."
+                Write-Host "Break-glass local password recovery for OSCAR user '$targetUser' (>= 14 characters; input is hidden)."
                 while ($true) {
                     $firstSec = Read-Host "New password for '$targetUser'" -AsSecureString
                     $secondSec = Read-Host "Confirm password for '$targetUser'" -AsSecureString
@@ -2388,8 +2388,8 @@ try {
                     try {
                         $firstPlain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($firstPtr)
                         $secondPlain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($secondPtr)
-                        if ($firstPlain.Length -lt 12) {
-                            Write-Warning 'Use at least 12 characters.'
+                        if ($firstPlain.Length -lt 14) {
+                            Write-Warning 'Use at least 14 characters.'
                             continue
                         }
                         if ($firstPlain -cne $secondPlain) {
