@@ -162,4 +162,45 @@ grep -Fq '"state": "ROLLED_BACK"' "$ctrl_dir/status.json"
 [[ -f "$active_dir/.rollback-invoked" ]]
 [[ ! -d "$tmp_root/deploy/oscar-3.11.10" ]]
 
-printf 'PASS: oscar-update.sh zero-login discovery, SHA-256 verification, sibling upgrade, and fail-safe rollback verified.\n'
+# 6. Verify attached OSCAR_BACKUP USB NVMe takes precedence over OSCAR_BACKUP_MODE=single during pre-upgrade backup
+usb_mnt="$tmp_root/mock-usb-nvme"
+mkdir -p "$usb_mnt/OSCAR-Backup"
+touch "$usb_mnt/OSCAR-Backup/.oscar-usb-backup-root"
+usb_cfg="$tmp_root/usb-backup.env"
+cat >"$usb_cfg" <<EOF
+USB_BACKUP_MOUNT=$usb_mnt
+USB_BACKUP_MODE=continual
+EOF
+cat >>"$active_dir/.env" <<'EOF'
+OSCAR_BACKUP_MODE=single
+EOF
+cat >"$active_dir/oscar-usb-backup.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ ${1:-} == sync ]]; then
+    touch "$(dirname "$0")/.usb-sync-invoked"
+    exit 0
+fi
+printf 'Drive State:           ATTACHED\n'
+EOF
+chmod +x "$active_dir/oscar-usb-backup.sh"
+cat >"$active_dir/oscar-setup.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ ${1:-} == backup ]]; then
+    touch "$(dirname "$0")/.cold-backup-invoked"
+    exit 1
+fi
+exit 0
+EOF
+chmod +x "$active_dir/oscar-setup.sh"
+rm -rf "$tmp_root/deploy/oscar-3.11.9"
+cat >"$ctrl_dir/request.json" <<EOF
+{"requestId":"req-usb-precedence-3119","action":"upgrade-github","targetVersion":"3.11.9","expectedSha256":"${good_sha}","createBackupFirst":true}
+EOF
+OSCAR_USB_BACKUP_CONFIG="$usb_cfg" bash "$active_dir/oscar-update.sh" poll-bridge
+grep -Fq '"state": "COMPLETED"' "$ctrl_dir/status.json"
+[[ -f "$active_dir/.usb-sync-invoked" ]]
+[[ ! -f "$active_dir/.cold-backup-invoked" ]]
+
+printf 'PASS: oscar-update.sh zero-login discovery, SHA-256 verification, USB-NVMe backup precedence, sibling upgrade, and fail-safe rollback verified.\n'

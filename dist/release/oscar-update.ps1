@@ -169,6 +169,25 @@ function Test-BridgeAgentActive {
     }
 }
 
+function Test-UsbBackupAttached {
+    try {
+        $usbCfgPath = if ($env:OSCAR_USB_BACKUP_CONFIG) {
+            $env:OSCAR_USB_BACKUP_CONFIG
+        } else {
+            Join-Path $env:ProgramData 'OSCAR\usb-backup.json'
+        }
+        if (-not (Test-Path -LiteralPath $usbCfgPath)) { return $false }
+        $cfg = Get-Content -LiteralPath $usbCfgPath -Raw -ErrorAction Stop | ConvertFrom-Json
+        if ($null -eq $cfg) { return $false }
+        $p = [string]$cfg.targetPath
+        if ([string]::IsNullOrWhiteSpace($p) -or (-not (Test-Path -LiteralPath $p))) { return $false }
+        if (Test-Path -LiteralPath (Join-Path $p '.oscar-ejected')) { return $false }
+        return (Test-Path -LiteralPath (Join-Path $p 'OSCAR-Backup\.oscar-usb-backup-root'))
+    } catch {
+        return $false
+    }
+}
+
 function Write-BridgeStatusJson {
     param(
         [string]$State = 'IDLE',
@@ -183,12 +202,13 @@ function Write-BridgeStatusJson {
     $guiPref = (Get-EnvFileValue -Key 'OSCAR_GUI_UPDATE' -DefaultValue 'enabled').ToLowerInvariant()
     $guiEnabled = (-not (Test-Path -LiteralPath $DisabledMarker)) -and ($guiPref -ne 'disabled') -and ($guiPref -ne 'false')
     $bmode = Get-EnvFileValue -Key 'OSCAR_BACKUP_MODE' -DefaultValue 'disabled'
+    $usbAttached = Test-UsbBackupAttached
     $nowIso = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
 
     $payload = [ordered]@{
         agentActive = (Test-BridgeAgentActive)
         guiUpdateEnabled = $guiEnabled
-        backupPossible = ($bmode -eq 'single')
+        backupPossible = ($usbAttached -or ($bmode -eq 'single'))
         state = $State
         stage = $Stage
         progressPercent = $Pct
@@ -379,8 +399,13 @@ function Invoke-SystemUpgrade {
         }
 
         if ($CreateBackupFirst) {
+            $usbBackupScript = Join-Path $ScriptRoot 'oscar-usb-backup.ps1'
             $bmode = Get-EnvFileValue -Key 'OSCAR_BACKUP_MODE' -DefaultValue 'disabled'
-            if ($bmode -eq 'single') {
+            if ((Test-UsbBackupAttached) -and (Test-Path -LiteralPath $usbBackupScript)) {
+                Write-BridgeStatusJson -State 'RUNNING' -Stage 'BACKING_UP' -Pct 22 -TargetVer $TargetVer -ReqId $ReqId -JobAction $JobAction -Message 'Running zero-downtime incremental pre-upgrade sync to attached USB NVMe backup drive...'
+                & $psExe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $usbBackupScript sync
+                if ($LASTEXITCODE -ne 0) { throw 'Pre-upgrade USB NVMe backup sync failed; deployment was left untouched.' }
+            } elseif ($bmode -eq 'single') {
                 Write-BridgeStatusJson -State 'RUNNING' -Stage 'BACKING_UP' -Pct 22 -TargetVer $TargetVer -ReqId $ReqId -JobAction $JobAction -Message 'Creating pre-upgrade encrypted backup snapshot...'
                 & $psExe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $ScriptRoot 'oscar-setup.ps1') backup
                 if ($LASTEXITCODE -ne 0) { throw 'Pre-upgrade backup failed; deployment was left untouched.' }

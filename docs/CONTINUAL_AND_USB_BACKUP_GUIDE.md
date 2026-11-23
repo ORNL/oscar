@@ -17,6 +17,9 @@ For the single-snapshot quiesced recovery workflow (`OSCAR_BACKUP_MODE=single` v
 | **Field Laptop Copy (`Win` / `macOS` / `Linux`)** | **Yes** — defaults to `NTFS` with sequential daily `.tar` packs + built-in `COPY-TO-ANOTHER-DRIVE.bat` & `copy-to-another-drive.sh` | **Yes** — identical carrier layout | Manual directory copy of monolithic `.tar.gz` files |
 | **Unplug & Auto-Catch-Up Behavior** | Safe 1-command `eject`; while unplugged OSCAR records normally; **plugging back in automatically pulls all missed data** | Plug in anytime, run `usb-backup attach` (or `sync`), then `eject` | Manual invocation only |
 | **Cross-Machine & Bare-Metal Restore** | **Yes** — 1-command `usb-backup restore` onto an existing or brand-new uninitialized Ubuntu or Windows server | **Yes** — identical `usb-backup restore` | Requires matching pre-initialized host identity |
+| **Zero-Login GUI & CLI System Updates (`/users?tab=update`)** | **Preferred automatically (`0.0 s` downtime, `~5–20 s` incremental delta)** whenever the `OSCAR_BACKUP` drive is attached—even if `OSCAR_BACKUP_MODE=single` is also set | **Preferred automatically** whenever attached | Fallback only when no `OSCAR_BACKUP` USB NVMe drive is attached |
+
+> **Recommended Standard Hardware for Physical Portals (`9–50` Lanes Especially):** Every physical portal deployment should include a dedicated **`1–2 TB` external USB 3.2 Gen 2 NVMe SSD (`OSCAR_BACKUP` in `continual` mode)** alongside the internal OS/archive NVMe SSD. In addition to protecting against internal SSD or motherboard failure, keeping `OSCAR_BACKUP` attached reduces pre-upgrade backups on large multi-month deployments from `30–60+` minutes of cold `oscar-state.tar.gz` archiving down to **`~5–20 seconds` with `0.0 s` portal downtime**, and pairs directly with the `54 KB` Autoinstall USB stick for rapid bare-metal replacement.
 
 ---
 
