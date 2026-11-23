@@ -1,6 +1,7 @@
 *
 !osh-node-oscar/**
 !docker/oscar/**
+!docker/rpm-proxy/**
 !docker/tunnel/**
 **/*eml*.jar
 **/*EML*.jar

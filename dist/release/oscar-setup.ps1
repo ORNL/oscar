@@ -1171,7 +1171,7 @@ function Invoke-Compose([string[]]$Arguments) {
     $prevRpId = if ($hadRpId) { $env:OSCAR_WEBAUTHN_RP_ID } else { '' }
     try {
         $octRpId = ''
-        $archiveDir = Get-EnvValue 'OSCAR_ARCHIVE_DIR'
+        $archiveDir = Get-EnvironmentValue 'OSCAR_ARCHIVE_DIR'
         $storageRoot = if (-not [string]::IsNullOrWhiteSpace($archiveDir)) { Split-Path -Parent $archiveDir } else { Join-Path (Split-Path -Parent $ScriptRoot) 'oscar-storage' }
         $octEnv = Join-Path $storageRoot 'remote-access\octelium.env'
         if (Test-Path -LiteralPath $octEnv) {
@@ -1215,6 +1215,28 @@ function Invoke-RemoteAccessSubcommand([string[]]$Arguments, [bool]$IgnoreErrors
         }
     } else {
         & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $remoteAccessScript @Arguments
+    }
+}
+
+function Invoke-RpmProxySubcommand([string[]]$Arguments, [bool]$IgnoreErrors = $false) {
+    if ($env:OSCAR_STORAGE_TEST_MODE -eq '1' -and $env:OSCAR_RPM_PROXY_TEST_ALLOW -ne '1') {
+        return
+    }
+    $rpmProxyScript = Join-Path $ScriptRoot 'oscar-rpm-proxy.ps1'
+    if (-not (Test-Path -LiteralPath $rpmProxyScript)) {
+        return
+    }
+    if ($IgnoreErrors) {
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $rpmProxyScript @Arguments *> $null
+            $global:LASTEXITCODE = 0
+        } finally {
+            $ErrorActionPreference = $prevEap
+        }
+    } else {
+        & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $rpmProxyScript @Arguments
     }
 }
 
@@ -2129,6 +2151,8 @@ OSCAR deployment administration
   .\oscar.bat usb-backup mode continual|occasional|disabled [-IntervalMinutes 15]
   .\oscar.bat usb-backup verify [-From PATH] [-BackupKey FILE] [-Deep]
   .\oscar.bat usb-backup restore [-From PATH] [-BackupKey FILE] -Confirm RESTORE
+  .\oscar.bat rpm-proxy configure -FromCsv LANES_CSV [-Mode port-map] [-Start]
+  .\oscar.bat rpm-proxy start|stop|restart|upgrade|status|logs|validate|disable
   .\oscar.bat archive status|verify
   .\oscar.bat archive hold list
   .\oscar.bat archive hold create -StoreKey KEY -IdScope INT (-Generation UUID | -Observation ID) -Reason TEXT
@@ -2304,6 +2328,7 @@ try {
             if ($isConfigured) {
                 Write-Host "OSCAR URL: $(Get-ConfiguredEndpoint)"
                 Invoke-RemoteAccessSubcommand @('status')
+                Invoke-RpmProxySubcommand @('status') $true
             }
         }
         'logs' {
@@ -2478,6 +2503,7 @@ try {
             } else {
                 Invoke-RemoteAccessSubcommand @('sync', '-Rebuild')
             }
+            Invoke-RpmProxySubcommand @('build-image-only') $true
             Write-Host 'Upgrade deployment completed. Persistent OSCAR and PostgreSQL volumes were retained.' -ForegroundColor Green
         }
         'backup' { Invoke-StorageCommand 'backup' $null }

@@ -20,6 +20,9 @@ case "$command_name" in
     remote-access)
         exec bash "$script_dir/oscar-remote-access.sh" "$@"
         ;;
+    rpm-proxy)
+        exec bash "$script_dir/oscar-rpm-proxy.sh" "$@"
+        ;;
     wizard|firstboot-wizard)
         exec bash "$script_dir/ubuntu/oscar-firstboot-wizard.sh" "$@"
         ;;
@@ -92,6 +95,8 @@ OSCAR deployment administration
   sudo ./oscar.sh usb-backup restore [--from PATH] [--backup-key FILE] --confirm RESTORE
   sudo ./oscar.sh sandbox start [--port 8444] [--ttl-minutes 120] [--track operator|supervisor|administrator]
   sudo ./oscar.sh sandbox stop|reset|status
+  sudo ./oscar.sh rpm-proxy configure --from-csv LANES_CSV [--mode port-map|virtual-ip] [--start]
+  sudo ./oscar.sh rpm-proxy start|stop|restart|upgrade|status|logs|validate|disable
   sudo ./oscar.sh archive status|verify
   sudo ./oscar.sh archive hold list
   sudo ./oscar.sh archive hold create --store-key KEY --id-scope INT (--generation UUID | --observation ID) --reason TEXT
@@ -986,6 +991,14 @@ invoke_remote_access_subcommand() {
     bash "$script_dir/oscar-remote-access.sh" "$@"
 }
 
+invoke_rpm_proxy_subcommand() {
+    if [[ ${OSCAR_STORAGE_TEST_MODE:-0} == 1 && ${OSCAR_RPM_PROXY_TEST_ALLOW:-0} != 1 ]]; then
+        return 0
+    fi
+    [[ -f $script_dir/oscar-rpm-proxy.sh ]] || return 0
+    bash "$script_dir/oscar-rpm-proxy.sh" "$@"
+}
+
 stop_application_tier_ordered() {
     # Compose does not apply depends_on in reverse for `stop`/`restart` and a
     # multi-service stop signals every container concurrently. Keep the
@@ -1220,6 +1233,7 @@ export_host_support_bundle() {
         if [[ ${EUID:-$(id -u)} -eq 0 ]] && configured; then
             bash "$script_dir/oscar-storage.sh" archive status >"$raw_dir/archive/status.txt" 2>&1 || true
         fi
+        invoke_rpm_proxy_subcommand support-snapshot "$raw_dir/rpm-proxy" || true
     fi
 
     python3 - "$raw_dir" "$target_zip" "$generated_at" "$(release_version 2>/dev/null || echo unknown)" "$effective_tail" <<'PY'
@@ -1492,6 +1506,16 @@ arch_status = raw_dir / "archive" / "status.txt"
 if arch_status.is_file() and arch_status.stat().st_size > 0:
     add_text_entry("archive/status.txt", arch_status.read_text(encoding="utf-8", errors="replace"))
 
+rpm_proxy_dir = raw_dir / "rpm-proxy"
+if rpm_proxy_dir.is_dir():
+    for rpf in sorted(rpm_proxy_dir.iterdir()):
+        if rpf.is_file() and rpf.stat().st_size > 0:
+            add_text_entry(
+                f"rpm-proxy/{rpf.name}",
+                rpf.read_text(encoding="utf-8", errors="replace"),
+                scan_highlights=(rpf.suffix == ".log"),
+            )
+
 total_redactions = sum(stats.values())
 redaction_report = {
     "schemaVersion": 1,
@@ -1672,6 +1696,7 @@ case "$command_name" in
             local_port=$(awk -F= '$1 == "OSCAR_HTTPS_PORT" { print substr($0, index($0, "=") + 1); exit }' "$script_dir/.env")
             printf 'OSCAR URL: https://%s:%s/sensorhub/admin\n' "${local_hostname:-oscar.local}" "${local_port:-443}"
             invoke_remote_access_subcommand status || true
+            invoke_rpm_proxy_subcommand status || true
         fi
         ;;
     logs)
@@ -1843,6 +1868,7 @@ case "$command_name" in
         else
             invoke_remote_access_subcommand sync --rebuild
         fi
+        invoke_rpm_proxy_subcommand build-image-only || true
         printf 'Upgrade deployment completed. Persistent OSCAR and PostgreSQL volumes were retained.\n'
         ;;
     *) fail "Unknown command: $command_name" ;;

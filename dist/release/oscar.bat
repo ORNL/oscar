@@ -31,6 +31,7 @@ exit /b %errorlevel%
 
 :dispatch
 if /I "%~1"=="remote-access" goto remote_access
+if /I "%~1"=="rpm-proxy" goto rpm_proxy
 if /I "%~1"=="usb-backup" goto usb_backup
 if /I "%~1"=="continual-backup" goto usb_backup
 if /I "%~1"=="sandbox" goto training_sandbox
@@ -53,6 +54,17 @@ exit /b %errorlevel%
 :remote_access
 shift
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0oscar-remote-access.ps1" %1 %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %errorlevel%
+
+:rpm_proxy
+if "%~2"=="" (
+    powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0oscar-rpm-proxy.ps1"
+    exit /b %errorlevel%
+)
+set "OSCAR_SUBARGS=%*"
+for /f "tokens=1* delims= " %%A in ("%OSCAR_SUBARGS%") do (
+    powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0oscar-rpm-proxy.ps1" %%B
+)
 exit /b %errorlevel%
 
 :usb_backup
@@ -108,6 +120,9 @@ echo   usb-backup restore -From R:\ -BackupKey FILE -Confirm RESTORE
 echo   sandbox start
 echo   sandbox status
 echo   sandbox stop
+echo   rpm-proxy configure -FromCsv lanes.csv -Mode port-map -Start
+echo   rpm-proxy status
+echo   rpm-proxy stop
 echo   archive status
 echo   archive verify
 echo   archive hold list
