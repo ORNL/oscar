@@ -38,6 +38,10 @@ Download from **[GitHub Releases — `ORNL/oscar` `v3.11.9`](https://github.com/
 
 Also download **`OSCAR-3.11.9-Administrator-Operator-Manual-en.pdf`** and **`OSCAR-3.11.9-SHA256SUMS.txt`** onto the USB stick so you have offline manuals and checksum verification on-site.
 
+> **Captioned Video Walkthrough (`#31`, `65s`):** Watch **[Build an Air-Gapped Ubuntu 24.04 Autoinstall USB Drive (GUI, TUI & CLI)](VIDEO_GUIDES.md#31-bare-metal-autoinstall-usb-creator)** ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/31-bare-metal-autoinstall-usb-creator.mp4) · [WebVTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/31-bare-metal-autoinstall-usb-creator.vtt)).
+
+![Bare-Metal Ubuntu 24.04 Offline Autoinstall USB Creator GUI](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/55-bare-metal-autoinstall-usb-creator.png)
+
 ### 1.3 Helpful Laptop Apps (If Administering From Your Windows/Mac Laptop)
 
 - **SSH & Terminal:** Built into Windows 11 (**Windows Terminal** / PowerShell: `ssh oscaradmin@<IP>`) and macOS (**Terminal**).
