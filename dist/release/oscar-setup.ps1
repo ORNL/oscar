@@ -1171,7 +1171,7 @@ function Invoke-Compose([string[]]$Arguments) {
     $prevRpId = if ($hadRpId) { $env:OSCAR_WEBAUTHN_RP_ID } else { '' }
     try {
         $octRpId = ''
-        $archiveDir = Get-EnvironmentValue 'OSCAR_ARCHIVE_DIR'
+        $archiveDir = Get-ConfiguredEnvValue 'OSCAR_ARCHIVE_DIR'
         $storageRoot = if (-not [string]::IsNullOrWhiteSpace($archiveDir)) { Split-Path -Parent $archiveDir } else { Join-Path (Split-Path -Parent $ScriptRoot) 'oscar-storage' }
         $octEnv = Join-Path $storageRoot 'remote-access\octelium.env'
         if (Test-Path -LiteralPath $octEnv) {

@@ -44,12 +44,12 @@ exit /b %errorlevel%
 
 :autoinstall_usb
 if "%~2"=="" (
-    powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0ubuntu\create-autoinstall-usb.ps1"
+    powershell.exe -NoLogo -NoProfile -STA -ExecutionPolicy Bypass -File "%~dp0ubuntu\create-autoinstall-usb.ps1"
     exit /b %errorlevel%
 )
 set "OSCAR_SUBARGS=%*"
 for /f "tokens=1* delims= " %%A in ("%OSCAR_SUBARGS%") do (
-    powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0ubuntu\create-autoinstall-usb.ps1" %%B
+    powershell.exe -NoLogo -NoProfile -STA -ExecutionPolicy Bypass -File "%~dp0ubuntu\create-autoinstall-usb.ps1" %%B
 )
 exit /b %errorlevel%
 

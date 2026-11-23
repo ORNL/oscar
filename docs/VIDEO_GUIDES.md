@@ -1,6 +1,6 @@
-# OSCAR 3.11.8 How-To Video Guides
+# OSCAR 3.11.9 How-To Video Guides
 
-Concise, single-task `1920x1080` workflow screen recordings for **OSCAR 3.11.8**, published in [`ORNL/oscar-video-guides`](https://github.com/ORNL/oscar-video-guides) and mounted as a Git submodule at `docs/video-guides` in source checkouts (`git submodule update --init docs/video-guides`).
+Concise, single-task `1920x1080` workflow screen recordings for **OSCAR 3.11.9**, published in [`ORNL/oscar-video-guides`](https://github.com/ORNL/oscar-video-guides) and mounted as a Git submodule at `docs/video-guides` in source checkouts (`git submodule update --init docs/video-guides`).
 
 Every module starts immediately at `00:00` with the workflow action, runs under 2 minutes, includes embedded MP4 `mov_text` soft subtitles plus standalone WebVTT (`.vtt`) and SubRip (`.srt`) caption tracks, and pairs with a 3-to-4-step sequential reference block below.
 
@@ -15,8 +15,8 @@ Every module starts immediately at `00:00` with the workflow action, runs under 
 | Accessibility | Embedded MP4 `mov_text` soft captions + standalone `.vtt` and `.srt` files + 3-to-4-step Markdown blocks |
 
 > **Interactive HTML5 Player & In-App Contextual Video Assistance:**
-> - **Source checkouts:** With submodules initialized, open `docs/video-guides/index.html` in any browser to watch all 29 modules with synchronized closed captions enabled by default.
-> - **Running OSCAR 3.11.8 deployments (offline-ready):** All 29 MP4 recordings and 4-language (`en`, `es`, `fr`, `el`) WebVTT/SRT captions (`232` subtitle tracks) are bundled directly in the OSCAR web root (`osh-node-oscar/web/video-guides/`) and served over TLS with HTTP byte-range streaming, automatic locale subtitle track selection, and zero idle network load:
+> - **Source checkouts:** With submodules initialized, open `docs/video-guides/index.html` in any browser to watch all 31 modules with synchronized closed captions enabled by default.
+> - **Running OSCAR 3.11.9 deployments (offline-ready):** All 29 MP4 recordings and 4-language (`en`, `es`, `fr`, `el`) WebVTT/SRT captions (`248` subtitle tracks) are bundled directly in the OSCAR web root (`osh-node-oscar/web/video-guides/`) and served over TLS with HTTP byte-range streaming, automatic locale subtitle track selection, and zero idle network load:
 >   - **OSCAR Viewer (`Guided Walkthrough` & `?` Help Dialog):** Click `Guided Walkthrough` or `?` on any console page to watch route-matched workflow videos inline with closed captions, trigger per-card/per-glossary video walkthroughs, or open the full local catalog at `/video-guides/index.html`.
 >   - **SensorHub Admin (`/sensorhub/admin`):** Open any supported module's **README** tab (`OSCAR Service`, `Lane Sensor System`, `Rapiscan RPM`, `FFmpeg Video`, or `Durable Daily File Journal`) and expand the collapsed `Video guide (#XX)` disclosures on demand.
 
@@ -53,6 +53,8 @@ Every module starts immediately at `00:00` with the workflow action, runs under 
 | 27 | [Connect Cargo UFF SMB Shares, Search by UUID & Inspect 16-Bit Radiographs](#27-cargo-uff-smb-and-xray-inspection) ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/27-cargo-uff-smb-and-xray-inspection.mp4)) | Track D | 55s | 3599.7 KiB | [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/27-cargo-uff-smb-and-xray-inspection.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/27-cargo-uff-smb-and-xray-inspection.srt) |
 | 28 | [Practice Safely in the Ephemeral Hands-On Training Sandbox & Guided Academy](#28-hands-on-training-sandbox) ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/28-hands-on-training-sandbox.mp4)) | Track D | 79s | 3193.2 KiB | [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/28-hands-on-training-sandbox.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/28-hands-on-training-sandbox.srt) |
 | 29 | [Configure & Control Per-Lane Physical RPM Lights & Sound (WebRelay-Quad)](#29-lane-webrelay-lights-and-sound) ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/29-lane-webrelay-lights-and-sound.mp4)) | Track C | 44s | 2607.8 KiB | [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/29-lane-webrelay-lights-and-sound.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/29-lane-webrelay-lights-and-sound.srt) |
+| 30 | [Update OSCAR From the GUI Without a GitHub Login (GitHub & Offline .zip)](#30-zero-login-github-system-update) ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/30-zero-login-github-system-update.mp4)) | Track C | 38s | 1118.9 KiB | [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/30-zero-login-github-system-update.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/30-zero-login-github-system-update.srt) |
+| 31 | [Build an Air-Gapped Ubuntu 24.04 Autoinstall USB Drive (GUI, TUI & CLI)](#31-bare-metal-autoinstall-usb-creator) ([MP4](https://github.com/ORNL/oscar-video-guides/blob/main/videos/31-bare-metal-autoinstall-usb-creator.mp4)) | Track D | 67s | 1739.4 KiB | [VTT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/31-bare-metal-autoinstall-usb-creator.vtt) · [SRT](https://github.com/ORNL/oscar-video-guides/blob/main/captions/31-bare-metal-autoinstall-usb-creator.srt) |
 
 ## Track A — CLI Deployment, Upgrades & Storage Lifecycle
 
@@ -63,7 +65,7 @@ Extract a clean OSCAR release archive, initialize administrator credentials and 
 
 - **Video:** [Watch `01-deployment-init-and-credentials.mp4` (28.5s, 587.7 KiB)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/01-deployment-init-and-credentials.mp4) · [WebVTT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/01-deployment-init-and-credentials.vtt) · [SRT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/01-deployment-init-and-credentials.srt)
 
-1. Extract `oscar-3.11.8.zip` into a clean release directory on Ubuntu Server 24.04 or Windows 11 and change into `oscar-3.11.8/`.
+1. Extract `oscar-3.11.9.zip` into a clean release directory on Ubuntu Server 24.04 or Windows 11 and change into `oscar-3.11.9/`.
 2. Run `sudo bash oscar.sh init` (or `.\oscar.bat init` on Windows 11) and supply the deployment hostname, IANA timezone, and administrator password (`>= 14` characters).
 3. Allow `init` to generate deployment-bound PostgreSQL secrets, TLS gateway certificates, and external `oscar_oscar_state` / `oscar_postgres_data` volumes.
 4. Run `sudo bash oscar.sh status` (or `.\oscar.bat status`) to confirm `oscar-gateway`, `oscar`, and `oscar-postgis` report `running (healthy)`.
@@ -76,7 +78,7 @@ Verify a pre-upgrade snapshot, copy only .env, secrets/, and tls/ into a newly e
 - **Video:** [Watch `02-clean-directory-upgrade.mp4` (29.5s, 519.6 KiB)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/02-clean-directory-upgrade.mp4) · [WebVTT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/02-clean-directory-upgrade.vtt) · [SRT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/02-clean-directory-upgrade.srt)
 
 1. When `single` backup mode is enabled, run `sudo bash oscar.sh backup` and `sudo bash oscar.sh backup-verify` from the active release directory before upgrading.
-2. Extract the target `oscar-3.11.8.zip` archive into a separate sibling directory — never unzip over an existing release directory.
+2. Extract the target `oscar-3.11.9.zip` archive into a separate sibling directory — never unzip over an existing release directory.
 3. Copy only `.env`, `secrets/`, and `tls/` (plus `.oscar-volume-adoption` if previously adopted) into the newly extracted directory.
 4. Run `sudo bash oscar.sh upgrade` (or `.\oscar.bat upgrade`) and confirm all containers return `healthy` with preserved named volumes and archive roots.
 
@@ -265,7 +267,7 @@ Open Help (?) to browse the localized Operator Quick Guide & Glossary, export th
 
 - **Video:** [Watch `18-operator-help-and-support-bundle.mp4` (37.5s, 3333.3 KiB)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/18-operator-help-and-support-bundle.mp4) · [WebVTT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/18-operator-help-and-support-bundle.vtt) · [SRT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/18-operator-help-and-support-bundle.srt)
 
-1. Click the **Help (`?`)** button in the OSCAR Viewer top navigation bar to open the localized **OSCAR 3.11.8 Operator Quick Guide & Glossary** (`en`, `es`, `fr`, `el`).
+1. Click the **Help (`?`)** button in the OSCAR Viewer top navigation bar to open the localized **OSCAR 3.11.9 Operator Quick Guide & Glossary** (`en`, `es`, `fr`, `el`).
 2. Open **Manual & Video Guides** and click **Export Support Bundle** to merge the 400-event browser Flight Recorder (`client/client-diagnostics.json`) with rolling server logs (`backend/oscar.log`) into `oscar-support-<UTC>.zip` (automatically falling back to `oscar-client-support-<UTC>.zip` if the server is offline).
 3. When containers are stopped or unreachable over HTTPS, run `sudo bash oscar.sh support-bundle` (Ubuntu) or `.\oscar.bat support-bundle` (Windows) on the host to capture `oscar-host-support-<UTC>.zip`.
 4. Inspect `summary.json`, `client/client-diagnostics.json`, and `redaction-report.json` to review recent errors and confirm automatic `[REDACTED]` credential scrubbing.
@@ -362,7 +364,7 @@ Unpack the self-contained Ubuntu 24.04 offline bundle on hotel/office Wi-Fi, ide
 
 - **Video:** [Watch `26-ubuntu-hotel-staging-and-airgapped-cutover.mp4` (33.5s, 1007.3 KiB)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/26-ubuntu-hotel-staging-and-airgapped-cutover.mp4) · [WebVTT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/26-ubuntu-hotel-staging-and-airgapped-cutover.vtt) · [SRT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/26-ubuntu-hotel-staging-and-airgapped-cutover.srt)
 
-1. Off-site (hotel or staging bench), extract `oscar-3.11.8-ubuntu-x86_64-offline-full.zip`, verify bundle checksums (`sudo bash verify-bundle.sh`), and run `sudo bash oscar.sh identify-nics --watch` while plugging a patch cord into the target NIC to confirm its Linux interface name (`enp2s0`).
+1. Off-site (hotel or staging bench), extract `oscar-3.11.9-ubuntu-x86_64-offline-full.zip`, verify bundle checksums (`sudo bash verify-bundle.sh`), and run `sudo bash oscar.sh identify-nics --watch` while plugging a patch cord into the target NIC to confirm its Linux interface name (`enp2s0`).
 2. Stage the portal's static IPv4 configuration safely without touching active Wi-Fi/SSH via `sudo bash oscar.sh stage-site-network --interface enp2s0 --ip 198.51.100.10/24 --gateway 198.51.100.1`.
 3. Run `sudo bash oscar.sh prepare-host --offline --expand-lvm` to expand Ubuntu Server's default `100 GiB` LVM logical volume across the full NVMe disk and install offline `.deb` packages, then run `sudo bash oscar.sh init --offline` to load air-gapped container images and initialize credentials.
 4. On-site inside the air-gapped portal rack, apply the pre-staged static subnet with `sudo bash oscar.sh apply-site-network` and scan the sensor LAN with `sudo bash oscar.sh discover-devices --interface enp2s0` to verify Rapiscan RPM (`10001–10050`) and RTSP camera (`554`/`8554`) endpoints.
@@ -401,3 +403,27 @@ Configure per-lane ControlByWeb WebRelay-Quad HTTP/XML control in Status of Heal
 2. Expand **WebRelay Endpoint & Policy Settings**, enter the lane's ControlByWeb `WebRelay-Quad` IPv4/hostname (`198.51.100.21`), port (`80`), pulse duration (`5 s`), and mode (`AUTO`), click **Test Connection**, and click **Save & Apply to Lane**.
 3. Verify `R1=1` and `R2=1` intercept coils arm in `AUTO` mode (suppressing physical beacon/siren triggers on `Code 9999: EML Non-Threat` and optional `Code 9998`), then click **Pulse Gamma Light + Sound (`R3`)** and **Pulse Neutron Blue (`R4`)** to confirm timed commissioning outputs.
 4. Click **Hardware Pass-Through (`0,0,0,0`)** or **Mute Outputs (`1,1,0,0`)** when needed during maintenance, or click **Return to Automatic (`AUTO`)** for normal gatehouse operation.
+
+<a id="30-zero-login-github-system-update"></a>
+### 30. Update OSCAR From the GUI Without a GitHub Login (GitHub & Offline .zip)
+
+Open Users & Access -> System Update (`/users?tab=update`), discover and SHA-256-verify the latest official `ORNL/oscar` GitHub Release anonymously with zero GitHub account or token, confirm sibling-directory installation with automatic fail-safe rollback inside the native modal dialog, and stage air-gapped `.zip` bundles on offline portals.
+
+- **Video:** [Watch `30-zero-login-github-system-update.mp4` (38s, 1118.9 KiB)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/30-zero-login-github-system-update.mp4) · [WebVTT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/30-zero-login-github-system-update.vtt) · [SRT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/30-zero-login-github-system-update.srt)
+
+1. Open **Users & Access -> System Update** (`/users?tab=update`) to verify `Zero GitHub Login Required` and `Host Update Agent: Active`.
+2. Click **Check GitHub Releases** to discover the latest official `ORNL/oscar` release anonymously via `releases/latest` and `releases.atom` and verify its expected SHA-256 digest.
+3. Click **Download & Install** to open the native confirmation `<dialog>` (`Cancel` focused by default), review sibling-directory extraction and automatic fail-safe rollback, and confirm installation.
+4. Monitor live host-agent download, SHA-256 verification, container rebuild, and `/healthz` readiness cutover—or upload an air-gapped `oscar-<version>.zip` bundle on offline portals.
+
+<a id="31-bare-metal-autoinstall-usb-creator"></a>
+### 31. Build an Air-Gapped Ubuntu 24.04 Autoinstall USB Drive (GUI, TUI & CLI)
+
+Use the compact standalone `oscar-3.11.9-autoinstall-usb-creator.zip` on Windows 11 or Ubuntu—via Desktop GUI, interactive terminal TUI, or scriptable CLI—to combine `ubuntu-24.04-live-server-amd64.iso`, `oscar-3.11.9-ubuntu-x86_64-offline-full.zip`, a PBKDF2-hashed initial OSCAR web `admin` password, and pre-configured site lanes (`lanes.csv` / `config.json`) onto a turnkey UEFI Secure-Boot USB installer.
+
+- **Video:** [Watch `31-bare-metal-autoinstall-usb-creator.mp4` (67s, 1739.4 KiB)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/31-bare-metal-autoinstall-usb-creator.mp4) · [WebVTT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/31-bare-metal-autoinstall-usb-creator.vtt) · [SRT Captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/31-bare-metal-autoinstall-usb-creator.srt)
+
+1. Download the compact standalone `oscar-3.11.9-autoinstall-usb-creator.zip` alongside `ubuntu-24.04.5-live-server-amd64.iso` and `oscar-3.11.9-ubuntu-x86_64-offline-full.zip` without unpacking the offline bundle.
+2. Launch the Desktop GUI (`create-autoinstall-usb.bat` on Windows 11 or `sudo bash create-autoinstall-usb.sh --gui` on Ubuntu) to pick a removable USB drive while internal NVMe OS and `OSCAR_BACKUP` disks stay hidden.
+3. Set the server hostname, Linux admin password (`$6$` SHA-512), optional LUKS2 encryption, initial OSCAR web `admin` password (PBKDF2-hashed), and `lanes.csv` with `Auto-initialize OSCAR on first boot`, then type `ERASE-USB` to build.
+4. Use the interactive terminal TUI (`-Tui` / `--tui`) or non-interactive CLI flags (`--oscar-admin-password-file`, `--lanes-file`, `--auto-init-oscar`, `--confirm ERASE-USB`) so on site you only register users and upload `.pmtiles` or the site diagram.
