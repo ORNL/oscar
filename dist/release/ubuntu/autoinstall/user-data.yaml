@@ -187,6 +187,9 @@ autoinstall:
           mkdir -p /target/srv/oscar/seed
           cp -a /mnt/oscar-media/seed/. /target/srv/oscar/seed/ || true
           chmod 0700 /target/srv/oscar/seed
+          for sf_priv in /target/srv/oscar/seed/*key*.txt /target/srv/oscar/seed/*password*.txt /target/srv/oscar/seed/*.env; do
+            [ -f "$sf_priv" ] && chmod 0600 "$sf_priv" || true
+          done
         fi
         for kf in /mnt/oscar-media/*backup*key*.txt; do
           if [ -f "$kf" ]; then
@@ -235,16 +238,39 @@ autoinstall:
       exit 1
       EOF
       chmod 0755 /usr/local/bin/oscar-wizard
+      cat >/etc/systemd/system/oscar-autoprovision.service <<\EOF
+      [Unit]
+      Description=OSCAR Turnkey First-Boot Unattended Provisioning
+      After=network.target local-fs.target
+      ConditionPathExists=/srv/oscar/seed/auto-provision.env
+      ConditionPathExists=!/etc/oscar/wizard-completed
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/bin/bash -euc 'umask 077; touch /var/log/oscar-autoprovision.log; chmod 0600 /var/log/oscar-autoprovision.log; /usr/local/bin/oscar-wizard --non-interactive --auto-seed >>/var/log/oscar-autoprovision.log 2>&1'
+      TimeoutStartSec=1800
+
+      [Install]
+      WantedBy=multi-user.target
+      EOF
+      mkdir -p /etc/systemd/system/multi-user.target.wants
+      ln -sf /etc/systemd/system/oscar-autoprovision.service /etc/systemd/system/multi-user.target.wants/oscar-autoprovision.service
       cat >/etc/profile.d/99-oscar-firstboot-wizard.sh <<\EOF
       # Launch OSCAR First-Boot Provisioning Wizard on interactive login until initialized or dismissed
       if [ -t 0 ] && [ -t 1 ] && [ -z "${OSCAR_WIZARD_ACTIVE:-}" ] && [ ! -f /etc/oscar/wizard-completed ] && [ ! -f /etc/oscar/wizard-dismissed ]; then
-        for _oscar_d in /srv/oscar/oscar-*-ubuntu-x86_64-offline-full /srv/oscar/oscar-*; do
-          if [ -f "$_oscar_d/oscar.sh" ] && [ ! -f "$_oscar_d/.env" ]; then
-            /usr/local/bin/oscar-wizard || true
-            break
-          fi
-        done
-        unset _oscar_d
+        if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet oscar-autoprovision.service 2>/dev/null; then
+          echo "==> OSCAR unattended first-boot provisioning is currently running in the background."
+          echo "    Monitor live progress with: sudo tail -f /var/log/oscar-autoprovision.log"
+        else
+          for _oscar_d in /srv/oscar/oscar-*-ubuntu-x86_64-offline-full /srv/oscar/oscar-*; do
+            if [ -f "$_oscar_d/oscar.sh" ] && [ ! -f "$_oscar_d/.env" ]; then
+              /usr/local/bin/oscar-wizard || true
+              break
+            fi
+          done
+          unset _oscar_d
+        fi
       fi
       EOF
       chmod 0644 /etc/profile.d/99-oscar-firstboot-wizard.sh

@@ -73,11 +73,14 @@ usage() {
 Usage:
   sudo bash oscar.sh wizard                         (Interactive TUI / CLI wizard)
   sudo bash oscar.sh wizard --scan-only             (Scan & print detected USB backups, keys, and seed files)
+  sudo bash oscar.sh wizard --non-interactive --auto-seed
+                                                    (Unattended first-boot setup from /srv/oscar/seed/)
   sudo bash oscar.sh wizard --non-interactive \
       --mode usb-restore|single-restore|import-config|clean-init \
       [--skip-prepare-host] [--bench-isolation] \
       [--from PATH] [--backup-id ID] [--backup-key FILE] \
       [--hostname oscar-host] [--port 443] \
+      [--oscar-admin-password-file FILE] \
       [--import-json FILE] [--import-csv FILE] [--import-pmtiles FILE] \
       [--keep-imported-users] [--site-network-env FILE] [--apply-site-network]
 EOF
@@ -464,12 +467,35 @@ stage_spreadsheet_csv() {
     [[ -f $csv_file ]] || fail "CSV file not found: $csv_file"
     local ver
     ver=$(awk -F= '$1 == "OSCAR_VERSION" { print $2; exit }' "$release_dir/.env" | tr -d '\r')
-    local base_csv
+    local base_csv norm_csv
     base_csv=$(basename -- "$csv_file")
+    norm_csv=$(printf '%s' "$base_csv" | tr -cs 'A-Za-z0-9._-' '_')
+    [[ $norm_csv == *.csv ]] || norm_csv="${norm_csv}.csv"
     docker run --rm --user 0:0 --volume "${state_volume}:/state" \
         --volume "$(realpath -- "$csv_file"):/in.csv:ro" \
-        --entrypoint sh "oscar:$ver" -eu -c "mkdir -p /state/files/spreadsheets && cp -f /in.csv '/state/files/spreadsheets/$base_csv' && chown -R 10001:10001 /state/files/spreadsheets && chmod 0640 '/state/files/spreadsheets/$base_csv'"
-    printf 'spreadsheets/%s' "$base_csv"
+        --entrypoint sh "oscar:$ver" -eu -c "mkdir -p /state/files/spreadsheets && chmod 0700 /state/files/spreadsheets && cp -f /in.csv '/state/files/spreadsheets/$norm_csv' && chmod 0600 '/state/files/spreadsheets/$norm_csv' && chown -R 10001:10001 /state/files/spreadsheets"
+    printf '%s' "$norm_csv"
+}
+
+seed_preencoded_oscar_admin_password() {
+    local dst="$release_dir/secrets/oscar-admin-password.txt"
+    [[ ! -e $dst ]] || return 0
+    local cand=${oscar_admin_pw_file:-}
+    if [[ -z $cand && -f /srv/oscar/seed/oscar-admin-password.txt ]]; then
+        cand=/srv/oscar/seed/oscar-admin-password.txt
+    fi
+    [[ -n $cand && -f $cand ]] || return 0
+    if grep -q '^# CONSUMED_AT_INIT' "$cand" 2>/dev/null; then
+        return 0
+    fi
+    info "Applying pre-staged initial OSCAR administrator credential from $cand..."
+    install -d -m 0700 "$release_dir/secrets"
+    tr -d '\r' <"$cand" >"$dst"
+    chmod 0600 "$dst"
+}
+
+cleanup_seeded_oscar_admin_password() {
+    rm -f -- /srv/oscar/seed/oscar-admin-password.txt 2>/dev/null || true
 }
 
 stage_pmtiles_archive() {
@@ -506,10 +532,12 @@ JSON
 mark_wizard_completed() {
     mkdir -p /etc/oscar 2>/dev/null || true
     date -u +%Y-%m-%dT%H:%M:%SZ >/etc/oscar/wizard-completed 2>/dev/null || true
+    rm -f -- /srv/oscar/seed/auto-provision.env 2>/dev/null || true
 }
 
 scan_only=false
 non_interactive=false
+auto_seed=false
 skip_prepare_host=false
 mode_val=''
 from_path=''
@@ -517,6 +545,7 @@ backup_id=''
 backup_key=''
 hostname_val=''
 port_val=443
+oscar_admin_pw_file=''
 import_json=''
 import_csv=''
 import_pmtiles=''
@@ -561,6 +590,7 @@ while (($# > 0)); do
     case "$1" in
         --scan-only) scan_only=true; shift ;;
         --non-interactive) non_interactive=true; shift ;;
+        --auto-seed) auto_seed=true; shift ;;
         --skip-prepare-host) skip_prepare_host=true; shift ;;
         --bench-isolation) bench_isolation=true; shift ;;
         --mode) mode_val=${2:?missing --mode}; shift 2 ;;
@@ -569,6 +599,7 @@ while (($# > 0)); do
         --backup-key) backup_key=${2:?missing --backup-key}; shift 2 ;;
         --hostname) hostname_val=${2:?missing --hostname}; shift 2 ;;
         --port) port_val=${2:?missing --port}; shift 2 ;;
+        --oscar-admin-password-file) oscar_admin_pw_file=${2:?missing --oscar-admin-password-file}; shift 2 ;;
         --import-json) import_json=${2:?missing --import-json}; shift 2 ;;
         --import-csv) import_csv=${2:?missing --import-csv}; shift 2 ;;
         --import-pmtiles) import_pmtiles=${2:?missing --import-pmtiles}; shift 2 ;;
@@ -581,6 +612,36 @@ while (($# > 0)); do
 done
 
 [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run with sudo: sudo bash oscar.sh wizard"
+
+if $auto_seed; then
+    if [[ -f /srv/oscar/seed/auto-provision.env ]]; then
+        ap_host=$(awk -F= '$1 == "OSCAR_HOSTNAME" { print substr($0, index($0, "=") + 1); exit }' /srv/oscar/seed/auto-provision.env | tr -d '\r')
+        ap_port=$(awk -F= '$1 == "OSCAR_HTTPS_PORT" { print substr($0, index($0, "=") + 1); exit }' /srv/oscar/seed/auto-provision.env | tr -d '\r')
+        ap_apply_net=$(awk -F= '$1 == "APPLY_SITE_NETWORK" { print substr($0, index($0, "=") + 1); exit }' /srv/oscar/seed/auto-provision.env | tr -d '\r')
+        [[ -z $hostname_val && -n $ap_host ]] && hostname_val=$ap_host
+        [[ -n $ap_port ]] && port_val=$ap_port
+        [[ $ap_apply_net == true ]] && apply_site_net=true
+    fi
+    if [[ -z $site_net_env && -f /srv/oscar/seed/site-network.env ]]; then
+        site_net_env=/srv/oscar/seed/site-network.env
+    fi
+    if [[ -z $import_json && -d /srv/oscar/seed ]]; then
+        import_json=$(find /srv/oscar/seed -maxdepth 2 -type f -iname '*.json' 2>/dev/null | grep -Ev '/(epoch|status|request|state|manifest|components[^/]*)\.json$' | sort | head -n 1 || true)
+    fi
+    if [[ -z $import_csv && -d /srv/oscar/seed ]]; then
+        import_csv=$(find /srv/oscar/seed -maxdepth 2 -type f -iname '*.csv' 2>/dev/null | sort | head -n 1 || true)
+    fi
+    if [[ -z $import_pmtiles && -d /srv/oscar/seed ]]; then
+        import_pmtiles=$(find /srv/oscar/seed -maxdepth 2 -type f -iname '*.pmtiles' 2>/dev/null | sort | head -n 1 || true)
+    fi
+    if [[ -z $mode_val ]]; then
+        if [[ -n $import_json || -n $import_csv || -n $import_pmtiles ]]; then
+            mode_val=import-config
+        else
+            mode_val=clean-init
+        fi
+    fi
+fi
 
 if $has_tui && ! $scan_only && ! $non_interactive && [[ -r /proc/sys/kernel/printk && -w /proc/sys/kernel/printk ]]; then
     saved_printk_level=$(awk '{print $1}' /proc/sys/kernel/printk 2>/dev/null || true)
@@ -856,8 +917,10 @@ case "$mode_val" in
             local_hn=${hostname_val:-$(hostname 2>/dev/null || echo oscar-host)}
             local -a init_args=(init --hostname "$local_hn" --port "$port_val")
             $non_interactive && init_args+=(--non-interactive)
+            seed_preencoded_oscar_admin_password
             info "Initializing fresh OSCAR deployment ($local_hn)..."
             bash "$release_dir/oscar.sh" "${init_args[@]}"
+            cleanup_seeded_oscar_admin_password
         fi
 
         csv_rel=''
@@ -895,7 +958,9 @@ case "$mode_val" in
         local_hn=${hostname_val:-$(hostname 2>/dev/null || echo oscar-host)}
         local -a init_args=(init --hostname "$local_hn" --port "$port_val")
         $non_interactive && init_args+=(--non-interactive)
+        seed_preencoded_oscar_admin_password
         bash "$release_dir/oscar.sh" "${init_args[@]}"
+        cleanup_seeded_oscar_admin_password
         bash "$release_dir/oscar.sh" verify
         mark_wizard_completed
         info "Clean OSCAR Site Installation COMPLETE."

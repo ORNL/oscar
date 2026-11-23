@@ -1680,6 +1680,21 @@ public static class OscarLongPathTestHelper {
         Remove-DirectoryTreeLongPathSafe $junctionParent 'reparse guard fixture'
     }
 
+    # Verify Autoinstall USB Creator PBKDF2 web admin password hashing & user-data rendering under PS 5.1
+    $pbkdf2TestPw = 'TurnkeyPortal!2026#Admin'
+    $pbkdf2Out = (& (Join-Path $PSHOME 'powershell.exe') -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+        -File $autoinstallUsbScript -TestOscarPbkdf2Only $pbkdf2TestPw | Select-Object -First 1).Trim()
+    Assert-True ($pbkdf2Out.StartsWith('# PBKDF2_PREENCODED:PBKDF2WithHmacSHA1:16:')) "Unexpected PBKDF2 output: $pbkdf2Out"
+    Assert-True (-not $pbkdf2Out.Contains($pbkdf2TestPw)) 'Plaintext OSCAR web admin password leaked into PBKDF2 output.'
+    $pbkdf2Parts = $pbkdf2Out -split ':'
+    Assert-True ($pbkdf2Parts.Count -eq 5) "Expected 5 colon-separated PBKDF2 segments, got $($pbkdf2Parts.Count)."
+    $saltBytes = [Convert]::FromBase64String($pbkdf2Parts[3])
+    $dkBytes = [Convert]::FromBase64String($pbkdf2Parts[4])
+    $verifyKdf = New-Object System.Security.Cryptography.Rfc2898DeriveBytes([byte[]]([Text.Encoding]::UTF8.GetBytes($pbkdf2TestPw)), $saltBytes, 65536)
+    $expectedDk = [Convert]::ToBase64String($verifyKdf.GetBytes(16))
+    $verifyKdf.Dispose()
+    Assert-True ($pbkdf2Parts[4] -ceq $expectedDk) 'PowerShell 5.1 PBKDF2 derived key did not match expected RFC2898 SHA1 key.'
+
     Write-Host 'OSCAR Windows PowerShell 5.1 storage safety tests passed.' -ForegroundColor Green
 } finally {
     Remove-Item Env:OSCAR_STORAGE_TEST_MODE -ErrorAction SilentlyContinue

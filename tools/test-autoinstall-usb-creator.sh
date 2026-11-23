@@ -59,9 +59,37 @@ grep -Eq 'password: "\$6\$[./0-9A-Za-z]{1,16}\$[./0-9A-Za-z]{86}"' "$work_dir/re
 grep -Fq '"StrongLuksDiskPass!2026"' "$work_dir/rendered-user-data.yaml"
 grep -Fq 'allow-pw: false' "$work_dir/rendered-user-data.yaml"
 grep -Fq 'PasswordAuthentication no' "$work_dir/rendered-user-data.yaml"
+grep -Fq 'oscar-autoprovision.service' "$work_dir/rendered-user-data.yaml"
 if grep -Fq 'NOPASSWD:ALL' "$work_dir/rendered-user-data.yaml"; then
     printf 'FAIL: NOPASSWD:ALL must be omitted when --require-sudo-password is set.\n' >&2
     exit 1
 fi
+if grep -Fq 'StrongPortalAdmin!2026' "$work_dir/rendered-user-data.yaml"; then
+    printf 'FAIL: Plaintext Linux password leaked into rendered user-data.\n' >&2
+    exit 1
+fi
+
+# Verify PBKDF2 hashing for initial OSCAR web admin password matches OSCAR PBKDF2Credential format
+python3 - "$pkg_root/create-autoinstall-usb.sh" <<'PY'
+import base64, hashlib, subprocess, sys
+
+script = sys.argv[1]
+pw = "TurnkeyPortal!2026#Admin"
+cmd = f'source <(sed -n "/^hash_oscar_pbkdf2_password()/,/^}}/p" "{script}"); hash_oscar_pbkdf2_password "{pw}"'
+line = subprocess.check_output(["bash", "-c", cmd], text=True).strip()
+assert line.startswith("# PBKDF2_PREENCODED:PBKDF2WithHmacSHA1:16:"), f"Unexpected header: {line}"
+assert pw not in line, "Plaintext password leaked!"
+parts = line.split(":")
+# ['# PBKDF2_PREENCODED', 'PBKDF2WithHmacSHA1', '16', b64_salt, b64_dk]
+assert len(parts) == 5, f"Unexpected parts: {parts}"
+salt = base64.b64decode(parts[3])
+dk = base64.b64decode(parts[4])
+assert len(salt) == 16 and len(dk) == 16
+expected = hashlib.pbkdf2_hmac("sha1", pw.encode("utf-8"), salt, 65536, dklen=16)
+assert dk == expected, "PBKDF2 derived key mismatch!"
+PY
+
+# Verify stage_spreadsheet_csv returns bare bucket object key (never 'spreadsheets/' prefix)
+grep -Fq 'printf '\''%s'\'' "$norm_csv"' "$pkg_root/oscar-firstboot-wizard.sh"
 
 printf 'PASS: Standalone oscar-%s-autoinstall-usb-creator.zip validated (%d bytes).\n' "$version" "$zip_bytes"

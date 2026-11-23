@@ -40,6 +40,9 @@ Usage:
       [--luks-passphrase-file FILE] \
       [--require-sudo-password] \
       [--ssh-key-file ~/.ssh/id_ed25519.pub]... [--ssh-keys-only] \
+      [--oscar-admin-password-file FILE | --oscar-admin-password-hash 'PBKDF2WithHmacSHA1:...'] \
+      [--lanes-file /path/to/lanes.csv-or-config.json] \
+      [--auto-init-oscar] \
       [--seed-dir /path/to/seed-folder] \
       [--seed-file /path/to/config.json]... \
       --confirm ERASE-USB
@@ -115,6 +118,19 @@ triples = [
 print("$6$" + salt.decode("ascii") + "$" + "".join(enc(*t) for t in triples))
 PY
     fi
+}
+
+hash_oscar_pbkdf2_password() {
+    local plain=$1
+    ((${#plain} >= 14)) || fail "Initial OSCAR web administrator password must contain at least 14 characters."
+    python3 - "$plain" <<'PY'
+import base64, hashlib, os, sys
+
+pw = sys.argv[1].encode("utf-8")
+salt = os.urandom(16)
+dk = hashlib.pbkdf2_hmac("sha1", pw, salt, 1 << 16, dklen=16)
+print(f"# PBKDF2_PREENCODED:PBKDF2WithHmacSHA1:16:{base64.b64encode(salt).decode('ascii')}:{base64.b64encode(dk).decode('ascii')}")
+PY
 }
 
 protected_disk_names() {
@@ -271,6 +287,12 @@ ssh_keys_only=false
 ssh_keys_only_explicit=false
 render_user_data_only=''
 confirm_token=''
+oscar_admin_pw_plain=''
+oscar_admin_pw_file=''
+oscar_admin_pw_hash=''
+lanes_file=''
+auto_init_oscar=false
+auto_init_explicit=false
 seed_dir=''
 declare -a ssh_key_files=()
 declare -a seed_files=()
@@ -292,6 +314,11 @@ while (($# > 0)); do
         --luks-passphrase-file) luks_passphrase_file=${2:?missing --luks-passphrase-file}; shift 2 ;;
         --require-sudo-password) require_sudo_password=true; sudo_explicit=true; shift ;;
         --ssh-keys-only) ssh_keys_only=true; ssh_keys_only_explicit=true; shift ;;
+        --oscar-admin-password) oscar_admin_pw_plain=${2:?missing --oscar-admin-password}; shift 2 ;;
+        --oscar-admin-password-file) oscar_admin_pw_file=${2:?missing --oscar-admin-password-file}; shift 2 ;;
+        --oscar-admin-password-hash) oscar_admin_pw_hash=${2:?missing --oscar-admin-password-hash}; shift 2 ;;
+        --lanes-file) lanes_file=${2:?missing --lanes-file}; shift 2 ;;
+        --auto-init-oscar) auto_init_oscar=true; auto_init_explicit=true; shift ;;
         --render-user-data-only) render_user_data_only=${2:?missing --render-user-data-only}; shift 2 ;;
         --ssh-key-file) ssh_key_files+=("${2:?missing --ssh-key-file}"); shift 2 ;;
         --seed-dir) seed_dir=${2:?missing --seed-dir}; shift 2 ;;
@@ -316,6 +343,35 @@ if [[ -n $password_file ]]; then
     [[ -n $pw_from_file ]] || fail "Password file is empty: $password_file"
     password_hash=$(hash_linux_password "$pw_from_file")
     unset pw_from_file
+fi
+
+if [[ -n $oscar_admin_pw_file ]]; then
+    [[ -f $oscar_admin_pw_file ]] || fail "OSCAR admin password file not found: $oscar_admin_pw_file"
+    IFS= read -r opw_from_file <"$oscar_admin_pw_file" || true
+    opw_from_file=${opw_from_file%$'\r'}
+    [[ -n $opw_from_file ]] || fail "OSCAR admin password file is empty: $oscar_admin_pw_file"
+    if [[ $opw_from_file == '# PBKDF2_PREENCODED:'* ]]; then
+        oscar_admin_pw_hash=$opw_from_file
+    elif [[ $opw_from_file == PBKDF2WithHmacSHA1:* ]]; then
+        oscar_admin_pw_hash="# PBKDF2_PREENCODED:$opw_from_file"
+    else
+        oscar_admin_pw_hash=$(hash_oscar_pbkdf2_password "$opw_from_file")
+    fi
+    unset opw_from_file
+elif [[ -n $oscar_admin_pw_plain ]]; then
+    oscar_admin_pw_hash=$(hash_oscar_pbkdf2_password "$oscar_admin_pw_plain")
+    unset oscar_admin_pw_plain
+elif [[ -n $oscar_admin_pw_hash && $oscar_admin_pw_hash != '# PBKDF2_PREENCODED:'* ]]; then
+    [[ $oscar_admin_pw_hash == PBKDF2WithHmacSHA1:* ]] || fail "--oscar-admin-password-hash must start with PBKDF2WithHmacSHA1: or '# PBKDF2_PREENCODED:'."
+    oscar_admin_pw_hash="# PBKDF2_PREENCODED:$oscar_admin_pw_hash"
+fi
+
+if [[ -n $lanes_file ]]; then
+    [[ -f $lanes_file ]] || fail "Pre-configured lanes file not found: $lanes_file"
+    case "${lanes_file,,}" in
+        *.csv|*.json) ;;
+        *) fail "--lanes-file must be a .csv lane spreadsheet or .json SensorHub/OSCAR configuration: $lanes_file" ;;
+    esac
 fi
 
 if [[ -n $render_user_data_only ]]; then
@@ -471,8 +527,40 @@ if $has_zenity && $interactive_wizard; then
         unset gl1 gl2
     fi
 
-    if zenity --question --title="Optional Seed Folder" --default-cancel \
-        --text="Do you want to pre-stage an optional seed folder (config.json, lanes.csv, site-network.env, *.pmtiles)?"; then
+    if [[ -n $offline_bundle ]]; then
+        if [[ -z $oscar_admin_pw_hash ]]; then
+            oscar_pw_reply=$(zenity --forms --title="5. Turnkey OSCAR Web Admin Password (Optional)" --width=500 \
+                --text="Set the initial OSCAR web 'admin' password (14+ chars; hashed via PBKDF2 — leave blank to enter on site):" \
+                --separator="|" \
+                --add-password="OSCAR Web 'admin' Password (14+ chars)" \
+                --add-password="Confirm OSCAR Web 'admin' Password" || true)
+            if [[ -n $oscar_pw_reply ]]; then
+                IFS='|' read -r go1 go2 <<<"$oscar_pw_reply"
+                if [[ -n $go1 || -n $go2 ]]; then
+                    ((${#go1} >= 14)) || { zenity --error --text="OSCAR web administrator password must contain at least 14 characters." || true; exit 1; }
+                    [[ $go1 == "$go2" ]] || { zenity --error --text="OSCAR web administrator passwords did not match." || true; exit 1; }
+                    oscar_admin_pw_hash=$(hash_oscar_pbkdf2_password "$go1")
+                fi
+                unset go1 go2 oscar_pw_reply
+            fi
+        fi
+
+        if [[ -z $lanes_file ]] && zenity --question --title="Pre-Configure Site Lanes (Optional)" --default-cancel \
+            --text="Do you want to pre-stage a lanes.csv spreadsheet or config.json so all lanes are pre-configured?"; then
+            lanes_file=$(zenity --file-selection --title="Select lanes.csv or config.json" \
+                --file-filter="OSCAR Lanes CSV or JSON (*.csv, *.json) | *.csv *.json" --file-filter="All files | *" || true)
+        fi
+
+        if [[ -n $oscar_admin_pw_hash ]] && ! $auto_init_explicit; then
+            if zenity --question --title="Turnkey Unattended First-Boot Setup" \
+                --text="Automatically initialize OSCAR and load pre-staged lanes on first boot?\n\n(On site you will only need to open https://$hostname_val/, register users, and upload .pmtiles or the site diagram.)"; then
+                auto_init_oscar=true
+            fi
+        fi
+    fi
+
+    if zenity --question --title="Optional Extra Seed Folder" --default-cancel \
+        --text="Do you want to pre-stage an extra seed folder (site-network.env, *.pmtiles, backup-key.txt)?"; then
         seed_dir=$(zenity --file-selection --directory --title="Select Seed Directory" || true)
     fi
 
@@ -659,13 +747,68 @@ if ((${#ssh_keys[@]} > 0)) && ! $ssh_keys_only_explicit && $interactive_wizard; 
     fi
 fi
 
+if ! $has_zenity && [[ -n $offline_bundle ]] && $interactive_wizard && [[ -t 0 && -t 1 ]]; then
+    if [[ -z $oscar_admin_pw_hash ]]; then
+        if $has_tui; then
+            opw1=$(whiptail --title "Turnkey OSCAR Web Admin Password (Optional)" \
+                --passwordbox "Set initial OSCAR web 'admin' password (14+ chars, hashed via PBKDF2; leave blank to enter on site):" 11 76 3>&1 1>&2 2>&3) || exit 1
+            if [[ -n $opw1 ]]; then
+                ((${#opw1} >= 14)) || fail "Initial OSCAR web administrator password must contain at least 14 characters."
+                opw2=$(whiptail --title "Confirm OSCAR Web Admin Password" \
+                    --passwordbox "Re-enter initial OSCAR web 'admin' password:" 10 74 3>&1 1>&2 2>&3) || exit 1
+                [[ $opw1 == "$opw2" ]] || fail "OSCAR web administrator passwords did not match."
+                oscar_admin_pw_hash=$(hash_oscar_pbkdf2_password "$opw1")
+                unset opw1 opw2
+            fi
+        else
+            printf "Set initial OSCAR web 'admin' password (14+ chars; Enter to set on site): "
+            IFS= read -rs opw1; printf '\n'
+            if [[ -n $opw1 ]]; then
+                ((${#opw1} >= 14)) || fail "Initial OSCAR web administrator password must contain at least 14 characters."
+                printf "Confirm initial OSCAR web 'admin' password: "
+                IFS= read -rs opw2; printf '\n'
+                [[ $opw1 == "$opw2" ]] || fail "OSCAR web administrator passwords did not match."
+                oscar_admin_pw_hash=$(hash_oscar_pbkdf2_password "$opw1")
+                unset opw1 opw2
+            fi
+        fi
+    fi
+
+    if [[ -z $lanes_file ]]; then
+        if $has_tui; then
+            lanes_file=$(whiptail --title "Pre-Configure Site Lanes (Optional)" \
+                --inputbox "Optional path to lanes.csv spreadsheet or config.json to pre-configure lanes (leave blank to skip):" \
+                11 78 "" 3>&1 1>&2 2>&3) || exit 1
+        else
+            printf 'Optional pre-configured lanes file (lanes.csv or config.json; Enter to skip): '
+            IFS= read -r lanes_file
+        fi
+    fi
+    if [[ -n $lanes_file ]]; then
+        [[ -f $lanes_file ]] || fail "Pre-configured lanes file not found: $lanes_file"
+    fi
+
+    if [[ -n $oscar_admin_pw_hash ]] && ! $auto_init_explicit; then
+        if $has_tui; then
+            if whiptail --title "Turnkey Unattended First-Boot Setup" \
+                --yesno "Automatically initialize OSCAR and load any pre-staged lanes on first boot (so on site you only register users and upload .pmtiles or the site background image)?" 11 78; then
+                auto_init_oscar=true
+            fi
+        else
+            printf 'Automatically initialize OSCAR & pre-staged lanes on first boot? [Y/n]: '
+            IFS= read -r reply_ai
+            [[ -z $reply_ai || $reply_ai =~ ^[Yy] ]] && auto_init_oscar=true
+        fi
+    fi
+fi
+
 if ! $has_zenity && [[ -z $seed_dir && ${#seed_files[@]} -eq 0 ]] && $interactive_wizard && [[ -t 0 && -t 1 ]]; then
     if $has_tui; then
-        seed_dir=$(whiptail --title "Optional Pre-Staged Seed Imports" \
-            --inputbox "Optional directory containing config.json, lanes.csv, site-network.env, *.pmtiles, or backup-key.txt to pre-stage for the First-Boot Wizard (leave blank if none):" \
+        seed_dir=$(whiptail --title "Optional Extra Seed Folder" \
+            --inputbox "Optional directory containing site-network.env, *.pmtiles, or backup-key.txt to pre-stage (leave blank if none):" \
             12 78 "" 3>&1 1>&2 2>&3) || exit 1
     else
-        printf 'Optional seed directory (config.json / lanes.csv / backup-key.txt; Enter to skip): '
+        printf 'Optional extra seed directory (site-network.env / *.pmtiles / backup-key.txt; Enter to skip): '
         IFS= read -r seed_dir
     fi
 fi
@@ -673,6 +816,10 @@ fi
 for sf in "${seed_files[@]}"; do
     [[ -f $sf ]] || fail "Seed file not found: $sf"
 done
+if $auto_init_oscar; then
+    [[ -n $offline_bundle ]] || fail "--auto-init-oscar requires --offline-bundle oscar-*-ubuntu-x86_64-offline-full.zip."
+    [[ -n $oscar_admin_pw_hash ]] || fail "--auto-init-oscar requires --oscar-admin-password-file (or --oscar-admin-password-hash) so unattended initialization has an initial OSCAR web admin credential."
+fi
 
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/oscar-autoinstall-usb.XXXXXX")
 loop_dev=''
@@ -812,6 +959,21 @@ fi
 for sf in "${seed_files[@]}"; do
     cp -f -- "$sf" "$media_mnt/seed/$(basename -- "$sf")"
 done
+if [[ -n $lanes_file ]]; then
+    cp -f -- "$lanes_file" "$media_mnt/seed/$(basename -- "$lanes_file")"
+fi
+if [[ -n $oscar_admin_pw_hash ]]; then
+    printf '%s\n' "$oscar_admin_pw_hash" >"$media_mnt/seed/oscar-admin-password.txt"
+    chmod 0600 "$media_mnt/seed/oscar-admin-password.txt" 2>/dev/null || true
+fi
+if $auto_init_oscar; then
+    cat >"$media_mnt/seed/auto-provision.env" <<EOF
+AUTO_INIT_OSCAR=true
+OSCAR_HOSTNAME=$hostname_val
+OSCAR_HTTPS_PORT=443
+EOF
+    chmod 0600 "$media_mnt/seed/auto-provision.env" 2>/dev/null || true
+fi
 
 cat >"$media_mnt/README-BARE-METAL-INSTALL.txt" <<EOF
 OSCAR Bare-Metal Ubuntu Server 24.04 LTS Offline Autoinstall USB

@@ -15,10 +15,16 @@ param(
     [switch]$RequireSudoPassword,
     [switch]$SshKeysOnly,
     [string[]]$SshKeyFile = @(),
+    [string]$OscarAdminPassword = '',
+    [string]$OscarAdminPasswordFile = '',
+    [string]$OscarAdminPasswordHash = '',
+    [string]$LanesFile = '',
+    [switch]$AutoInitOscar,
     [string]$SeedDirectory = '',
     [string[]]$SeedFile = @(),
     [string]$ConfirmToken = '',
-    [string]$RenderUserDataOnly = ''
+    [string]$RenderUserDataOnly = '',
+    [string]$TestOscarPbkdf2Only = ''
 )
 
 Set-StrictMode -Version 2.0
@@ -154,6 +160,19 @@ public static class OscarSha512Crypt {
         B64From24Bit(outSb, 0, 0, cur[63], 2);
         return outSb.ToString();
     }
+
+    public static string Pbkdf2Credential(string password) {
+        byte[] salt = new byte[16];
+        using (RandomNumberGenerator rng = RandomNumberGenerator.Create()) {
+            rng.GetBytes(salt);
+        }
+        byte[] pwBytes = Encoding.UTF8.GetBytes(password);
+        byte[] dk;
+        using (Rfc2898DeriveBytes kdf = new Rfc2898DeriveBytes(pwBytes, salt, 65536)) {
+            dk = kdf.GetBytes(16);
+        }
+        return "# PBKDF2_PREENCODED:PBKDF2WithHmacSHA1:16:" + Convert.ToBase64String(salt) + ":" + Convert.ToBase64String(dk);
+    }
 }
 '@
 }
@@ -196,6 +215,9 @@ Usage (run from create-autoinstall-usb.bat, Administrator PowerShell, or .\oscar
       -LuksPassphraseFile C:\oscar-seed\luks-passphrase.txt `
       -RequireSudoPassword `
       -SshKeyFile "$HOME\.ssh\id_ed25519.pub" -SshKeysOnly `
+      -OscarAdminPasswordFile C:\oscar-seed\oscar-web-admin-password.txt `
+      -LanesFile C:\oscar-seed\lanes.csv `
+      -AutoInitOscar `
       -SeedDirectory C:\oscar-seed `
       -ConfirmToken ERASE-USB
 
@@ -402,6 +424,9 @@ function Invoke-BuildAutoinstallUsb(
     [bool]$ReqSudoPw,
     [bool]$KeysOnly,
     [string[]]$AuthorizedKeys,
+    [string]$OscarWebPassHash,
+    [string]$PreconfiguredLanesFile,
+    [bool]$AutoInitFirstBoot,
     [string]$SeedDir,
     [string[]]$ExtraSeedFiles,
     [scriptblock]$Logger
@@ -446,6 +471,23 @@ function Invoke-BuildAutoinstallUsb(
     }
     if ($SeedDir -and -not (Test-Path -LiteralPath $SeedDir -PathType Container)) {
         throw "Seed directory not found: $SeedDir"
+    }
+    if ($PreconfiguredLanesFile) {
+        if (-not (Test-Path -LiteralPath $PreconfiguredLanesFile -PathType Leaf)) {
+            throw "Pre-configured lanes file not found: $PreconfiguredLanesFile"
+        }
+        $ext = ([IO.Path]::GetExtension($PreconfiguredLanesFile)).ToLowerInvariant()
+        if ($ext -ne '.csv' -and $ext -ne '.json') {
+            throw "-LanesFile must be a .csv lane spreadsheet or .json SensorHub/OSCAR configuration: $PreconfiguredLanesFile"
+        }
+    }
+    if ($AutoInitFirstBoot) {
+        if (-not $BundleZip) {
+            throw '-AutoInitOscar requires -OfflineBundlePath (oscar-*-ubuntu-x86_64-offline-full.zip).'
+        }
+        if (-not $OscarWebPassHash) {
+            throw '-AutoInitOscar requires an initial OSCAR Web admin password (-OscarAdminPasswordFile or GUI/TUI entry).'
+        }
     }
     foreach ($sf in $ExtraSeedFiles) {
         if ($sf -and -not (Test-Path -LiteralPath $sf -PathType Leaf)) {
@@ -551,6 +593,17 @@ function Invoke-BuildAutoinstallUsb(
                 Copy-Item -LiteralPath $sf -Destination (Join-Path $seedOutDir (Split-Path -Leaf $sf)) -Force
             }
         }
+        if ($PreconfiguredLanesFile) {
+            & $emit "Staging pre-configured lanes ($(Split-Path -Leaf $PreconfiguredLanesFile)) onto OSCAR_MEDIA\seed..." 94
+            Copy-Item -LiteralPath $PreconfiguredLanesFile -Destination (Join-Path $seedOutDir (Split-Path -Leaf $PreconfiguredLanesFile)) -Force
+        }
+        if ($OscarWebPassHash) {
+            [IO.File]::WriteAllText((Join-Path $seedOutDir 'oscar-admin-password.txt'), "$OscarWebPassHash`n", $Utf8NoBom)
+        }
+        if ($AutoInitFirstBoot) {
+            $autoEnvText = "AUTO_INIT_OSCAR=true`nOSCAR_HOSTNAME=$HostVal`nOSCAR_HTTPS_PORT=443`n"
+            [IO.File]::WriteAllText((Join-Path $seedOutDir 'auto-provision.env'), $autoEnvText, $Utf8NoBom)
+        }
 
         $readmeText = @"
 OSCAR Bare-Metal Ubuntu Server 24.04 LTS Offline Autoinstall USB
@@ -590,7 +643,7 @@ Hardware Power Tip for 1-4 TB M.2 NVMe USB Backup Enclosures:
     }
 }
 
-function Show-AutoinstallUsbGui([string]$InitialIso, [string]$InitialBundle, [string]$InitialHost, [string]$InitialUser, [string]$InitialSeedDir) {
+function Show-AutoinstallUsbGui([string]$InitialIso, [string]$InitialBundle, [string]$InitialHost, [string]$InitialUser, [string]$InitialLanesFile, [string]$InitialSeedDir) {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     [System.Windows.Forms.Application]::EnableVisualStyles()
@@ -606,7 +659,7 @@ function Show-AutoinstallUsbGui([string]$InitialIso, [string]$InitialBundle, [st
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = 'OSCAR Bare-Metal Ubuntu 24.04 Offline Autoinstall USB Creator'
-    $form.ClientSize = New-Object System.Drawing.Size(760, 690)
+    $form.ClientSize = New-Object System.Drawing.Size(760, 810)
     $form.StartPosition = 'CenterScreen'
     $form.FormBorderStyle = 'FixedDialog'
     $form.MaximizeBox = $false
@@ -804,40 +857,115 @@ function Show-AutoinstallUsbGui([string]$InitialIso, [string]$InitialBundle, [st
     $chkKeysOnly.Size = New-Object System.Drawing.Size(340, 22)
     $grpSec.Controls.Add($chkKeysOnly)
 
-    # 5. Optional Seed Directory
+    # 5. Turnkey OSCAR Site Pre-Configuration (Fresh Install)
+    $grpOscar = New-Object System.Windows.Forms.GroupBox
+    $grpOscar.Text = '5. Turnkey OSCAR Site Pre-Configuration (Optional - Fresh Install)'
+    $grpOscar.Location = New-Object System.Drawing.Point(16, 438)
+    $grpOscar.Size = New-Object System.Drawing.Size(728, 122)
+    $form.Controls.Add($grpOscar)
+
+    $lblOPw1 = New-Object System.Windows.Forms.Label
+    $lblOPw1.Text = 'OSCAR Web Password:'
+    $lblOPw1.Location = New-Object System.Drawing.Point(14, 26)
+    $lblOPw1.Size = New-Object System.Drawing.Size(124, 20)
+    $grpOscar.Controls.Add($lblOPw1)
+
+    $txtOPw1 = New-Object System.Windows.Forms.TextBox
+    $txtOPw1.UseSystemPasswordChar = $true
+    $txtOPw1.Location = New-Object System.Drawing.Point(140, 23)
+    $txtOPw1.Size = New-Object System.Drawing.Size(200, 24)
+    $grpOscar.Controls.Add($txtOPw1)
+
+    $lblOPw2 = New-Object System.Windows.Forms.Label
+    $lblOPw2.Text = 'Confirm (14+ chars):'
+    $lblOPw2.Location = New-Object System.Drawing.Point(364, 26)
+    $lblOPw2.Size = New-Object System.Drawing.Size(125, 20)
+    $grpOscar.Controls.Add($lblOPw2)
+
+    $txtOPw2 = New-Object System.Windows.Forms.TextBox
+    $txtOPw2.UseSystemPasswordChar = $true
+    $txtOPw2.Location = New-Object System.Drawing.Point(495, 23)
+    $txtOPw2.Size = New-Object System.Drawing.Size(215, 24)
+    $grpOscar.Controls.Add($txtOPw2)
+
+    $lblLanes = New-Object System.Windows.Forms.Label
+    $lblLanes.Text = 'Lanes CSV / JSON:'
+    $lblLanes.Location = New-Object System.Drawing.Point(14, 60)
+    $lblLanes.Size = New-Object System.Drawing.Size(124, 20)
+    $grpOscar.Controls.Add($lblLanes)
+
+    $txtLanes = New-Object System.Windows.Forms.TextBox
+    $txtLanes.Text = $InitialLanesFile
+    $txtLanes.Location = New-Object System.Drawing.Point(140, 57)
+    $txtLanes.Size = New-Object System.Drawing.Size(465, 24)
+    $grpOscar.Controls.Add($txtLanes)
+
+    $btnLanes = New-Object System.Windows.Forms.Button
+    $btnLanes.Text = 'Browse...'
+    $btnLanes.Location = New-Object System.Drawing.Point(612, 55)
+    $btnLanes.Size = New-Object System.Drawing.Size(98, 26)
+    $btnLanes.Add_Click({
+        $dlg = New-Object System.Windows.Forms.OpenFileDialog
+        $dlg.Title = 'Select Pre-Configured Lanes CSV Spreadsheet or SensorHub config.json'
+        $dlg.Filter = 'OSCAR Lanes CSV or JSON (*.csv;*.json)|*.csv;*.json|All Files (*.*)|*.*'
+        if ($dlg.ShowDialog() -eq 'OK') { $txtLanes.Text = $dlg.FileName }
+    })
+    $grpOscar.Controls.Add($btnLanes)
+
+    $chkAutoInit = New-Object System.Windows.Forms.CheckBox
+    $chkAutoInit.Text = 'Auto-initialize OSCAR & pre-staged lanes on first boot (only add users & .pmtiles / diagram on site)'
+    $chkAutoInit.Enabled = $false
+    $chkAutoInit.Location = New-Object System.Drawing.Point(14, 90)
+    $chkAutoInit.Size = New-Object System.Drawing.Size(698, 22)
+    $grpOscar.Controls.Add($chkAutoInit)
+
+    $syncAutoInitState = {
+        $canAuto = ([bool]$txtOPw1.Text -and [bool]$txtBundle.Text.Trim())
+        $wasEnabled = $chkAutoInit.Enabled
+        $chkAutoInit.Enabled = $canAuto
+        if ($canAuto -and -not $wasEnabled) {
+            $chkAutoInit.Checked = $true
+        } elseif (-not $canAuto) {
+            $chkAutoInit.Checked = $false
+        }
+    }
+    $txtOPw1.Add_TextChanged($syncAutoInitState)
+    $txtBundle.Add_TextChanged($syncAutoInitState)
+
+    # 6. Optional Extra Seed Directory
     $lblSeed = New-Object System.Windows.Forms.Label
-    $lblSeed.Text = '5. Optional Seed Folder (config.json, lanes.csv, site-network.env, *.pmtiles, backup-key.txt):'
-    $lblSeed.Location = New-Object System.Drawing.Point(16, 440)
+    $lblSeed.Text = '6. Optional Extra Seed Folder (site-network.env, *.pmtiles, backup-key.txt):'
+    $lblSeed.Location = New-Object System.Drawing.Point(16, 568)
     $lblSeed.Size = New-Object System.Drawing.Size(610, 20)
     $form.Controls.Add($lblSeed)
 
     $txtSeed = New-Object System.Windows.Forms.TextBox
     $txtSeed.Text = $InitialSeedDir
-    $txtSeed.Location = New-Object System.Drawing.Point(16, 462)
+    $txtSeed.Location = New-Object System.Drawing.Point(16, 590)
     $txtSeed.Size = New-Object System.Drawing.Size(610, 24)
     $form.Controls.Add($txtSeed)
 
     $btnSeed = New-Object System.Windows.Forms.Button
     $btnSeed.Text = 'Browse...'
-    $btnSeed.Location = New-Object System.Drawing.Point(634, 460)
+    $btnSeed.Location = New-Object System.Drawing.Point(634, 588)
     $btnSeed.Size = New-Object System.Drawing.Size(110, 26)
     $btnSeed.Add_Click({
         $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
-        $dlg.Description = 'Select optional seed folder containing config.json / lanes.csv / site-network.env'
+        $dlg.Description = 'Select optional extra seed folder containing site-network.env / *.pmtiles / backup-key.txt'
         if ($dlg.ShowDialog() -eq 'OK') { $txtSeed.Text = $dlg.SelectedPath }
     })
     $form.Controls.Add($btnSeed)
 
-    # 6. Destructive Confirmation & Action Bar
+    # 7. Destructive Confirmation & Action Bar
     $lblConfirm = New-Object System.Windows.Forms.Label
     $lblConfirm.Text = 'Type ERASE-USB to unlock:'
     $lblConfirm.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
-    $lblConfirm.Location = New-Object System.Drawing.Point(16, 500)
+    $lblConfirm.Location = New-Object System.Drawing.Point(16, 626)
     $lblConfirm.Size = New-Object System.Drawing.Size(175, 22)
     $form.Controls.Add($lblConfirm)
 
     $txtConfirm = New-Object System.Windows.Forms.TextBox
-    $txtConfirm.Location = New-Object System.Drawing.Point(195, 498)
+    $txtConfirm.Location = New-Object System.Drawing.Point(195, 624)
     $txtConfirm.Size = New-Object System.Drawing.Size(130, 24)
     $form.Controls.Add($txtConfirm)
 
@@ -845,13 +973,13 @@ function Show-AutoinstallUsbGui([string]$InitialIso, [string]$InitialBundle, [st
     $btnBuild.Text = 'Create Bootable Autoinstall USB'
     $btnBuild.Font = New-Object System.Drawing.Font('Segoe UI', 9.5, [System.Drawing.FontStyle]::Bold)
     $btnBuild.Enabled = $false
-    $btnBuild.Location = New-Object System.Drawing.Point(340, 494)
+    $btnBuild.Location = New-Object System.Drawing.Point(340, 620)
     $btnBuild.Size = New-Object System.Drawing.Size(286, 32)
     $form.Controls.Add($btnBuild)
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = 'Close'
-    $btnClose.Location = New-Object System.Drawing.Point(634, 494)
+    $btnClose.Location = New-Object System.Drawing.Point(634, 620)
     $btnClose.Size = New-Object System.Drawing.Size(110, 32)
     $btnClose.Add_Click({ $form.Close() })
     $form.Controls.Add($btnClose)
@@ -859,7 +987,7 @@ function Show-AutoinstallUsbGui([string]$InitialIso, [string]$InitialBundle, [st
     $progressBar = New-Object System.Windows.Forms.ProgressBar
     $progressBar.Minimum = 0
     $progressBar.Maximum = 100
-    $progressBar.Location = New-Object System.Drawing.Point(16, 534)
+    $progressBar.Location = New-Object System.Drawing.Point(16, 660)
     $progressBar.Size = New-Object System.Drawing.Size(728, 18)
     $form.Controls.Add($progressBar)
 
@@ -868,8 +996,8 @@ function Show-AutoinstallUsbGui([string]$InitialIso, [string]$InitialBundle, [st
     $txtLog.ReadOnly = $true
     $txtLog.ScrollBars = 'Vertical'
     $txtLog.Font = New-Object System.Drawing.Font('Consolas', 8.5)
-    $txtLog.Location = New-Object System.Drawing.Point(16, 558)
-    $txtLog.Size = New-Object System.Drawing.Size(728, 120)
+    $txtLog.Location = New-Object System.Drawing.Point(16, 684)
+    $txtLog.Size = New-Object System.Drawing.Size(728, 112)
     $form.Controls.Add($txtLog)
 
     $script:guiDiskList = @()
@@ -910,6 +1038,17 @@ function Show-AutoinstallUsbGui([string]$InitialIso, [string]$InitialBundle, [st
                 return
             }
         }
+        if ($txtOPw1.Text -or $txtOPw2.Text) {
+            if ($txtOPw1.Text.Length -lt 14) {
+                [System.Windows.Forms.MessageBox]::Show('Initial OSCAR Web administrator password must contain at least 14 characters.', 'Validation Error', 'OK', 'Warning') | Out-Null
+                return
+            }
+            if ($txtOPw1.Text -cne $txtOPw2.Text) {
+                [System.Windows.Forms.MessageBox]::Show('OSCAR Web administrator passwords do not match.', 'Validation Error', 'OK', 'Warning') | Out-Null
+                return
+            }
+        }
+        $oscarWebHashVal = if ($txtOPw1.Text) { [OscarSha512Crypt]::Pbkdf2Credential($txtOPw1.Text) } else { '' }
         $pwHashVal = ''
         $reqSudo = [bool]$chkSudo.Checked
         if ($txtPw1.Text) {
@@ -953,6 +1092,9 @@ function Show-AutoinstallUsbGui([string]$InitialIso, [string]$InitialBundle, [st
                 -ReqSudoPw $reqSudo `
                 -KeysOnly ([bool]$chkKeysOnly.Checked) `
                 -AuthorizedKeys $authKeys `
+                -OscarWebPassHash $oscarWebHashVal `
+                -PreconfiguredLanesFile $txtLanes.Text.Trim('" ') `
+                -AutoInitFirstBoot ([bool]$chkAutoInit.Checked) `
                 -SeedDir $txtSeed.Text.Trim('" ') `
                 -ExtraSeedFiles @() `
                 -Logger $guiLogger
@@ -974,6 +1116,14 @@ function Show-AutoinstallUsbGui([string]$InitialIso, [string]$InitialBundle, [st
 
 if ($Help) {
     Show-Usage
+    exit 0
+}
+
+if ($TestOscarPbkdf2Only) {
+    if ($TestOscarPbkdf2Only.Length -lt 14) {
+        throw 'Initial OSCAR Web administrator password must contain at least 14 characters.'
+    }
+    Write-Output ([OscarSha512Crypt]::Pbkdf2Credential($TestOscarPbkdf2Only))
     exit 0
 }
 
@@ -1011,6 +1161,38 @@ if ($LuksPassphraseFile) {
     }
 }
 
+if ($OscarAdminPasswordFile) {
+    if (-not (Test-Path -LiteralPath $OscarAdminPasswordFile -PathType Leaf)) {
+        throw "OSCAR admin password file not found: $OscarAdminPasswordFile"
+    }
+    $opwFromFile = ([IO.File]::ReadAllLines($OscarAdminPasswordFile)[0]).TrimEnd([char[]]@([char]13, [char]10))
+    if (-not $opwFromFile) {
+        throw "OSCAR admin password file is empty: $OscarAdminPasswordFile"
+    }
+    if ($opwFromFile.StartsWith('# PBKDF2_PREENCODED:')) {
+        $OscarAdminPasswordHash = $opwFromFile
+    } elseif ($opwFromFile.StartsWith('PBKDF2WithHmacSHA1:')) {
+        $OscarAdminPasswordHash = "# PBKDF2_PREENCODED:$opwFromFile"
+    } else {
+        if ($opwFromFile.Length -lt 14) {
+            throw 'Initial OSCAR Web administrator password must contain at least 14 characters.'
+        }
+        $OscarAdminPasswordHash = [OscarSha512Crypt]::Pbkdf2Credential($opwFromFile)
+    }
+    $opwFromFile = ''
+} elseif ($OscarAdminPassword) {
+    if ($OscarAdminPassword.Length -lt 14) {
+        throw 'Initial OSCAR Web administrator password must contain at least 14 characters.'
+    }
+    $OscarAdminPasswordHash = [OscarSha512Crypt]::Pbkdf2Credential($OscarAdminPassword)
+    $OscarAdminPassword = ''
+} elseif ($OscarAdminPasswordHash -and -not $OscarAdminPasswordHash.StartsWith('# PBKDF2_PREENCODED:')) {
+    if (-not $OscarAdminPasswordHash.StartsWith('PBKDF2WithHmacSHA1:')) {
+        throw '-OscarAdminPasswordHash must start with PBKDF2WithHmacSHA1: or # PBKDF2_PREENCODED:.'
+    }
+    $OscarAdminPasswordHash = "# PBKDF2_PREENCODED:$OscarAdminPasswordHash"
+}
+
 # Offline unit-test mode: render user-data cleanly with LF endings without touching disks
 if ($RenderUserDataOnly) {
     if ($SshKeysOnly -and $resolvedSshKeys.Count -eq 0) {
@@ -1044,7 +1226,7 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 }
 
 if ($Gui -and -not $Tui) {
-    Show-AutoinstallUsbGui $IsoPath $OfflineBundlePath $Hostname $Username $SeedDirectory
+    Show-AutoinstallUsbGui $IsoPath $OfflineBundlePath $Hostname $Username $LanesFile $SeedDirectory
     exit 0
 }
 
@@ -1159,8 +1341,37 @@ if ($isInteractiveWizard -and $resolvedSshKeys.Count -gt 0 -and -not $PSBoundPar
     }
 }
 
+if ($isInteractiveWizard -and $OfflineBundlePath) {
+    if (-not $OscarAdminPasswordHash) {
+        $secOPw1 = Read-Host "Set initial OSCAR Web 'admin' password (14+ chars; Enter to set on site)" -AsSecureString
+        $plainOPw1 = ConvertFrom-SecureStringPlain $secOPw1
+        if ($plainOPw1) {
+            if ($plainOPw1.Length -lt 14) {
+                throw 'Initial OSCAR Web administrator password must contain at least 14 characters.'
+            }
+            $secOPw2 = Read-Host "Confirm initial OSCAR Web 'admin' password" -AsSecureString
+            $plainOPw2 = ConvertFrom-SecureStringPlain $secOPw2
+            if ($plainOPw1 -cne $plainOPw2) {
+                throw 'OSCAR Web administrator passwords did not match.'
+            }
+            $OscarAdminPasswordHash = [OscarSha512Crypt]::Pbkdf2Credential($plainOPw1)
+            $plainOPw1 = ''; $plainOPw2 = ''
+        }
+    }
+    if (-not $LanesFile) {
+        $replyLanes = Read-Host 'Optional pre-configured lanes file (lanes.csv or config.json; Enter to skip)'
+        if ($replyLanes) { $LanesFile = $replyLanes.Trim('"') }
+    }
+    if ($OscarAdminPasswordHash -and -not $PSBoundParameters.ContainsKey('AutoInitOscar')) {
+        $replyAuto = Read-Host 'Automatically initialize OSCAR & pre-staged lanes on first boot? [Y/n]'
+        if (-not $replyAuto -or $replyAuto -match '^[Yy]') {
+            $AutoInitOscar = $true
+        }
+    }
+}
+
 if (-not $SeedDirectory -and $SeedFile.Count -eq 0 -and $isInteractiveWizard) {
-    $replySeed = Read-Host 'Optional seed folder (config.json, lanes.csv, site-network.env, *.pmtiles, backup-key.txt; Enter to skip)'
+    $replySeed = Read-Host 'Optional extra seed folder (site-network.env, *.pmtiles, backup-key.txt; Enter to skip)'
     if ($replySeed) { $SeedDirectory = $replySeed.Trim('"') }
 }
 
@@ -1187,6 +1398,9 @@ Invoke-BuildAutoinstallUsb `
     -ReqSudoPw ([bool]$RequireSudoPassword) `
     -KeysOnly ([bool]$SshKeysOnly) `
     -AuthorizedKeys $resolvedSshKeys.ToArray() `
+    -OscarWebPassHash $OscarAdminPasswordHash `
+    -PreconfiguredLanesFile $LanesFile `
+    -AutoInitFirstBoot ([bool]$AutoInitOscar) `
     -SeedDir $SeedDirectory `
     -ExtraSeedFiles $SeedFile `
     -Logger $null

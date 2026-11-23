@@ -11,10 +11,17 @@ For the complete step-by-step field manual (written for users with no prior Ubun
 3. Launch your preferred interface:
    - **Windows 11 Desktop GUI:** Double-click **`create-autoinstall-usb.bat`** (auto-elevates via UAC and opens the native Windows GUI).
    - **Windows 11 Terminal TUI:** Run `.\create-autoinstall-usb.bat -Tui` from an Administrator PowerShell/Command Prompt.
-   - **Windows 11 Scripted CLI:** Run `.\create-autoinstall-usb.ps1 -IsoPath ... -OfflineBundlePath ... -DiskNumber 2 -Hostname oscar-host -Username oscaradmin -PasswordFile ... -RequireSudoPassword -ConfirmToken ERASE-USB`.
+   - **Windows 11 Scripted CLI:** Run `.\create-autoinstall-usb.ps1 -IsoPath ... -OfflineBundlePath ... -DiskNumber 2 -Hostname oscar-host -Username oscaradmin -PasswordFile ... -RequireSudoPassword -OscarAdminPasswordFile ... -LanesFile lanes.csv -AutoInitOscar -ConfirmToken ERASE-USB`.
    - **Ubuntu Desktop GUI:** Run `sudo bash create-autoinstall-usb.sh --gui` (opens native GTK `zenity` dialogs, or falls back to the `whiptail` TUI).
    - **Ubuntu Terminal TUI:** Run `sudo bash create-autoinstall-usb.sh` (or `--tui`).
-   - **Ubuntu Scripted CLI:** Run `sudo bash create-autoinstall-usb.sh --iso ... --offline-bundle ... --device /dev/sdX --hostname oscar-host --username oscaradmin --password-file ... --require-sudo-password --confirm ERASE-USB`.
+   - **Ubuntu Scripted CLI:** Run `sudo bash create-autoinstall-usb.sh --iso ... --offline-bundle ... --device /dev/sdX --hostname oscar-host --username oscaradmin --password-file ... --require-sudo-password --oscar-admin-password-file ... --lanes-file lanes.csv --auto-init-oscar --confirm ERASE-USB`.
+
+### Turnkey Fresh-Site Pre-Configuration (Zero Plaintext Secrets on USB)
+
+When building the USB stick, you can optionally supply:
+- **Initial OSCAR Web `admin` Password (14+ chars):** Immediately salted and PBKDF2-hashed in memory (`# PBKDF2_PREENCODED:PBKDF2WithHmacSHA1:16:...`) before writing to `OSCAR_MEDIA/seed/oscar-admin-password.txt`—neither the Linux `oscaradmin` password nor the OSCAR web `admin` password is ever stored in plaintext on the USB stick, and the seed hash is automatically deleted after first-boot initialization.
+- **Pre-Configured Site Lanes (`lanes.csv` or `config.json`):** Stages your lane spreadsheet or SensorHub configuration directly into `OSCAR_MEDIA/seed/`.
+- **Auto-Initialize OSCAR on First Boot (`-AutoInitOscar` / `--auto-init-oscar`):** Automatically runs `prepare-host`, `oscar init`, lane/config import, and HTTPS verification unattended on first boot (`oscar-autoprovision.service`), so on arrival at the site you only open `https://<hostname>/`, sign in as `admin`, register site operators, and upload `.pmtiles` or the site background diagram.
 
 ## Contents
 
