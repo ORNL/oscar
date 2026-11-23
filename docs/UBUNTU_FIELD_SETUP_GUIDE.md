@@ -14,7 +14,9 @@ It covers all three real-world field deployment scenarios:
 
 ## 1. Pre-Trip USB Kit & Direct Official Download Links
 
-Before traveling to a hotel or air-gapped site, prepare **one 32 GB+ USB 3.0 flash drive** (using **Ventoy**, recommended below, so a single USB drive can boot the Ubuntu installer *and* hold the OSCAR zip files and your site schematic).
+Before traveling to a hotel or air-gapped site, prepare a compact **two-drive field kit**:
+1. **One `32 GB+` USB 3.0 flash drive** for the **OSCAR Bare-Metal Ubuntu 24.04 Autoinstall USB** (or **Ventoy** multi-ISO installer stick holding the Ubuntu `.iso`, OSCAR `.zip`, and pre-staged `lanes.csv`).
+2. **One rugged `1–2 TB` External USB 3.2 Gen 2 NVMe SSD** (for example, Samsung T7 Shield or Crucial X9/X10 Pro) dedicated to **`OSCAR_BACKUP` (`continual` 15-minute incremental backup)**—leave this NVMe SSD plugged into the server on-site for hardware-isolated disaster recovery, **`0.0 s`-downtime `~5–20 s` pre-upgrade syncs** during future system updates, and 1-command bare-metal replacement (or bring an existing site's `OSCAR_BACKUP` NVMe SSD when restoring onto new hardware).
 
 ### 1.1 Official Operating System & Bootable USB Tool Links
 

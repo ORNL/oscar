@@ -130,16 +130,40 @@ is_bridge_enabled() {
     return 1
 }
 
+is_usb_backup_attached() {
+    local usb_cfg=${OSCAR_USB_BACKUP_CONFIG:-/etc/oscar/usb-backup.env}
+    if [[ -f $usb_cfg ]]; then
+        local mnt fs_uuid
+        mnt=$(env_value USB_BACKUP_MOUNT '' "$usb_cfg")
+        fs_uuid=$(env_value USB_BACKUP_FS_UUID '' "$usb_cfg")
+        if [[ -n $mnt && -d $mnt && ! -e "$mnt/.oscar-unmounted-guard" && ! -e "$mnt/.oscar-ejected" ]]; then
+            if [[ -n $fs_uuid ]] && command -v findmnt >/dev/null 2>&1; then
+                findmnt -rn --target "$mnt" >/dev/null 2>&1 || return 1
+                local mounted_src root_src
+                mounted_src=$(findmnt -rn -o SOURCE --target "$mnt" 2>/dev/null || true)
+                root_src=$(findmnt -rn -o SOURCE --target / 2>/dev/null || true)
+                [[ -n $mounted_src && $mounted_src != "$root_src" ]] || return 1
+            fi
+            [[ -f "$mnt/OSCAR-Backup/.oscar-usb-backup-root" ]] && return 0
+        fi
+        return 1
+    fi
+    if [[ -x "$script_dir/oscar-usb-backup.sh" || -f "$script_dir/oscar-usb-backup.sh" ]]; then
+        if bash "$script_dir/oscar-usb-backup.sh" status 2>/dev/null | grep -Eq '(Drive State:[[:space:]]*ATTACHED|"driveMounted"[[:space:]]*:[[:space:]]*true)'; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
 is_backup_possible() {
+    if is_usb_backup_attached; then
+        return 0
+    fi
     local bmode
     bmode=$(env_value OSCAR_BACKUP_MODE 'disabled')
     if [[ $bmode == single ]]; then
         return 0
-    fi
-    if [[ -x "$script_dir/oscar-usb-backup.sh" || -f "$script_dir/oscar-usb-backup.sh" ]]; then
-        if bash "$script_dir/oscar-usb-backup.sh" status --json 2>/dev/null | grep -Eq '"driveMounted"[[:space:]]*:[[:space:]]*true'; then
-            return 0
-        fi
     fi
     return 1
 }
@@ -386,20 +410,19 @@ PY
     assert_free_disk "$script_dir"
 
     if [[ $backup_first == true ]]; then
-        write_bridge_status "RUNNING" "BACKING_UP" 22 "$target_ver" "$req_id" "$action_name" "Creating pre-upgrade encrypted backup snapshot..." "$log_file"
-        local bmode
-        bmode=$(env_value OSCAR_BACKUP_MODE 'disabled')
-        if [[ $bmode == single ]]; then
-            if ! bash "$script_dir/oscar-setup.sh" backup >>"$log_file" 2>&1; then
-                write_bridge_status "FAILED" "FAILED" 0 "$target_ver" "$req_id" "$action_name" "Pre-upgrade backup failed; aborting before modifying containers." "$log_file"
-                rm -rf -- "$work_tmp"
-                fail 'Pre-upgrade backup failed; deployment was left untouched.'
-            fi
-        elif [[ -f "$script_dir/oscar-usb-backup.sh" ]] && bash "$script_dir/oscar-usb-backup.sh" status --json 2>/dev/null | grep -Eq '"driveMounted"[[:space:]]*:[[:space:]]*true'; then
+        if is_usb_backup_attached && [[ -f "$script_dir/oscar-usb-backup.sh" ]]; then
+            write_bridge_status "RUNNING" "BACKING_UP" 22 "$target_ver" "$req_id" "$action_name" "Running zero-downtime incremental pre-upgrade sync to attached USB NVMe backup drive..." "$log_file"
             if ! bash "$script_dir/oscar-usb-backup.sh" sync >>"$log_file" 2>&1; then
                 write_bridge_status "FAILED" "FAILED" 0 "$target_ver" "$req_id" "$action_name" "Pre-upgrade USB NVMe backup sync failed; aborting upgrade." "$log_file"
                 rm -rf -- "$work_tmp"
                 fail 'Pre-upgrade USB backup sync failed; deployment was left untouched.'
+            fi
+        elif [[ $(env_value OSCAR_BACKUP_MODE 'disabled') == single ]]; then
+            write_bridge_status "RUNNING" "BACKING_UP" 22 "$target_ver" "$req_id" "$action_name" "Creating pre-upgrade encrypted backup snapshot..." "$log_file"
+            if ! bash "$script_dir/oscar-setup.sh" backup >>"$log_file" 2>&1; then
+                write_bridge_status "FAILED" "FAILED" 0 "$target_ver" "$req_id" "$action_name" "Pre-upgrade backup failed; aborting before modifying containers." "$log_file"
+                rm -rf -- "$work_tmp"
+                fail 'Pre-upgrade backup failed; deployment was left untouched.'
             fi
         fi
     fi
@@ -594,7 +617,7 @@ After=docker.service
 
 [Service]
 Type=oneshot
-TimeoutStartSec=3600
+TimeoutStartSec=7200
 ExecStart=/bin/bash "$script_dir/oscar-update.sh" poll-bridge
 EOF
     if [[ -n $ctrl_dir ]]; then
@@ -672,7 +695,7 @@ poll_bridge() {
     if [[ ! -f $req_file ]]; then
         if [[ -f $lock_file ]]; then
             local lock_age=$(( $(date +%s) - $(stat -c %Y "$lock_file" 2>/dev/null || echo 0) ))
-            if (( lock_age >= 0 && lock_age < 3600 )); then
+            if (( lock_age >= 0 && lock_age < 7200 )); then
                 return 0
             fi
             rm -f -- "$lock_file"
