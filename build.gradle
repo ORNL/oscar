@@ -2,7 +2,7 @@ apply from: gradle.oshCoreDir + '/common.gradle'
 description = ''
 
 allprojects {
-    version = "3.11.8"
+    version = "3.11.9"
 }
 
 subprojects {
@@ -302,6 +302,7 @@ distributions{
                 include 'ubuntu/README.md'
                 include 'ubuntu/site-network.example.env'
                 include 'ubuntu/ansible-site-hosts.yml'
+                include 'ubuntu/create-autoinstall-usb.bat'
                 include 'ubuntu/create-autoinstall-usb.sh'
                 include 'ubuntu/create-autoinstall-usb.ps1'
                 include 'ubuntu/oscar-firstboot-wizard.sh'

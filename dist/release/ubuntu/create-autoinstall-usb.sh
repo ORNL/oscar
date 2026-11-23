@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OSCAR Bare-Metal Ubuntu Server 24.04 LTS Offline Autoinstall USB Builder (Linux)
+# OSCAR Bare-Metal Ubuntu Server 24.04 LTS Offline Autoinstall USB Builder (Linux: GUI + TUI + CLI)
 # Creates a single-stick UEFI (Secure Boot compatible) + Legacy BIOS bootable
 # Ubuntu 24.04 Live Server USB drive containing:
 #   - Partitions 1-3: Signed Ubuntu 24.04 Live Server ISO image
@@ -26,11 +26,13 @@ warn() { printf 'WARNING: %s\n' "$*" >&2; }
 usage() {
     cat <<'EOF'
 Usage:
-  sudo bash oscar.sh create-autoinstall-usb                         (Interactive TUI / guided wizard)
-  sudo bash oscar.sh create-autoinstall-usb --list-drives           (List candidate removable USB drives)
-  sudo bash oscar.sh create-autoinstall-usb \
+  sudo bash create-autoinstall-usb.sh                             (Interactive whiptail TUI wizard)
+  sudo bash create-autoinstall-usb.sh --gui                       (Desktop GTK GUI via zenity, or TUI fallback)
+  sudo bash create-autoinstall-usb.sh --tui                       (Force full-screen terminal TUI wizard)
+  sudo bash create-autoinstall-usb.sh --list-drives               (List candidate removable USB drives)
+  sudo bash create-autoinstall-usb.sh \
       --iso /path/to/ubuntu-24.04.5-live-server-amd64.iso \
-      [--offline-bundle /path/to/oscar-3.11.1-ubuntu-x86_64-offline-full.zip] \
+      [--offline-bundle /path/to/oscar-3.11.9-ubuntu-x86_64-offline-full.zip] \
       (--device /dev/sdX | --output-image /path/to/autoinstall.img) \
       [--hostname oscar-host] \
       [--username oscaradmin] \
@@ -51,6 +53,70 @@ Safety guarantees:
 EOF
 }
 
+hash_linux_password() {
+    local plain=$1
+    if command -v openssl >/dev/null 2>&1; then
+        printf '%s' "$plain" | openssl passwd -6 -stdin | head -n 1
+    else
+        python3 - "$plain" <<'PY'
+import hashlib, secrets, sys
+
+B64 = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+pw = sys.argv[1].encode("utf-8")
+salt = "".join(B64[b & 0x3F] for b in secrets.token_bytes(16)).encode("ascii")
+
+alt = hashlib.sha512(pw + salt + pw).digest()
+a = hashlib.sha512(pw + salt)
+cnt = len(pw)
+while cnt > 64:
+    a.update(alt)
+    cnt -= 64
+if cnt:
+    a.update(alt[:cnt])
+cnt = len(pw)
+while cnt:
+    a.update(alt if (cnt & 1) else pw)
+    cnt >>= 1
+cur = a.digest()
+
+dp = hashlib.sha512(pw * len(pw)).digest()
+p_bytes = (dp * ((len(pw) // 64) + 1))[:len(pw)]
+ds = hashlib.sha512(salt * (16 + cur[0])).digest()
+s_bytes = (ds * ((len(salt) // 64) + 1))[:len(salt)]
+
+for r in range(5000):
+    c = hashlib.sha512()
+    c.update(p_bytes if (r & 1) else cur)
+    if r % 3:
+        c.update(s_bytes)
+    if r % 7:
+        c.update(p_bytes)
+    c.update(cur if (r & 1) else p_bytes)
+    cur = c.digest()
+
+def enc(b2, b1, b0, n):
+    w = (b2 << 16) | (b1 << 8) | b0
+    out = []
+    for _ in range(n):
+        out.append(B64[w & 0x3F])
+        w >>= 6
+    return "".join(out)
+
+triples = [
+    (cur[0],cur[21],cur[42],4),(cur[22],cur[43],cur[1],4),(cur[44],cur[2],cur[23],4),
+    (cur[3],cur[24],cur[45],4),(cur[25],cur[46],cur[4],4),(cur[47],cur[5],cur[26],4),
+    (cur[6],cur[27],cur[48],4),(cur[28],cur[49],cur[7],4),(cur[50],cur[8],cur[29],4),
+    (cur[9],cur[30],cur[51],4),(cur[31],cur[52],cur[10],4),(cur[53],cur[11],cur[32],4),
+    (cur[12],cur[33],cur[54],4),(cur[34],cur[55],cur[13],4),(cur[56],cur[14],cur[35],4),
+    (cur[15],cur[36],cur[57],4),(cur[37],cur[58],cur[16],4),(cur[59],cur[17],cur[38],4),
+    (cur[18],cur[39],cur[60],4),(cur[40],cur[61],cur[19],4),(cur[62],cur[20],cur[41],4),
+    (0,0,cur[63],2)
+]
+print("$6$" + salt.decode("ascii") + "$" + "".join(enc(*t) for t in triples))
+PY
+    fi
+}
+
 protected_disk_names() {
     {
         local p src
@@ -61,7 +127,6 @@ protected_disk_names() {
             printf '%s\n' "${src#/dev/}"
             lsblk -s -rno NAME "$src" 2>/dev/null || true
         done
-        # Never overwrite an OSCAR_BACKUP carrier drive
         local bdev
         for bdev in $(blkid -L OSCAR_BACKUP 2>/dev/null || true); do
             [[ $bdev == /dev/* ]] || continue
@@ -93,7 +158,6 @@ list_candidate_usb_disks() {
         [[ -z ${prot[$NAME]:-} ]] || continue
         [[ $NAME != nvme* && $NAME != loop* && $NAME != dm-* && $NAME != md* ]] || continue
         if [[ $TRAN == usb || $RM == 1 ]]; then
-            # Also skip if any child partition has label OSCAR_BACKUP
             if lsblk -rno LABEL "$PATH_VAL" 2>/dev/null | grep -Fxq 'OSCAR_BACKUP'; then
                 continue
             fi
@@ -185,6 +249,8 @@ pathlib.Path(out_path).write_text(text, encoding="utf-8", newline="\n")
 PY
 }
 
+want_gui=false
+want_tui=false
 list_only=false
 iso_path=''
 offline_bundle=''
@@ -192,13 +258,17 @@ target_device=''
 output_image=''
 output_image_size_gib=12
 hostname_val='oscar-host'
+hostname_explicit=false
 username_val='oscaradmin'
+username_explicit=false
 password_hash=''
 password_file=''
 luks_passphrase_file=''
 luks_passphrase=''
 require_sudo_password=false
+sudo_explicit=false
 ssh_keys_only=false
+ssh_keys_only_explicit=false
 render_user_data_only=''
 confirm_token=''
 seed_dir=''
@@ -207,19 +277,21 @@ declare -a seed_files=()
 
 while (($# > 0)); do
     case "$1" in
+        --gui) want_gui=true; shift ;;
+        --tui) want_tui=true; shift ;;
         --list-drives) list_only=true; shift ;;
         --iso) iso_path=${2:?missing --iso}; shift 2 ;;
         --offline-bundle) offline_bundle=${2:?missing --offline-bundle}; shift 2 ;;
         --device) target_device=${2:?missing --device}; shift 2 ;;
         --output-image) output_image=${2:?missing --output-image}; shift 2 ;;
         --image-size-gib) output_image_size_gib=${2:?missing --image-size-gib}; shift 2 ;;
-        --hostname) hostname_val=${2:?missing --hostname}; shift 2 ;;
-        --username) username_val=${2:?missing --username}; shift 2 ;;
+        --hostname) hostname_val=${2:?missing --hostname}; hostname_explicit=true; shift 2 ;;
+        --username) username_val=${2:?missing --username}; username_explicit=true; shift 2 ;;
         --password-hash) password_hash=${2:?missing --password-hash}; shift 2 ;;
         --password-file) password_file=${2:?missing --password-file}; shift 2 ;;
         --luks-passphrase-file) luks_passphrase_file=${2:?missing --luks-passphrase-file}; shift 2 ;;
-        --require-sudo-password) require_sudo_password=true; shift ;;
-        --ssh-keys-only) ssh_keys_only=true; shift ;;
+        --require-sudo-password) require_sudo_password=true; sudo_explicit=true; shift ;;
+        --ssh-keys-only) ssh_keys_only=true; ssh_keys_only_explicit=true; shift ;;
         --render-user-data-only) render_user_data_only=${2:?missing --render-user-data-only}; shift 2 ;;
         --ssh-key-file) ssh_key_files+=("${2:?missing --ssh-key-file}"); shift 2 ;;
         --seed-dir) seed_dir=${2:?missing --seed-dir}; shift 2 ;;
@@ -235,6 +307,15 @@ if [[ -n $luks_passphrase_file ]]; then
     IFS= read -r luks_passphrase <"$luks_passphrase_file" || true
     luks_passphrase=${luks_passphrase%$'\r'}
     ((${#luks_passphrase} >= 12)) || fail "LUKS full-disk encryption passphrase must contain at least 12 characters."
+fi
+
+if [[ -n $password_file ]]; then
+    [[ -f $password_file ]] || fail "Password file not found: $password_file"
+    IFS= read -r pw_from_file <"$password_file" || true
+    pw_from_file=${pw_from_file%$'\r'}
+    [[ -n $pw_from_file ]] || fail "Password file is empty: $password_file"
+    password_hash=$(hash_linux_password "$pw_from_file")
+    unset pw_from_file
 fi
 
 if [[ -n $render_user_data_only ]]; then
@@ -262,7 +343,13 @@ if $list_only; then
     exit 0
 fi
 
-[[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run with sudo: sudo bash oscar.sh create-autoinstall-usb"
+if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
+    if $want_gui && command -v pkexec >/dev/null 2>&1 && [[ -n ${DISPLAY:-}${WAYLAND_DISPLAY:-} ]]; then
+        exec pkexec env DISPLAY="${DISPLAY:-}" WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" XAUTHORITY="${XAUTHORITY:-}" SUDO_USER="${USER:-}" bash "$ubuntu_dir/create-autoinstall-usb.sh" --gui
+    fi
+    fail "Run with sudo: sudo bash create-autoinstall-usb.sh (or pass --gui on Ubuntu Desktop)"
+fi
+
 [[ $hostname_val =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$ ]] || fail "Invalid --hostname: $hostname_val"
 [[ $username_val =~ ^[a-z_][a-z0-9_-]{0,30}$ ]] || fail "Invalid Linux --username: $username_val"
 
@@ -270,9 +357,14 @@ for req_cmd in dd sgdisk mkfs.vfat python3 sha256sum; do
     command -v "$req_cmd" >/dev/null 2>&1 || fail "Required tool '$req_cmd' is missing (apt-get install -y gdisk dosfstools python3)."
 done
 
+has_zenity=false
+if $want_gui && ! $want_tui && command -v zenity >/dev/null 2>&1 && [[ -n ${DISPLAY:-}${WAYLAND_DISPLAY:-} ]]; then
+    has_zenity=true
+fi
+
 has_tui=false
 saved_printk_level=''
-if [[ -t 0 && -t 1 ]] && command -v whiptail >/dev/null 2>&1 && [[ ${TERM:-dumb} != dumb ]]; then
+if ! $has_zenity && [[ -t 0 && -t 1 ]] && command -v whiptail >/dev/null 2>&1 && [[ ${TERM:-dumb} != dumb ]]; then
     has_tui=true
     if [[ -r /proc/sys/kernel/printk && -w /proc/sys/kernel/printk ]]; then
         saved_printk_level=$(awk '{print $1}' /proc/sys/kernel/printk 2>/dev/null || true)
@@ -280,8 +372,119 @@ if [[ -t 0 && -t 1 ]] && command -v whiptail >/dev/null 2>&1 && [[ ${TERM:-dumb}
     fi
 fi
 
-# Interactive guided prompts when required arguments are omitted
-if [[ -z $target_device && -z $output_image ]]; then
+find_default_iso() {
+    local cand
+    for cand in \
+        "$PWD"/ubuntu-24.04*-live-server-amd64.iso \
+        "$ubuntu_dir"/ubuntu-24.04*-live-server-amd64.iso \
+        "$(dirname "$release_dir")"/ubuntu-24.04*-live-server-amd64.iso \
+        "${SUDO_USER:+/home/$SUDO_USER/Downloads}"/ubuntu-24.04*-live-server-amd64.iso \
+        /srv/oscar/ubuntu-24.04*-live-server-amd64.iso \
+        /tmp/*/ubuntu-24.04*-live-server-amd64.iso \
+        /tmp/ubuntu-24.04*-live-server-amd64.iso; do
+        if [[ -f $cand ]]; then printf '%s' "$cand"; return 0; fi
+    done
+}
+
+find_default_bundle() {
+    local cand
+    for cand in \
+        "$PWD"/oscar-*-ubuntu-x86_64-offline-full.zip \
+        "$ubuntu_dir"/oscar-*-ubuntu-x86_64-offline-full.zip \
+        "$(dirname "$release_dir")"/oscar-*-ubuntu-x86_64-offline-full.zip \
+        "${SUDO_USER:+/home/$SUDO_USER/Downloads}"/oscar-*-ubuntu-x86_64-offline-full.zip \
+        /srv/oscar/oscar-*-ubuntu-x86_64-offline-full.zip; do
+        if [[ -f $cand ]]; then printf '%s' "$cand"; return 0; fi
+    done
+}
+
+interactive_wizard=false
+if [[ $confirm_token != ERASE-USB ]] && { $want_gui || $want_tui || [[ -z $target_device && -z $output_image ]] || [[ -z $iso_path ]]; }; then
+    interactive_wizard=true
+fi
+
+# Desktop GTK GUI flow via zenity (--gui)
+if $has_zenity && $interactive_wizard; then
+    mapfile -t usb_rows < <(list_candidate_usb_disks)
+    if ((${#usb_rows[@]} == 0)); then
+        zenity --error --title="OSCAR Autoinstall USB Creator" \
+            --text="No safe removable USB drives (>= 8 GiB) detected.\n\nInsert an external USB flash drive or SSD (16+ GiB recommended) and run again." || true
+        exit 1
+    fi
+    zen_usb_args=()
+    first_row=TRUE
+    for row in "${usb_rows[@]}"; do
+        IFS=$'\t' read -r d_path d_sz d_mod d_ser <<<"$row"
+        zen_usb_args+=("$first_row" "$d_path" "$d_sz" "$d_mod ($d_ser)")
+        first_row=FALSE
+    done
+    target_device=$(zenity --list --radiolist --width=680 --height=320 \
+        --title="OSCAR Bare-Metal Autoinstall USB Creator" \
+        --text="1. Select the removable USB drive to turn into a bootable Ubuntu 24.04 + OSCAR installer:" \
+        --column="Select" --column="Device" --column="Size" --column="Model / Serial" \
+        "${zen_usb_args[@]}") || exit 1
+
+    if [[ -z $iso_path ]]; then
+        default_iso=$(find_default_iso || true)
+        iso_path=$(zenity --file-selection --title="2. Select Ubuntu 24.04 Live Server ISO (ubuntu-24.04.x-live-server-amd64.iso)" \
+            ${default_iso:+--filename="$default_iso"} \
+            --file-filter="Ubuntu Live Server ISO (*.iso) | *.iso" --file-filter="All files | *") || exit 1
+    fi
+
+    if [[ -z $offline_bundle ]]; then
+        default_bundle=$(find_default_bundle || true)
+        offline_bundle=$(zenity --file-selection --title="3. Select oscar-*-ubuntu-x86_64-offline-full.zip (Cancel to build OS-only USB)" \
+            ${default_bundle:+--filename="$default_bundle"} \
+            --file-filter="OSCAR Ubuntu Offline Bundle (*.zip) | *ubuntu*offline-full*.zip *.zip" --file-filter="All files | *" || true)
+    fi
+
+    id_reply=$(zenity --forms --title="4. Target Server Identity" --width=480 \
+        --text="Configure the target bare-metal Ubuntu 24.04 server identity:" \
+        --separator="|" \
+        --add-entry="Target Hostname (default: oscar-host)" \
+        --add-entry="Linux Admin Username (default: oscaradmin)" \
+        --add-password="Linux Admin Password (blank keeps template default)" \
+        --add-password="Confirm Linux Admin Password") || exit 1
+    IFS='|' read -r g_host g_user g_pw1 g_pw2 <<<"$id_reply"
+    [[ -n $g_host ]] && hostname_val=$g_host
+    [[ -n $g_user ]] && username_val=$g_user
+    if [[ -n $g_pw1 || -n $g_pw2 ]]; then
+        [[ $g_pw1 == "$g_pw2" ]] || { zenity --error --text="Linux admin passwords did not match." || true; exit 1; }
+        password_hash=$(hash_linux_password "$g_pw1")
+        unset g_pw1 g_pw2
+        if zenity --question --title="Sudo Password Policy" --text="Require password re-entry for sudo on '$hostname_val'? (Recommended)"; then
+            require_sudo_password=true
+        fi
+    fi
+
+    if zenity --question --title="LUKS2 Full-Disk Encryption" --default-cancel \
+        --text="Enable LUKS2 full-disk encryption on the target server's internal NVMe/SSD?"; then
+        luks_reply=$(zenity --forms --title="LUKS2 Passphrase" --width=460 \
+            --text="Enter a LUKS2 disk encryption passphrase (minimum 12 characters):" \
+            --separator="|" \
+            --add-password="LUKS2 Passphrase (12+ chars)" \
+            --add-password="Confirm LUKS2 Passphrase") || exit 1
+        IFS='|' read -r gl1 gl2 <<<"$luks_reply"
+        ((${#gl1} >= 12)) || { zenity --error --text="LUKS2 passphrase must contain at least 12 characters." || true; exit 1; }
+        [[ $gl1 == "$gl2" ]] || { zenity --error --text="LUKS2 passphrases did not match." || true; exit 1; }
+        luks_passphrase=$gl1
+        unset gl1 gl2
+    fi
+
+    if zenity --question --title="Optional Seed Folder" --default-cancel \
+        --text="Do you want to pre-stage an optional seed folder (config.json, lanes.csv, site-network.env, *.pmtiles)?"; then
+        seed_dir=$(zenity --file-selection --directory --title="Select Seed Directory" || true)
+    fi
+
+    real_dev=$(realpath -P -- "$target_device")
+    dev_desc=$(lsblk -dnro SIZE,MODEL,SERIAL "$real_dev" 2>/dev/null | tr '\n' ' ')
+    confirm_token=$(zenity --entry --width=520 --title="Confirm USB Erase" \
+        --text="WARNING: ALL DATA ON $real_dev ($dev_desc) WILL BE ERASED!\n\nType ERASE-USB to build the bootable installer:") || exit 1
+    [[ $confirm_token == ERASE-USB ]] || { zenity --error --text="Cancelled (expected exact confirmation ERASE-USB)." || true; exit 1; }
+fi
+
+# Interactive terminal / whiptail TUI prompts when required arguments are omitted
+if ! $has_zenity && [[ -z $target_device && -z $output_image ]]; then
     [[ -t 0 && -t 1 ]] || fail "Specify --device /dev/sdX (or --output-image FILE) when running non-interactively."
     mapfile -t usb_rows < <(list_candidate_usb_disks)
     ((${#usb_rows[@]} > 0)) || fail "No safe removable USB drives (>= 8 GiB) detected. Plug in a target USB stick/SSD and re-run."
@@ -311,15 +514,7 @@ fi
 
 if [[ -z $iso_path ]]; then
     [[ -t 0 && -t 1 ]] || fail "Specify --iso /path/to/ubuntu-24.04.x-live-server-amd64.iso"
-    default_iso=''
-    for cand in \
-        "$PWD"/ubuntu-24.04*-live-server-amd64.iso \
-        "${SUDO_USER:+/home/$SUDO_USER/Downloads}"/ubuntu-24.04*-live-server-amd64.iso \
-        /srv/oscar/ubuntu-24.04*-live-server-amd64.iso \
-        /tmp/*/ubuntu-24.04*-live-server-amd64.iso \
-        /tmp/ubuntu-24.04*-live-server-amd64.iso; do
-        if [[ -f $cand ]]; then default_iso=$cand; break; fi
-    done
+    default_iso=$(find_default_iso || true)
     if $has_tui; then
         iso_path=$(whiptail --title "Ubuntu 24.04 Live Server ISO" \
             --inputbox "Enter path to ubuntu-24.04.x-live-server-amd64.iso:" 10 78 "$default_iso" 3>&1 1>&2 2>&3) || exit 1
@@ -331,15 +526,8 @@ if [[ -z $iso_path ]]; then
 fi
 [[ -f $iso_path ]] || fail "Ubuntu Live Server ISO not found: $iso_path"
 
-if [[ -z $offline_bundle && $confirm_token != ERASE-USB && -t 0 && -t 1 ]]; then
-    default_bundle=''
-    for cand in \
-        "$PWD"/oscar-*-ubuntu-x86_64-offline-full.zip \
-        "$(dirname "$release_dir")"/oscar-*-ubuntu-x86_64-offline-full.zip \
-        "${SUDO_USER:+/home/$SUDO_USER/Downloads}"/oscar-*-ubuntu-x86_64-offline-full.zip \
-        /srv/oscar/oscar-*-ubuntu-x86_64-offline-full.zip; do
-        if [[ -f $cand ]]; then default_bundle=$cand; break; fi
-    done
+if ! $has_zenity && $interactive_wizard && [[ -z $offline_bundle ]] && [[ -t 0 && -t 1 ]]; then
+    default_bundle=$(find_default_bundle || true)
     if $has_tui; then
         offline_bundle=$(whiptail --title "OSCAR Offline Full Bundle (Recommended)" \
             --inputbox "Path to oscar-*-ubuntu-x86_64-offline-full.zip (leave blank for OS-only installer):" 11 78 "$default_bundle" 3>&1 1>&2 2>&3) || exit 1
@@ -353,19 +541,43 @@ if [[ -n $offline_bundle ]]; then
     [[ -f $offline_bundle ]] || fail "Offline bundle ZIP not found: $offline_bundle"
 fi
 
-if [[ -n $password_file ]]; then
-    [[ -f $password_file ]] || fail "Password file not found: $password_file"
-    command -v openssl >/dev/null 2>&1 || fail "openssl is required to hash --password-file"
-    password_hash=$(openssl passwd -6 -stdin <"$password_file" | head -n 1)
-elif [[ -z $password_hash && $confirm_token != ERASE-USB && -t 0 && -t 1 ]]; then
+if ! $has_zenity && $interactive_wizard && [[ -t 0 && -t 1 ]]; then
+    if ! $hostname_explicit; then
+        if $has_tui; then
+            hostname_val=$(whiptail --title "Target Server Hostname" \
+                --inputbox "Hostname for the new Ubuntu 24.04 server:" 10 74 "$hostname_val" 3>&1 1>&2 2>&3) || exit 1
+        else
+            printf 'Target server hostname [%s]: ' "$hostname_val"
+            IFS= read -r reply_h
+            hostname_val=${reply_h:-$hostname_val}
+        fi
+    fi
+    if ! $username_explicit; then
+        if $has_tui; then
+            username_val=$(whiptail --title "Linux Admin Username" \
+                --inputbox "Administrator username on the new Ubuntu 24.04 server:" 10 74 "$username_val" 3>&1 1>&2 2>&3) || exit 1
+        else
+            printf 'Linux admin username [%s]: ' "$username_val"
+            IFS= read -r reply_u
+            username_val=${reply_u:-$username_val}
+        fi
+    fi
+    [[ $hostname_val =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$ ]] || fail "Invalid hostname: $hostname_val"
+    [[ $username_val =~ ^[a-z_][a-z0-9_-]{0,30}$ ]] || fail "Invalid Linux username: $username_val"
+fi
+
+if ! $has_zenity && [[ -z $password_hash ]] && $interactive_wizard && [[ -t 0 && -t 1 ]]; then
     if $has_tui; then
         pw1=$(whiptail --title "OSCAR Linux Admin Password ($username_val)" \
             --passwordbox "Set password for '$username_val' on the new server (leave blank to keep template default):" 10 74 3>&1 1>&2 2>&3) || exit 1
         if [[ -n $pw1 ]]; then
             pw2=$(whiptail --title "Confirm Password" --passwordbox "Re-enter password for '$username_val':" 10 74 3>&1 1>&2 2>&3) || exit 1
             [[ $pw1 == "$pw2" ]] || fail "Passwords did not match."
-            password_hash=$(printf '%s' "$pw1" | openssl passwd -6 -stdin)
+            password_hash=$(hash_linux_password "$pw1")
             unset pw1 pw2
+            if ! $sudo_explicit && whiptail --title "Sudo Password Policy" --yesno "Require password re-entry for sudo on '$hostname_val'? (Recommended)" 9 72; then
+                require_sudo_password=true
+            fi
         fi
     else
         printf "Set Linux password for '%s' (press Enter to keep template default): " "$username_val"
@@ -374,15 +586,47 @@ elif [[ -z $password_hash && $confirm_token != ERASE-USB && -t 0 && -t 1 ]]; the
             printf "Confirm password for '%s': " "$username_val"
             IFS= read -rs pw2; printf '\n'
             [[ $pw1 == "$pw2" ]] || fail "Passwords did not match."
-            password_hash=$(printf '%s' "$pw1" | openssl passwd -6 -stdin)
+            password_hash=$(hash_linux_password "$pw1")
             unset pw1 pw2
+            if ! $sudo_explicit; then
+                printf 'Require password for sudo? [Y/n]: '
+                IFS= read -r reply_sudo
+                [[ -z $reply_sudo || $reply_sudo =~ ^[Yy] ]] && require_sudo_password=true
+            fi
+        fi
+    fi
+fi
+
+if ! $has_zenity && [[ -z $luks_passphrase ]] && $interactive_wizard && [[ -t 0 && -t 1 ]]; then
+    if $has_tui; then
+        if whiptail --title "LUKS2 Full-Disk Encryption" --defaultno \
+            --yesno "Enable LUKS2 full-disk encryption on the target server's internal NVMe/SSD?" 9 74; then
+            lp1=$(whiptail --title "LUKS2 Passphrase" --passwordbox "Enter LUKS2 passphrase (12+ characters):" 10 74 3>&1 1>&2 2>&3) || exit 1
+            ((${#lp1} >= 12)) || fail "LUKS2 passphrase must contain at least 12 characters."
+            lp2=$(whiptail --title "Confirm LUKS2 Passphrase" --passwordbox "Re-enter LUKS2 passphrase:" 10 74 3>&1 1>&2 2>&3) || exit 1
+            [[ $lp1 == "$lp2" ]] || fail "LUKS2 passphrases did not match."
+            luks_passphrase=$lp1
+            unset lp1 lp2
+        fi
+    else
+        printf 'Enable LUKS2 full-disk encryption on the target server? [y/N]: '
+        IFS= read -r reply_luks
+        if [[ $reply_luks =~ ^[Yy] ]]; then
+            printf 'Enter LUKS2 passphrase (12+ characters): '
+            IFS= read -rs lp1; printf '\n'
+            ((${#lp1} >= 12)) || fail "LUKS2 passphrase must contain at least 12 characters."
+            printf 'Confirm LUKS2 passphrase: '
+            IFS= read -rs lp2; printf '\n'
+            [[ $lp1 == "$lp2" ]] || fail "LUKS2 passphrases did not match."
+            luks_passphrase=$lp1
+            unset lp1 lp2
         fi
     fi
 fi
 
 # Collect SSH public keys
 declare -a ssh_keys=()
-if ((${#ssh_key_files[@]} == 0)) && [[ -t 0 && -t 1 ]]; then
+if ((${#ssh_key_files[@]} == 0)) && [[ -t 0 && -t 1 || $has_zenity == true ]]; then
     user_home=${SUDO_USER:+$(getent passwd "$SUDO_USER" | cut -d: -f6)}
     user_home=${user_home:-$HOME}
     for pub in "$user_home"/.ssh/*.pub; do
@@ -397,7 +641,25 @@ for kf in "${ssh_key_files[@]}"; do
     done <"$kf"
 done
 
-if [[ -z $seed_dir && ${#seed_files[@]} -eq 0 && $confirm_token != ERASE-USB && -t 0 && -t 1 ]]; then
+if ((${#ssh_keys[@]} > 0)) && ! $ssh_keys_only_explicit && $interactive_wizard; then
+    if $has_zenity; then
+        if zenity --question --title="SSH Keys Policy" --default-cancel \
+            --text="Detected ${#ssh_keys[@]} SSH public key(s) in ~/.ssh.\n\nDisable SSH password login (SSH keys only)?"; then
+            ssh_keys_only=true
+        fi
+    elif $has_tui; then
+        if whiptail --title "SSH Keys Policy" --defaultno \
+            --yesno "Detected ${#ssh_keys[@]} SSH public key(s) in ~/.ssh. Disable SSH password login (SSH keys only)?" 9 74; then
+            ssh_keys_only=true
+        fi
+    elif [[ -t 0 && -t 1 ]]; then
+        printf 'Detected %d SSH public key(s) in ~/.ssh. Disable SSH password login (SSH keys only)? [y/N]: ' "${#ssh_keys[@]}"
+        IFS= read -r reply_ko
+        [[ $reply_ko =~ ^[Yy] ]] && ssh_keys_only=true
+    fi
+fi
+
+if ! $has_zenity && [[ -z $seed_dir && ${#seed_files[@]} -eq 0 ]] && $interactive_wizard && [[ -t 0 && -t 1 ]]; then
     if $has_tui; then
         seed_dir=$(whiptail --title "Optional Pre-Staged Seed Imports" \
             --inputbox "Optional directory containing config.json, lanes.csv, site-network.env, *.pmtiles, or backup-key.txt to pre-stage for the First-Boot Wizard (leave blank if none):" \
@@ -589,12 +851,16 @@ if [[ -n $loop_dev ]]; then
     losetup -d "$loop_dev"
     loop_dev=''
 elif [[ -n ${real_dev:-} && -b $real_dev ]]; then
-    # Ensure desktop udisks2 automounters do not leave any partition mounted
     udevadm settle 2>/dev/null || sleep 1
     for mp_dev in $(lsblk -lnpo NAME "$real_dev" | tail -n +2); do
         umount "$mp_dev" 2>/dev/null || true
     done
 fi
 sync
+
+if $has_zenity; then
+    zenity --info --width=500 --title="OSCAR Autoinstall USB Ready" \
+        --text="OSCAR Bare-Metal Autoinstall USB is ready on ${output_image:-$write_target}!\n\nSafe to eject and boot on the target x86-64 machine." || true
+fi
 
 info "SUCCESS: OSCAR Bare-Metal Autoinstall USB ready on ${output_image:-$write_target}."

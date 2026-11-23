@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 env:
-  RELEASE_VERSION: '3.11.8'
+  RELEASE_VERSION: '3.11.9'
   JAVA_VERSION: '21'
   NODE_VERSION: '22'
   OSCAR_DIR: 'web/oscar-viewer'
@@ -88,7 +88,9 @@ jobs:
         run: python3 ./tools/test-rpm-proxy.py
 
       - name: Verify zero-login GitHub System Update agent and fail-safe rollback
-        run: ./tools/test-system-update.sh
+        run: |
+          ./tools/test-system-update.sh
+          ./tools/test-autoinstall-usb-creator.sh
 
   tiered-storage-postgres:
     name: Tiered Storage / PostgreSQL
@@ -622,6 +624,7 @@ jobs:
               postgis/prepare-restore.sh
               postgis/init-app-role.sh
               postgis/init-extensions.sql
+              ubuntu/create-autoinstall-usb.bat
               ubuntu/create-autoinstall-usb.sh
               ubuntu/create-autoinstall-usb.ps1
               ubuntu/oscar-firstboot-wizard.sh
@@ -808,9 +811,10 @@ jobs:
       - name: Boot packaged deployment and run Playwright + ConSys + backup regression checks
         run: ./tools/test-live-deployment-regression.sh "${GITHUB_REF_NAME#v}" "${DIST_DIR}/oscar-${GITHUB_REF_NAME#v}.zip"
 
-      - name: Stage source archive and generate release checksums
+      - name: Stage source archive, standalone Autoinstall USB Creator, and generate release checksums
         run: |
           cp "${{ steps.source.outputs.archive }}" "${DIST_DIR}/"
+          ./tools/package-autoinstall-usb-creator.sh "${RELEASE_VERSION}" "${DIST_DIR}"
           (
             cd "${DIST_DIR}"
             for archive in oscar-*.zip; do

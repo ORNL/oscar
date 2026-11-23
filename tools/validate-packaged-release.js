@@ -88,7 +88,7 @@ const expected = [
     'oscar-storage.sh', 'oscar-storage.ps1', 'oscar-usb-backup.sh', 'oscar-usb-backup.ps1', 'oscar-usb-backup-engine.sh',
     'configure-ubuntu-host.sh', 'configure-windows-host.ps1', 'validate-storage-archive.sh',
     'ubuntu/README.md', 'ubuntu/site-network.example.env', 'ubuntu/ansible-site-hosts.yml',
-    'ubuntu/create-autoinstall-usb.sh', 'ubuntu/create-autoinstall-usb.ps1', 'ubuntu/oscar-firstboot-wizard.sh',
+    'ubuntu/create-autoinstall-usb.bat', 'ubuntu/create-autoinstall-usb.sh', 'ubuntu/create-autoinstall-usb.ps1', 'ubuntu/oscar-firstboot-wizard.sh',
     'ubuntu/autoinstall/user-data.yaml', 'ubuntu/autoinstall/meta-data',
     'ubuntu/netplan/01-single-nic-static.yaml.example',
     'ubuntu/netplan/02-dual-nic-operator-and-sensor-vlan.yaml.example',

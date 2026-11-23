@@ -1,6 +1,6 @@
-# OSCAR 3.11.8 Pluggable Runtime Extensions & Regional Packs Guide
+# OSCAR 3.11.9 Pluggable Runtime Extensions & Regional Packs Guide
 
-OSCAR 3.11.8 ships out of the box with complete, unrestricted default implementations for **Vehicle Container & License Plate OCR**, **Basemap Layers**, **Secondary-Inspection Gamma Spectroscopy**, **TLS Certificate Trust**, and **Adjudication Disposition Codes**—so every fresh installation and upgrade works immediately with zero extra downloads.
+OSCAR 3.11.9 ships out of the box with complete, unrestricted default implementations for **Vehicle Container & License Plate OCR**, **Basemap Layers**, **Secondary-Inspection Gamma Spectroscopy**, **TLS Certificate Trust**, and **Adjudication Disposition Codes**—so every fresh installation and upgrade works immediately with zero extra downloads.
 
 At the same time, sites operating in non-Latin license-plate regions, air-gapped border facilities without internet map tiles, specialized radiological laboratories, private-PKI enterprise networks, or agencies with standardized national disposition taxonomies can hot-swap or extend any of these subsystems from the browser at **`OSCAR Viewer -> Extensions` (`/extensions`)** (or via the authenticated `/sensorhub/oscar/extensions/*` REST API) **without recompiling OSCAR and without losing customizations across `oscar upgrade`**. *(Developers or hardware vendors adding a new physical Radiation Portal Monitor or radiation detector protocol should see the companion [Radiation Portal Monitor & Detector Driver Integration Guide](RADIATION_DETECTOR_DRIVER_GUIDE.md).)*
 
@@ -215,7 +215,7 @@ org.example.oscar.ocr.CustomRegionalOcrEngine
 
 On fresh installations, OSCAR's Dashboard, Map, and Operational View maps use online OpenStreetMap Streets and Esri World Imagery tiles (plus any site diagram images uploaded in SensorHub Admin). For **air-gapped deployments**, **restricted border LANs**, or **high-resolution regional/drone orthomosaics**, administrators can upload single-file **PMTiles v3 (`.pmtiles`)** archives in **`/extensions -> Offline Maps`**.
 
-### How `.pmtiles` Basemaps Work in OSCAR 3.11.8
+### How `.pmtiles` Basemaps Work in OSCAR 3.11.9
 
 - **Zero External Network Calls (100% Air-Gapped Safe):**
   - **Vector `.pmtiles` (`MVT`)** render directly onto HTML5 `<canvas>` in the browser using `protomaps-leaflet` with local system UI fonts (`sans-serif`)—making **zero** outbound requests to `protomaps.github.io`, `openstreetmap.org`, or external glyph/sprite CDNs.

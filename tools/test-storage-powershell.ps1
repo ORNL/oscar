@@ -100,12 +100,15 @@ try {
     Assert-True ($renderedText.Contains('/usr/local/bin/oscar-wizard')) 'Rendered user-data is missing first-boot oscar-wizard installer.'
 
     $luksPassFixture = Join-Path $temporaryRoot 'luks-passphrase.txt'
+    $adminPassFixture = Join-Path $temporaryRoot 'admin-password.txt'
     [IO.File]::WriteAllText($luksPassFixture, "StrongBareMetalLuks!2026`r`n")
+    [IO.File]::WriteAllText($adminPassFixture, "MyStrongPass!2026`r`n")
     $hardenedUserData = Join-Path $temporaryRoot 'rendered-user-data-hardened'
     & (Join-Path $PSHOME 'powershell.exe') -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
         -File $autoinstallUsbScript `
         -Hostname 'portal-hardened-01' `
         -Username 'siteadmin' `
+        -PasswordFile $adminPassFixture `
         -LuksPassphraseFile $luksPassFixture `
         -RequireSudoPassword `
         -SshKeyFile $sshPubFixture `
@@ -116,15 +119,25 @@ try {
     Assert-True (-not $hardenedText.Contains('NOPASSWD:ALL')) 'Hardened rendered user-data must omit NOPASSWD:ALL when -RequireSudoPassword is set.'
     Assert-True ($hardenedText.Contains('allow-pw: false') -and $hardenedText.Contains('PasswordAuthentication no')) 'Hardened rendered user-data did not enforce SSH keys only.'
     Assert-True ($hardenedText.Contains('"StrongBareMetalLuks!2026"')) 'Hardened rendered user-data did not inject LUKS2 full-disk encryption passphrase.'
+    Assert-True ($hardenedText -match 'password:\s*"\$6\$[./0-9A-Za-z]{16}\$[./0-9A-Za-z]{86}"') 'Hardened rendered user-data did not inject a valid SHA-512 ($6$) password hash from -PasswordFile.'
 
     $resetCliRejectProcess = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @(
         '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
         '-File', $setupScript, '-Command', 'reset-admin-password', '-Password', 'LeakedCliPassword!2026') -Wait -PassThru -WindowStyle Hidden
     Assert-True ($resetCliRejectProcess.ExitCode -ne 0) 'oscar-setup.ps1 reset-admin-password accepted a plaintext -Password on the command line.'
 
-    # Regression gate: oscar-setup.ps1 must never reference undefined Get-EnvValue (use Get-EnvironmentValue)
+    # Regression gate: oscar-setup.ps1 must never reference undefined Get-EnvValue / Get-EnvironmentValue (use Get-ConfiguredEnvValue)
     $setupRawText = [IO.File]::ReadAllText($setupScript)
-    Assert-True ($setupRawText -notmatch '\bGet-EnvValue\b') 'oscar-setup.ps1 contains undefined Get-EnvValue call; use Get-EnvironmentValue.'
+    Assert-True ($setupRawText -notmatch '\bGet-EnvValue\b' -and $setupRawText -notmatch '\bGet-EnvironmentValue\b') `
+        'oscar-setup.ps1 contains undefined Get-EnvValue or Get-EnvironmentValue call; use Get-ConfiguredEnvValue.'
+    $setupTokens = $null; $setupParseErrors = $null
+    $setupAst = [System.Management.Automation.Language.Parser]::ParseFile($setupScript, [ref]$setupTokens, [ref]$setupParseErrors)
+    Assert-True ($setupParseErrors.Count -eq 0) 'oscar-setup.ps1 failed PowerShell AST syntax parsing.'
+    $setupFunctions = @{}
+    foreach ($fnAst in $setupAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
+        $setupFunctions[$fnAst.Name] = $true
+    }
+    Assert-True ($setupFunctions.ContainsKey('Get-ConfiguredEnvValue')) 'oscar-setup.ps1 is missing Get-ConfiguredEnvValue.'
 
     # Verify oscar-rpm-proxy.ps1 status exits 0 cleanly when unconfigured
     $rpmStatusDir = Join-Path $temporaryRoot 'rpm-proxy-unconfigured'

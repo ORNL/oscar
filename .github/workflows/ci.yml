@@ -77,6 +77,11 @@ jobs:
       - name: Verify real-time 50-lane Rapiscan RPM Edge Proxy fan-out and disconnect gating
         run: python3 ./tools/test-rpm-proxy.py
 
+      - name: Verify zero-login GitHub System Update agent and standalone Autoinstall USB Creator
+        run: |
+          ./tools/test-system-update.sh
+          ./tools/test-autoinstall-usb-creator.sh
+
       - name: Build and test the connected release
         run: ./build-all.sh
 
