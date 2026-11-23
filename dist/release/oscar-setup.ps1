@@ -2285,6 +2285,8 @@ try {
                 if (Test-Path -LiteralPath $usbScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $usbScript install-agent | Out-Null } catch {} }
                 $sandboxScript = Join-Path $ScriptRoot 'oscar-sandbox.ps1'
                 if (Test-Path -LiteralPath $sandboxScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $sandboxScript install-agent | Out-Null } catch {} }
+                $updateScript = Join-Path $ScriptRoot 'oscar-update.ps1'
+                if (Test-Path -LiteralPath $updateScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $updateScript install-agent | Out-Null } catch {} }
             }
             Write-Host "`nOSCAR setup complete: https://${Hostname}:$Port/sensorhub/admin" -ForegroundColor Green
             Write-ClientAccessInstructions $resolvedTlsSans
@@ -2300,6 +2302,8 @@ try {
             if (Test-Path -LiteralPath $usbScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $usbScript install-agent | Out-Null } catch {} }
             $sandboxScript = Join-Path $ScriptRoot 'oscar-sandbox.ps1'
             if (Test-Path -LiteralPath $sandboxScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $sandboxScript install-agent | Out-Null } catch {} }
+            $updateScript = Join-Path $ScriptRoot 'oscar-update.ps1'
+            if (Test-Path -LiteralPath $updateScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $updateScript install-agent | Out-Null } catch {} }
             Invoke-RemoteAccessSubcommand @('sync')
         }
         'stop' {
@@ -2318,6 +2322,8 @@ try {
             if (Test-Path -LiteralPath $usbScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $usbScript install-agent | Out-Null } catch {} }
             $sandboxScript = Join-Path $ScriptRoot 'oscar-sandbox.ps1'
             if (Test-Path -LiteralPath $sandboxScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $sandboxScript install-agent | Out-Null } catch {} }
+            $updateScript = Join-Path $ScriptRoot 'oscar-update.ps1'
+            if (Test-Path -LiteralPath $updateScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $updateScript install-agent | Out-Null } catch {} }
             Invoke-RemoteAccessSubcommand @('sync')
         }
         'status' {
@@ -2498,6 +2504,8 @@ try {
             if (Test-Path -LiteralPath $usbScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $usbScript install-agent | Out-Null } catch {} }
             $sandboxScript = Join-Path $ScriptRoot 'oscar-sandbox.ps1'
             if (Test-Path -LiteralPath $sandboxScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $sandboxScript install-agent | Out-Null } catch {} }
+            $updateScript = Join-Path $ScriptRoot 'oscar-update.ps1'
+            if (Test-Path -LiteralPath $updateScript) { try { & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $updateScript install-agent | Out-Null } catch {} }
             if (Test-Path -LiteralPath (Join-Path $ScriptRoot 'offline-images.tar')) {
                 Invoke-RemoteAccessSubcommand @('sync')
             } else {

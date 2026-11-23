@@ -1,6 +1,6 @@
 # OSCAR End-to-End Regression Suite & Release Certification Guide
 
-[`ORNL/oscar-regression`](https://github.com/ORNL/oscar-regression) provides automated end-to-end functional, fault-injection, multi-pass vehicle OCR, `PARQUET_PRIMARY` storage-lifecycle, destructive backup/restore, and 24/7 UI endurance validation for OSCAR 3.11.7 test deployments.
+[`ORNL/oscar-regression`](https://github.com/ORNL/oscar-regression) provides automated end-to-end functional, fault-injection, multi-pass vehicle OCR, `PARQUET_PRIMARY` storage-lifecycle, destructive backup/restore, and 24/7 UI endurance validation for OSCAR 3.11.8 test deployments.
 
 For a captioned 1080p walkthrough, watch [Module 22 (`22-regression-suite-setup-and-certification.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/22-regression-suite-setup-and-certification.mp4) in [VIDEO_GUIDES.md](VIDEO_GUIDES.md).
 
@@ -58,19 +58,19 @@ chmod 600 .env
 | `SPECTROSCOPIC_WORKFLOW` | `auto` *(or `required` / `disabled`)* | Uploads local `.spe` / `.n42` files from `spectroscopic-files/`, verifying `N42 Report` and Sandia WebID |
 | `CARGO_UFF_WORKFLOW` | `auto` *(or `required` / `disabled`)* | Verifies zero UI clutter when Cargo UFF is disabled, exercises local `.uff` upload + 16-bit `uint16` TIFF/HEMD viewer controls, tests live SMBv2/v3 share connection (`CARGO_UFF_SMB_SHARE`), scanner/time-window browsing, Tier-1 UUID omnibox lookup, 1-char fuzzy OCR correlation, and zero-download adjudication staging, and restores `uff.enabled = false` in `finally` |
 | `EML_WORKFLOW` | `auto` *(or `required` / `disabled`)* | Uploads `OSCAR_EML_PLUGIN_PATH` (`.jar`) and verifies `Code 9999: EML Non-Threat` auto-adjudication |
-| `STORAGE_WORKFLOW` | `required` | Gates OSCAR 3.11.7 `PARQUET_PRIMARY`, 5-JPEG retention, atomic publisher, and schema checks |
+| `STORAGE_WORKFLOW` | `required` | Gates OSCAR 3.11.8 `PARQUET_PRIMARY`, 5-JPEG retention, atomic publisher, and schema checks |
 | `OSCAR_BACKUP_MODE` | `disabled` *(or `single`)* | Certifies fail-closed disabled backups or single-snapshot backup behavior (`STORAGE_BACKUP_WORKFLOW`) |
 | `OSCAR_SSH_TARGET` | `oscar@oscar-test.example.org` | SSH host used for the remote mutation lease, Docker resource sampling, and storage probes |
-| `OSCAR_RELEASE_DIR` | `/srv/oscar-test/oscar-3.11.7` | Canonical non-symlinked release path on `OSCAR_SSH_TARGET` |
+| `OSCAR_RELEASE_DIR` | `/srv/oscar-test/oscar-3.11.8` | Canonical non-symlinked release path on `OSCAR_SSH_TARGET` |
 | `OSCAR_STORAGE_TARGET_ACK` | `<host>\|<ssh>\|<dir>\|DISPOSABLE-STORAGE` | **Safety interlock #4:** Required before any storage probe executes |
 
 ### Rebinding After Deploying a New Release Directory
 
-Whenever you unpack and deploy a new OSCAR 3.11.7 build into a clean versioned folder, preview and apply the release rebind helper (which verifies the running container provenance over strict SSH without touching secrets):
+Whenever you unpack and deploy a new OSCAR 3.11.8 build into a clean versioned folder, preview and apply the release rebind helper (which verifies the running container provenance over strict SSH without touching secrets):
 
 ```sh
-./scripts/rebind-active-release.sh --build-label 3.11.7-rc1
-./scripts/rebind-active-release.sh --apply --build-label 3.11.7-rc1
+./scripts/rebind-active-release.sh --build-label 3.11.8-rc1
+./scripts/rebind-active-release.sh --apply --build-label 3.11.8-rc1
 ```
 
 ---

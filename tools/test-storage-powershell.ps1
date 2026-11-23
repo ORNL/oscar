@@ -12,6 +12,7 @@ $repoRoot = [IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $MyInvocation.
 $storageScript = Join-Path $repoRoot 'dist\release\oscar-storage.ps1'
 $usbBackupScript = Join-Path $repoRoot 'dist\release\oscar-usb-backup.ps1'
 $sandboxScript = Join-Path $repoRoot 'dist\release\oscar-sandbox.ps1'
+$updateScript = Join-Path $repoRoot 'dist\release\oscar-update.ps1'
 $remoteAccessScript = Join-Path $repoRoot 'dist\release\oscar-remote-access.ps1'
 $rpmProxyScript = Join-Path $repoRoot 'dist\release\oscar-rpm-proxy.ps1'
 $setupScript = Join-Path $repoRoot 'dist\release\oscar-setup.ps1'
@@ -22,7 +23,7 @@ $offlineBuilderScript = Join-Path $repoRoot 'tools\offline\build-offline-bundle.
 $composeFile = Join-Path $repoRoot 'dist\release\compose.yaml'
 $oscarDockerfile = Join-Path $repoRoot 'dist\release\docker\oscar\Dockerfile'
 $oscarEntrypoint = Join-Path $repoRoot 'dist\release\docker\oscar\entrypoint.sh'
-$releasePowerShellScripts = @($storageScript, $usbBackupScript, $sandboxScript, $remoteAccessScript, $rpmProxyScript, $setupScript, $hostPrepScript, $verifyScript, $autoinstallUsbScript, $offlineBuilderScript)
+$releasePowerShellScripts = @($storageScript, $usbBackupScript, $sandboxScript, $updateScript, $remoteAccessScript, $rpmProxyScript, $setupScript, $hostPrepScript, $verifyScript, $autoinstallUsbScript, $offlineBuilderScript)
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ('oscar-storage-ps5-' + [Guid]::NewGuid().ToString('N'))
 $createdDockerGroup = $false
 

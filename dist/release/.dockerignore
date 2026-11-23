@@ -3,6 +3,8 @@
 !docker/oscar/**
 !docker/rpm-proxy/**
 !docker/tunnel/**
+**/__pycache__/**
+**/*.py[cod]
 **/*eml*.jar
 **/*EML*.jar
 **/EML-VM250*

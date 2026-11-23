@@ -1,6 +1,6 @@
-# OSCAR 3.11.7 Guided Walkthrough Refresher (`:443`) & Ephemeral Hands-On Training Sandbox (`oscar-sandbox` `:8444`)
+# OSCAR 3.11.8 Guided Walkthrough Refresher (`:443`) & Ephemeral Hands-On Training Sandbox (`oscar-sandbox` `:8444`)
 
-OSCAR 3.11.7 provides two complementary, built-in training and refresher experiences for gatehouse operators, shift supervisors, and system administrators:
+OSCAR 3.11.8 provides two complementary, built-in training and refresher experiences for gatehouse operators, shift supervisors, and system administrators:
 
 1. **Anytime Live Console Guided Walkthrough (`:443` — Read-Only Refresher Mode):** Click **Guided Walkthrough** (*graduation-cap icon* in the top navigation bar, or inside **Help (`?`)** — *circled question-mark icon* — `-> Manual & Video Guides`) at any time during a live shift to open the side-by-side coach (`READ-ONLY REFRESHER` badge). Users can browse all **13 role-based labs**, watch offline `1080p` 4-language (`en`, `es`, `fr`, `el`) captioned videos, view annotated `1920×1080` reference screenshots, read inline visual symbol introductions for every navigation icon, navigate to pages, and click **Highlight [Page / Tool] Icon** (for example, **Highlight Status of Health Icon** on the *heart-pulse monitor icon* or **Highlight Help (`?`)** on the *circled question-mark icon*) with **zero** simulated alarm injections, **zero** `/stage-track` server mutations, and **zero** background polling when closed.
 2. **Isolated Ephemeral Hands-On Practice Sandbox (`oscar-sandbox` on `:8444`):** Launch a completely isolated disposable practice stack (`1-click` from inside **Guided Walkthrough** or **Help (`?`)** when `enable-ui-bridge` is active on Ubuntu, or via `oscar.sh` / `oscar.bat sandbox start`) to inject simulated radiation alarms and detector faults, upload practice `.n42` / `.uff` / `.csv` / `.pmtiles` files, and practice **Split-Pane SensorHub Admin** edits with 100% zero impact on live PostgreSQL, Parquet archives, `config.json`, or physical RPM relays.
@@ -31,7 +31,7 @@ A core requirement of radiation portal operations is that training data, practic
 | Dimension | Operational OSCAR (`compose.yaml`, `:443`) | Ephemeral Training Sandbox (`compose.sandbox.yaml`, `:8444`) |
 | :--- | :--- | :--- |
 | **Docker Compose Project** | `oscar` | `oscar-sandbox` |
-| **Container Images** | `oscar:3.11.7`, `oscar-postgis:3.11.7`, `nginx-unprivileged:1.30.7-alpine` | Reuses the exact already-installed `3.11.7` images (`0 B` extra image download) |
+| **Container Images** | `oscar:3.11.8`, `oscar-postgis:3.11.8`, `nginx-unprivileged:1.30.7-alpine` | Reuses the exact already-installed `3.11.8` images (`0 B` extra image download) |
 | **PostgreSQL Volume** | `oscar_postgres_data` (persistent, checksummed) | `oscar_sandbox_pg` (disposable, wiped on `stop`/`reset`/TTL) |
 | **Application State Volume** | `oscar_oscar_state` (persistent `config.json`, Passkeys, journals) | `oscar_sandbox_state` (disposable, wiped on `stop`/`reset`/TTL) |
 | **Parquet Cold Archive** | Host bind-mount `OSCAR_ARCHIVE_DIR` (`archive.enabled = true`) | **Zero host bind-mounts**; `tmpfs` `/var/lib/oscar/archive` + `archive.enabled = false` (`0` `.parquet` files written) |
@@ -46,7 +46,7 @@ A core requirement of radiation portal operations is that training data, practic
 
 ### 2.1 Ubuntu Server 24.04 LTS CLI
 
-From the extracted OSCAR 3.11.7 release directory:
+From the extracted OSCAR 3.11.8 release directory:
 
 ```bash
 # Launch the isolated sandbox on HTTPS port 8444 (default 120-minute auto-expiry TTL)
@@ -67,7 +67,7 @@ sudo bash oscar.sh sandbox stop
 
 ### 2.2 Windows 11 + Docker Desktop (WSL 2) CLI
 
-From an Administrator PowerShell or Command Prompt in the OSCAR 3.11.7 release directory:
+From an Administrator PowerShell or Command Prompt in the OSCAR 3.11.8 release directory:
 
 ```powershell
 # Launch the isolated sandbox on HTTPS port 8444
@@ -101,13 +101,15 @@ When `OSCAR_SANDBOX_MODE=true`, `TrainingSandboxManager` starts a zero-hardware 
      - `gamma_alarm`: Localized asymmetric point-source gamma spike (`GA`) requiring human operator adjudication.
      - `neutron_alarm`: Elevated neutron count (`NA`) — demonstrates that Neutron triggers **never** auto-release.
      - `gamma_neutron_alarm`: Combined `GA` + `NA` high-priority alarm.
-     - `norm_eml`: Spatially uniform 4-panel distributed cargo profile evaluated by `SandboxEmlTrainingAlgorithm` as `RELEASE` -> automatic **`Code 9999: EML Non-Threat`** disposition.
-     - `extended_occupancy`: Holds a gamma-only occupancy past the sandbox extended-occupancy threshold (`8 s` accelerated threshold inside sandbox mode) to trigger live **`Fault - Extended Occupancy`** followed by **`Code 9998: Extended Occupancy Gamma Alarm`** auto-adjudication on exit.
-     - `fault_gamma_high` / `fault_tamper` / `clear_faults`: Live `GH` and `TT`/`TC` state-of-health transitions.
-2. **Loopback RTSP Moving-Truck Container Camera (`rtsp://127.0.0.1:8554/tutorial-cam` & `/tutorial-cam-2`):**
+     - `norm_eml`: Spatially uniform 4-panel distributed cargo profile evaluated by `SandboxEmlTrainingAlgorithm` as `RELEASE` -> automatic **`Code 9999: EML Non-Threat`** disposition (automatically opening **Events (`/event-log`)** with live occupancy transit progress and the **`Adjudication Code`** column visible while explaining why benign `Code 9999` passes remain suppressed from the active Dashboard `/` threat queue).
+     - `extended_occupancy`: Holds a gamma-only occupancy past the sandbox extended-occupancy threshold (`8 s` accelerated threshold inside sandbox mode) to trigger live **`Fault - Extended Occupancy`** followed by **`Code 9998: Extended Occupancy Gamma Alarm`** auto-adjudication on exit (also opening `/event-log` with visible **`Code 9998`** disposition badges).
+     - `fault_gamma_high` / `fault_tamper` / `clear_faults` / `stage_webrelay_demo`: Live `GH` and `TT`/`TC` state-of-health transitions and 1-click loopback `WebRelay-Quad` staging on **Status of Health (`/health`)**.
+2. **Loopback ControlByWeb® `WebRelay-Quad` HTTP/XML Servers (`127.0.0.1:10180` Primary & `127.0.0.1:10181` Ancillary):**
+   - Pure-Java `SandboxWebRelayLoopbackServer` (started strictly inside `OSCAR_SANDBOX_MODE=true`) serves `/stateFull.xml` and `/state.xml` with live `relay1State..relay4State=0|1|2` (`2` = hardware-timed pulse via `pulseTime1..4`), enabling Lab `3.5` (`adm-5`) trainees to stage `DemoLane01` in 1 click, test HTTP/XML connectivity against `127.0.0.1:10180`, exercise `AUTO` / `MUTED` / `PASS_THROUGH` modes and timed beacon/siren pulses, and auto-verify `webRelayOnlineCount >= 1` with zero external relay hardware.
+3. **Loopback RTSP Moving-Truck Container Camera (`rtsp://127.0.0.1:8554/tutorial-cam` & `/tutorial-cam-2`):**
    - Encodes deterministic `CC0-1.0` `1280×720` (`15 fps`, `0.33 s` GOP) `H.264` gatehouse tractor-trailer drive-through clips (`SCFU8572724` / `SWT03` on `DemoLane01` and `RSTU2402941` / `M50M1` on `DemoLane02`, Modulo-11 valid ISO 6346 container stencils) in-process via JavaCPP JNI (`libopenh264` / `libavformat`) and streams them into loopback `mediamtx` (`< 0.2%` CPU, zero external CLI binary dependencies).
    - Synchronizes each occupancy injection with a full end-to-end lane transit (empty portal -> tractor cab entering -> 40-ft container traversing between the RPM pillars -> rear doors & trailer bumper exiting -> empty portal) at true `1.0×` real-time RTP timestamps, exercising live HLS playback, progressive 5-JPEG alarm frame extraction (`frame-01.jpg`–`frame-05.jpg`), and asynchronous ONNX Container & License Plate OCR (`vehicleOcr`).
-3. **Downloadable Practice Sample Files (`/sensorhub/oscar/sandbox/samples/*`):**
+4. **Downloadable Practice Sample Files (`/sensorhub/oscar/sandbox/samples/*`):**
    - `tutorial-1-lane.csv`: Valid `SpreadsheetParser` V1 CSV pre-targeted at `127.0.0.1:10099` and `127.0.0.1:8554/tutorial-cam` (`archiveEnabled = false`).
    - `sample-cs137-co60.n42`: Synthetic ANSI N42.42 secondary-inspection gamma spectrum (`Cs-137` 662 keV + `Co-60` 1173/1332 keV).
    - `sample-cargo-uff3.uff`: `CC0-1.0` WCO `UFF 3.0.0` tractor-trailer truck NII package (`dfb985c4-eb26-41ab-938b-ad2a1f5966d4`, matching `SCFU8572724` / `SWT03`) containing a `2048×600` Deflate-compressed 16-bit `uint16` Beer-Lambert truck radiograph, 8-bit palettized **HEMD** effective-Z overlay (`Organic`, `Intermediate`, `Inorganic`, `High-Z Shielding`), Bill of Lading Trade Manifest `.pdf`, customs declaration, normalized High-Z bounding-box annotation (`94%`), matching optical camera crops, and embedded `.n42` spectrum (also pre-indexed at `/var/lib/oscar/sandbox-tutorial/uff-share` alongside `RSTU2402941` NORM and `SCFU8S72724` 1-character fuzzy OCR packages).
@@ -147,7 +149,7 @@ Inside `:8444` (and in Read-Only Refresher Mode via **Guided Walkthrough** on `:
 - **Lab 3.2 — 1-Click Bulk Lane Spreadsheet Import (`tutorial-1-lane.csv`):** Download `tutorial-1-lane.csv` and provision lanes in bulk via `Services -> OSCAR Service`.
 - **Lab 3.3 — Users, RBAC View Scoping, QR Enrollment & Offline Passkeys:** Practice creating view-scoped operators, printable QR enrollment invites, and `oscar_fed_...` tokens in `/users`.
 - **Lab 3.4 — Runtime Extensions (`.pmtiles` Maps, Policy Packs & Cargo NII):** Upload `sample-regional-map.pmtiles` and `sample-policy-pack.json` (`Code 101` & `Code 102`) in `/extensions`, and review `/usb-backups`.
-- **Lab 3.5 — Per-Lane Physical RPM Lights & Sound (`WebRelay-Quad`):** Review per-lane ControlByWeb `WebRelay-Quad` operating modes (`AUTO` EML `Code 9999` / `Code 9998` suppression, `PASS_THROUGH` `0,0,0,0` fail-safe, `MUTED`), live `R1–R4` coil telemetry, and timed commissioning pulses on `/health` and `/lane-view`.
+- **Lab 3.5 — Per-Lane Physical RPM Lights & Sound (`WebRelay-Quad`):** Stage `DemoLane01` + loopback ControlByWeb `WebRelay-Quad` (`127.0.0.1:10180`) in 1 click, test `/stateFull.xml` connectivity, review operating modes (`AUTO` EML `Code 9999` / `Code 9998` suppression, `PASS_THROUGH` `0,0,0,0` fail-safe, `MUTED`), inspect live `R1–R4` coil telemetry, and trigger timed commissioning pulses on `/health` and `/lane-view`.
 
 ---
 

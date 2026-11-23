@@ -2,6 +2,8 @@
 **/target/
 **/build/
 **/.gradle/
+**/__pycache__/
+*.py[cod]
 **/.DStore
 **/.DS_Store
 **/.settings

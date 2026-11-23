@@ -2,7 +2,7 @@ apply from: gradle.oshCoreDir + '/common.gradle'
 description = ''
 
 allprojects {
-    version = "3.11.7"
+    version = "3.11.8"
 }
 
 subprojects {
@@ -282,6 +282,8 @@ distributions{
                 include 'oscar-rpm-proxy.sh'
                 include 'oscar-sandbox.ps1'
                 include 'oscar-sandbox.sh'
+                include 'oscar-update.ps1'
+                include 'oscar-update.sh'
                 include 'oscar-setup.ps1'
                 include 'oscar-setup.sh'
                 include 'oscar-storage.ps1'

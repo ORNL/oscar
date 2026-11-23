@@ -17,6 +17,9 @@ case "$command_name" in
     sandbox|training-sandbox)
         exec bash "$script_dir/oscar-sandbox.sh" "$@"
         ;;
+    update|self-update)
+        exec bash "$script_dir/oscar-update.sh" "$@"
+        ;;
     remote-access)
         exec bash "$script_dir/oscar-remote-access.sh" "$@"
         ;;
@@ -1657,6 +1660,7 @@ case "$command_name" in
             fi
             [[ -f "$script_dir/oscar-usb-backup.sh" ]] && bash "$script_dir/oscar-usb-backup.sh" install-agent >/dev/null 2>&1 || true
             [[ -f "$script_dir/oscar-sandbox.sh" ]] && bash "$script_dir/oscar-sandbox.sh" install-agent >/dev/null 2>&1 || true
+            [[ -f "$script_dir/oscar-update.sh" ]] && bash "$script_dir/oscar-update.sh" install-agent >/dev/null 2>&1 || true
         fi
         printf '\nOSCAR setup complete: https://%s:%s/sensorhub/admin\n' "$hostname_value" "$port_value"
         print_client_access_instructions
@@ -1670,6 +1674,7 @@ case "$command_name" in
         finalize_pending_fresh_init
         [[ -f "$script_dir/oscar-usb-backup.sh" ]] && bash "$script_dir/oscar-usb-backup.sh" install-agent >/dev/null 2>&1 || true
         [[ -f "$script_dir/oscar-sandbox.sh" ]] && bash "$script_dir/oscar-sandbox.sh" install-agent >/dev/null 2>&1 || true
+        [[ -f "$script_dir/oscar-update.sh" ]] && bash "$script_dir/oscar-update.sh" install-agent >/dev/null 2>&1 || true
         invoke_remote_access_subcommand sync
         ;;
     stop)
@@ -1687,6 +1692,7 @@ case "$command_name" in
         finalize_pending_fresh_init
         [[ -f "$script_dir/oscar-usb-backup.sh" ]] && bash "$script_dir/oscar-usb-backup.sh" install-agent >/dev/null 2>&1 || true
         [[ -f "$script_dir/oscar-sandbox.sh" ]] && bash "$script_dir/oscar-sandbox.sh" install-agent >/dev/null 2>&1 || true
+        [[ -f "$script_dir/oscar-update.sh" ]] && bash "$script_dir/oscar-update.sh" install-agent >/dev/null 2>&1 || true
         invoke_remote_access_subcommand sync
         ;;
     status)
@@ -1863,6 +1869,7 @@ case "$command_name" in
         finalize_pending_fresh_init
         [[ -f "$script_dir/oscar-usb-backup.sh" ]] && bash "$script_dir/oscar-usb-backup.sh" install-agent >/dev/null 2>&1 || true
         [[ -f "$script_dir/oscar-sandbox.sh" ]] && bash "$script_dir/oscar-sandbox.sh" install-agent >/dev/null 2>&1 || true
+        [[ -f "$script_dir/oscar-update.sh" ]] && bash "$script_dir/oscar-update.sh" install-agent >/dev/null 2>&1 || true
         if [[ -f $script_dir/offline-images.tar ]]; then
             invoke_remote_access_subcommand sync
         else
