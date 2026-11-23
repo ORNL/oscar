@@ -61,7 +61,7 @@ run_menu_command() {
     local command_name=${1:-}
     shift || true
     case "$command_name" in
-        init|verify|start|stop|restart|upgrade|refresh-tls|reset-admin-password|prepare-host|stage-site-network|apply-site-network|rollback-network|discover-devices|backup|backup-verify|backup-prune|restore|archive|usb-backup|continual-backup|sandbox|training-sandbox|support-bundle|remote-access|rpm-proxy|wizard|firstboot-wizard|create-autoinstall-usb)
+        init|verify|start|stop|restart|upgrade|update|self-update|refresh-tls|reset-admin-password|prepare-host|stage-site-network|apply-site-network|rollback-network|discover-devices|backup|backup-verify|backup-prune|restore|archive|usb-backup|continual-backup|sandbox|training-sandbox|support-bundle|remote-access|rpm-proxy|wizard|firstboot-wizard|create-autoinstall-usb)
             if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
                 bash "$setup_script" "$command_name" "$@"
             else
@@ -109,6 +109,8 @@ Enter a command and any options. Examples:
   check
   verify
   upgrade
+  update check
+  update apply
   backup
   backup-verify BACKUP_ID
   restore --backup BACKUP_ID --confirm BACKUP_ID

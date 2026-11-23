@@ -36,6 +36,8 @@ if /I "%~1"=="usb-backup" goto usb_backup
 if /I "%~1"=="continual-backup" goto usb_backup
 if /I "%~1"=="sandbox" goto training_sandbox
 if /I "%~1"=="training-sandbox" goto training_sandbox
+if /I "%~1"=="update" goto system_update
+if /I "%~1"=="self-update" goto system_update
 if /I "%~1"=="create-autoinstall-usb" goto autoinstall_usb
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%OSCAR_SETUP%" %*
 exit /b %errorlevel%
@@ -77,6 +79,11 @@ shift
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0oscar-sandbox.ps1" %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %errorlevel%
 
+:system_update
+shift
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0oscar-update.ps1" %1 %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %errorlevel%
+
 :menu
 title OSCAR Administration
 cd /d "%~dp0"
@@ -105,6 +112,8 @@ echo   host-check
 echo   prepare-host
 echo   verify
 echo   upgrade
+echo   update check
+echo   update apply
 echo   backup
 echo   backup-verify -BackupId BACKUP_ID
 echo   restore -BackupId BACKUP_ID -Confirm BACKUP_ID

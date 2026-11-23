@@ -24,7 +24,7 @@ Confirm the running gateway reports `nginx/1.30.7` (or a newer patched version),
 - Windows 11 x86-64 with Docker Desktop and WSL 2
 - Ubuntu Server 24.04 x86-64 with Docker Engine and the Compose plugin
 
-The 3.11.7 storage profile fails closed on macOS because Docker Desktop for Mac cannot satisfy this
+The 3.11.8 storage profile fails closed on macOS because Docker Desktop for Mac cannot satisfy this
 release's tested bind-root ownership and recovery-media isolation contract. Use Ubuntu or Windows
 for initialization and operation; a Mac may still be used for source inspection or non-deployment
 development.
@@ -445,7 +445,7 @@ Docker Compose mounts secrets read-only. On Ubuntu, the setup CLI makes `secrets
 
 ### Authentication, offline Passkeys, persistent sessions, SSO & remote-access tunnel
 
-OSCAR 3.11.7 manages operator and service identities without requiring command-line edits or external internet access:
+OSCAR 3.11.8 manages operator and service identities without requiring command-line edits or external internet access:
 
 1. **Persistent "Stay Signed In Until Logout" Sessions:** Fresh configurations default `idleTimeoutSeconds = 0`, `absoluteTimeoutSeconds = 0`, `persistSessions = true`, and `allowKeepSignedIn = true` (`persistentCookieMaxAgeSeconds = 31536000`). Only SHA-256 digests of active `OSCAR_SESSION` cookies are stored in `/var/lib/oscar/.moduledata/oscar-identity.json` (`0600`), allowing dedicated gatehouse workstations to stay signed in across browser restarts, host reboots, and `oscar upgrade` until the user clicks **Log Out** or an administrator disables/revokes the account. Shared shift kiosks can switch to timed sessions (for example, `30m` idle / `8h` max) in **Users & Access -> Sign-In & SSO Policy**.
 2. **Non-IT Users & Access Console (`/users` in OSCAR Viewer):**
@@ -514,7 +514,7 @@ Organizations that operate multiple firewalled or NATed OSCAR sites and want a s
    ```sh
    ./oscar-hub.sh add-site north-gate --display-name "North Gate Portal" --with-trusted-headers
    ```
-   Copy `state/tokens/north-gate.token` securely to that OSCAR 3.11.7 host and run OSCAR's built-in remote-access helper (then delete the temporary token file):
+   Copy `state/tokens/north-gate.token` securely to that OSCAR 3.11.8 host and run OSCAR's built-in remote-access helper (then delete the temporary token file):
    ```sh
    # Ubuntu Server 24.04
    sudo bash oscar-remote-access.sh configure \
@@ -537,7 +537,7 @@ Organizations that operate multiple firewalled or NATed OSCAR sites and want a s
    - **Coexistence with Local Offline Accounts & Node Data Federation:** Central `oidc`/`tunnel` accounts never overwrite local `authSource = "local"` accounts, so site-local Passkeys and PBKDF2 passwords continue working on the local LAN during WAN outages. For server-to-server alarm/video aggregation onto a Central OSCAR Viewer, mint a dedicated `oscar_fed_...` **Federation Service Token** on each site and add `north-gate.hub.example.org` (`HTTPS`, port `443`) on Central's **Servers** page so disabling a human employee never interrupts site-to-central telemetry.
    - **Zero-Trust Remote Practice Sandbox (`https://<site>-sandbox.<hub>`):** `oscar-hub.sh add-site` and `oscar.sh remote-access` automatically register a companion **`<site>-sandbox.<hub>`** Web service over the **same single outbound `oscar-tunnel` connector token** (`octelium connect --serve-all` -> loopback `127.0.0.1:18444` -> `https://host.docker.internal:8444`). Remote users click **Launch Practice Sandbox** inside **Guided Walkthrough** or **Help (`?`)** on `https://<site>.<hub>` and open **`https://<site>-sandbox.<hub>`** over standard HTTPS `:443` with valid **Let's Encrypt TLS**, **shared parent-domain WebAuthn Passkeys (`rpId = <hub>`)**, Authentik OIDC / Verified Tunnel SSO, and `/sensorhub/admin` split-pane training enabled inside `<site>-sandbox.<hub>` (while `/sensorhub/admin` remains blocked on operational `<site>.<hub>`), alongside direct `https://<host>:8444` access on the local LAN.
 
-The application configuration is copied into the `oscar_state` volume on first startup. Runtime configuration saves update only that persistent copy. Application libraries and viewer assets remain read-only in the image. PostgreSQL data is stored in the `postgres_data` volume. OSCAR 3.11.7 uses a long-lived host bind for the primary Parquet cold tier (`OSCAR_ARCHIVE_DIR`) so multi-year archives can reside on a dedicated host volume, survive `docker compose down -v` or Docker Desktop resets, and undergo direct host-side ACL, `.oscar-storage-root`, and offline backup verification; on Windows WSL 2 `9p`/`drvfs` mounts, OSCAR automatically caches SHA-256-verified Parquet generations inside a disk-proportional (`2–8 GiB`, excluded from backups) native `ext4` cache (`/var/lib/oscar/.cache/oscar-9p-parquet-cache`) so repeat historical queries avoid cross-VM `9p` read amplification without giving up host-bind durability. Keep `OSCAR_JAVA_OPTS` aligned with `.env.example` rather than forcing oversized `ForkJoinPool.common.parallelism` values on 4–8 core hosts. PostgreSQL runs with `archive_mode=off`, no external archive command, and no WAL bind. An existing `OSCAR_WAL_ARCHIVE_DIR` is preserved only to avoid deleting legacy data; current schema-v1/v2 restore does not use it. Fresh deployments set `OSCAR_BACKUP_MODE=disabled`; after explicit `single` opt-in, `OSCAR_BACKUP_DIR` is an operator-selected safe absolute host path that does not overlap the release or archive roots and is never mounted into a long-running service. A separate physical drive is recommended for failure isolation but is not required. A Docker named-volume backup or Parquet copy alone is incomplete.
+The application configuration is copied into the `oscar_state` volume on first startup. Runtime configuration saves update only that persistent copy. Application libraries and viewer assets remain read-only in the image. PostgreSQL data is stored in the `postgres_data` volume. OSCAR 3.11.8 uses a long-lived host bind for the primary Parquet cold tier (`OSCAR_ARCHIVE_DIR`) so multi-year archives can reside on a dedicated host volume, survive `docker compose down -v` or Docker Desktop resets, and undergo direct host-side ACL, `.oscar-storage-root`, and offline backup verification; on Windows WSL 2 `9p`/`drvfs` mounts, OSCAR automatically caches SHA-256-verified Parquet generations inside a disk-proportional (`2–8 GiB`, excluded from backups) native `ext4` cache (`/var/lib/oscar/.cache/oscar-9p-parquet-cache`) so repeat historical queries avoid cross-VM `9p` read amplification without giving up host-bind durability. Keep `OSCAR_JAVA_OPTS` aligned with `.env.example` rather than forcing oversized `ForkJoinPool.common.parallelism` values on 4–8 core hosts. PostgreSQL runs with `archive_mode=off`, no external archive command, and no WAL bind. An existing `OSCAR_WAL_ARCHIVE_DIR` is preserved only to avoid deleting legacy data; current schema-v1/v2 restore does not use it. Fresh deployments set `OSCAR_BACKUP_MODE=disabled`; after explicit `single` opt-in, `OSCAR_BACKUP_DIR` is an operator-selected safe absolute host path that does not overlap the release or archive roots and is never mounted into a long-running service. A separate physical drive is recommended for failure isolation but is not required. A Docker named-volume backup or Parquet copy alone is incomplete.
 
 The OSCAR service keeps the general-purpose `/tmp` tmpfs `noexec`. Embedded Java native libraries,
 including DuckDB JDBC and JavaCPP/FFmpeg, are extracted instead to a separate 256 MiB tmpfs at
@@ -635,7 +635,30 @@ Every reported privilege flag for `oscar_app` must be false. A host scan must sh
 
 ## Upgrade
 
-For a 3.11.7-or-newer same-storage-profile upgrade, create and verify a coordinated snapshot first when the site has explicitly selected `OSCAR_BACKUP_MODE=single`. A disabled site must use its separately approved protection procedure or opt in through `upgrade` before invoking backup or restore. A pre-3.11.0 release does not have this CLI; use that release's supported backup/export procedure and retain the old system read-only until the separately qualified migration is complete. Extract the new release into a clean sibling directory; do not overlay it on the previous release because removed files would otherwise remain in the image build context. Copy only `.env`, `secrets/`, and `tls/` from the existing deployment into the clean release directory. If the deployment has a `.oscar-volume-adoption` receipt, copy that file too. Preserve `OSCAR_BACKUP_MODE`, the absolute active `OSCAR_ARCHIVE_DIR` and `OSCAR_BACKUP_DIR` values, and any existing absolute `OSCAR_WAL_ARCHIVE_DIR` compatibility binding; setup must never delete legacy roots or data while changing modes. Before starting services, use `docker compose config` to confirm the archive bind and the absence of a PostgreSQL WAL bind, then inspect the single mode and backup-root entries in `.env`. Compose attaches the exact external volumes `oscar_oscar_state` and `oscar_postgres_data`; setup owns their creation and validates deployment identity. Then run:
+### Zero-Login GUI & Single-Command Host System Update (`3.11.8+`)
+
+Administrators on connected or air-gapped `3.11.8+` deployments can upgrade directly from the browser console without any GitHub account, OAuth sign-in, or Personal Access Token:
+
+1. Sign in to OSCAR Viewer as an **Administrator** and open **Users & Access -> System Update** (`/users?tab=update`), or open **Help (`?`) -> Open System Update**.
+2. **Connected sites:** Click **Check GitHub for Updates** (resolves `https://github.com/ORNL/oscar/releases/latest` and `.zip.sha256` anonymously with zero REST API rate-limit quota), review the release summary and SHA-256 digest, optionally enable **Create an encrypted backup snapshot before upgrading**, and click **Download & Install**.
+3. **Air-gapped / offline sites:** Under **Air-Gapped / Offline Release `.zip` Upload**, select `oscar-<version>.zip` (or `oscar-<version>-ubuntu-x86_64-offline-full.zip` / `oscar-<version>-windows-x86_64-offline-images.zip`) and click **Upload & Install Bundle**.
+4. Equivalent zero-login host CLI commands (`oscar-update.sh` / `oscar-update.ps1`, registered automatically as a detached host agent during `init`, `start`, `restart`, and `upgrade`, or disabled via `OSCAR_GUI_UPDATE=disabled` in `.env`):
+
+```sh
+bash oscar.sh update check
+sudo bash oscar.sh update apply
+```
+
+```powershell
+.\oscar.bat update check
+.\oscar.bat update apply
+```
+
+If container startup or HTTPS `/healthz` readiness fails during cutover, the host update agent automatically rolls back to the untouched previous release directory and restores service.
+
+### Manual Clean-Directory Upgrade
+
+For a 3.11.8-or-newer same-storage-profile upgrade, create and verify a coordinated snapshot first when the site has explicitly selected `OSCAR_BACKUP_MODE=single`. A disabled site must use its separately approved protection procedure or opt in through `upgrade` before invoking backup or restore. A pre-3.11.0 release does not have this CLI; use that release's supported backup/export procedure and retain the old system read-only until the separately qualified migration is complete. Extract the new release into a clean sibling directory; do not overlay it on the previous release because removed files would otherwise remain in the image build context. Copy only `.env`, `secrets/`, and `tls/` from the existing deployment into the clean release directory. If the deployment has a `.oscar-volume-adoption` receipt, copy that file too. Preserve `OSCAR_BACKUP_MODE`, the absolute active `OSCAR_ARCHIVE_DIR` and `OSCAR_BACKUP_DIR` values, and any existing absolute `OSCAR_WAL_ARCHIVE_DIR` compatibility binding; setup must never delete legacy roots or data while changing modes. Before starting services, use `docker compose config` to confirm the archive bind and the absence of a PostgreSQL WAL bind, then inspect the single mode and backup-root entries in `.env`. Compose attaches the exact external volumes `oscar_oscar_state` and `oscar_postgres_data`; setup owns their creation and validates deployment identity. Then run:
 
 ```powershell
 .\oscar.bat upgrade
@@ -645,7 +668,7 @@ For a 3.11.7-or-newer same-storage-profile upgrade, create and verify a coordina
 sudo bash oscar.sh upgrade
 ```
 
-The command preserves existing settings and data while normalizing the required 3.11.7 managed
+The command preserves existing settings and data while normalizing the required 3.11.8 managed
 bindings: deployment identity, exact backup mode, absolute external storage roots, and the canonical backup-key
 binding. A legacy deployment may also receive a generated backup key plus explicit volume/root
 adoption metadata when the corresponding adoption options are supplied. After those guarded
@@ -697,11 +720,11 @@ before claiming any path. Backups exclude these host-local markers, and restore 
 revalidates the target markers instead of accepting identities from backup media. A retired
 legacy-WAL tree is neither claimed nor mutated by current setup.
 
-The OSCAR application libraries and exported Viewer are part of the `oscar:<version>` image. A restart does not rebuild that image. To test OSCAR 3.11.7 from a connected release artifact, prepare the clean release directory as described above. Use `init` and fresh state for the complete 3.11.7 storage profile; use `upgrade` only when intentionally retaining the existing storage/configuration profile. Confirm that `docker compose images` reports `oscar:3.11.7` before accepting the test result.
+The OSCAR application libraries and exported Viewer are part of the `oscar:<version>` image. A restart does not rebuild that image. To test OSCAR 3.11.8 from a connected release artifact, prepare the clean release directory as described above. Use `init` and fresh state for the complete 3.11.8 storage profile; use `upgrade` only when intentionally retaining the existing storage/configuration profile. Confirm that `docker compose images` reports `oscar:3.11.8` before accepting the test result.
 
-Release image tags are immutable once published. Connected `init` and `upgrade` rebuild both local image contexts (`oscar:3.11.7` and `oscar-postgis:3.11.7`) before recreating services, even when those tags already exist, so a pre-release same-tag iteration cannot silently retain an older application or restore helper. On Ubuntu this is equivalent to `OSCAR_VERSION=3.11.7 docker compose build oscar postgres`. The Windows setup performs two bounded `docker build` operations, including `docker build --platform linux/amd64 --build-arg OSCAR_VERSION=3.11.7 --tag oscar-postgis:3.11.7 --file postgis/Dockerfile postgis`; this avoids Docker Compose 5.6's in-tree Dockerfile entitlement regression without granting wildcard filesystem access. The regression platform check requires each packaged helper to match its deployed image byte-for-byte. Never replace a published `oscar:3.11.7` image with different contents.
+Release image tags are immutable once published. Connected `init` and `upgrade` rebuild both local image contexts (`oscar:3.11.8` and `oscar-postgis:3.11.8`) before recreating services, even when those tags already exist, so a pre-release same-tag iteration cannot silently retain an older application or restore helper. On Ubuntu this is equivalent to `OSCAR_VERSION=3.11.8 docker compose build oscar postgres`. The Windows setup performs two bounded `docker build` operations, including `docker build --platform linux/amd64 --build-arg OSCAR_VERSION=3.11.8 --tag oscar-postgis:3.11.8 --file postgis/Dockerfile postgis`; this avoids Docker Compose 5.6's in-tree Dockerfile entitlement regression without granting wildcard filesystem access. The regression platform check requires each packaged helper to match its deployed image byte-for-byte. Never replace a published `oscar:3.11.8` image with different contents.
 
-The default configuration for a new installation is labeled `OSCAR 3.11.7`. An upgrade preserves `/var/lib/oscar/config.json`, including a customized deployment name, so the Admin UI may continue to display the prior or site-specific label. Do not overwrite that value merely to display a version number. Use `OSCAR_VERSION` in `.env` and `docker compose images` to verify the running release. The OSCAR image also stamps that value into the OCI `org.opencontainers.image.version` label; inspect it on PowerShell or a POSIX shell with `docker image inspect oscar:3.11.7 --format '{{json .Config.Labels}}'` and require the label value `3.11.7` before accepting the image.
+The default configuration for a new installation is labeled `OSCAR 3.11.8`. An upgrade preserves `/var/lib/oscar/config.json`, including a customized deployment name, so the Admin UI may continue to display the prior or site-specific label. Do not overwrite that value merely to display a version number. Use `OSCAR_VERSION` in `.env` and `docker compose images` to verify the running release. The OSCAR image also stamps that value into the OCI `org.opencontainers.image.version` label; inspect it on PowerShell or a POSIX shell with `docker image inspect oscar:3.11.8 --format '{{json .Config.Labels}}'` and require the label value `3.11.8` before accepting the image.
 
 On Windows, setup and storage administration stream every bounded shell body and direct `psql`
 statement into the one-shot container over UTF-8 standard input. The direct `docker run` adapter owns
@@ -713,11 +736,11 @@ quoted values exactly under Windows PowerShell 5.1 native argument handling. A f
 check leaves the receipt in `INITIALIZING`; correct the reported problem and rerun `oscar.bat init`
 from the same release and protected runtime state rather than deleting the volumes.
 
-### 3.11.7 storage migration boundary
+### 3.11.8 storage migration boundary
 
-OSCAR 3.11.7 changes the default database module, write path, daily-file source capture, media-retention format, and PostgreSQL initialization. `upgrade` deliberately does not overwrite the saved module configuration or recreate the PostgreSQL cluster, so an upgraded pre-3.11.0 system does not automatically gain the complete 3.11.7 storage profile or data checksums.
+OSCAR 3.11.8 changes the default database module, write path, daily-file source capture, media-retention format, and PostgreSQL initialization. `upgrade` deliberately does not overwrite the saved module configuration or recreate the PostgreSQL cluster, so an upgraded pre-3.11.0 system does not automatically gain the complete 3.11.8 storage profile or data checksums.
 
-Initialize the current test systems and new production systems with a fresh 3.11.7 database/configuration. If existing production history must be retained, keep the old system read-only after a verified backup and use a separately designed and tested migration. Do not delete production volumes merely to make the new module start. Follow the parity, restore-drill, and bounded hot-deletion validation in [`../../docs/STORAGE_OPERATIONS.md`](../../docs/STORAGE_OPERATIONS.md).
+Initialize the current test systems and new production systems with a fresh 3.11.8 database/configuration. If existing production history must be retained, keep the old system read-only after a verified backup and use a separately designed and tested migration. Do not delete production volumes merely to make the new module start. Follow the parity, restore-drill, and bounded hot-deletion validation in [`../../docs/STORAGE_OPERATIONS.md`](../../docs/STORAGE_OPERATIONS.md).
 
 The OSCAR container keeps `/var/lib/oscar/config.json` readable and writable only by the OSCAR runtime user (`0600`) and repairs older read-only copies during startup. After importing a lane CSV, wait for every lane to appear under **Sensors**, select the global **Save** action, restart OSCAR, and confirm that the same lanes reload. Historical systems in PostgreSQL are not proof that runtime sensor modules were saved; an empty **Sensors** tree after restart indicates that the module configuration was not persisted.
 

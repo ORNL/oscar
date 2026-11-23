@@ -119,6 +119,7 @@ if [ ! -f "${CONFIG_FILE}" ]; then
     fi
 
     cp "${DEFAULT_CONFIG}" "${CONFIG_FILE}"
+    chmod 0600 "${CONFIG_FILE}"
     sed -i \
         -e 's|"url": "localhost:5432"|"url": "postgres:5432"|' \
         -e 's|"passwordFile": ""|"passwordFile": "/run/secrets/oscar_db_password"|' \
@@ -138,6 +139,7 @@ if [ ! -f "${CONFIG_FILE}" ]; then
 fi
 
 if [ "${OSCAR_SANDBOX_MODE:-false}" = "true" ]; then
+    chmod 0600 "${CONFIG_FILE}" || true
     if [ -f "${STATE_DIR}/.moduledata/sandbox-auth-seed.json" ]; then
         java -classpath '/opt/oscar/lib/*' \
             com.botts.impl.service.oscar.sandbox.SandboxAuthConfigSeeder \

@@ -82,6 +82,7 @@ for (const [relative, expected] of Object.entries(backupDisabledMessages)) {
 
 const expected = [
     'compose.sandbox.yaml', 'oscar-sandbox.sh', 'oscar-sandbox.ps1',
+    'oscar-update.sh', 'oscar-update.ps1',
     'compose.rpm-proxy.yaml', 'oscar-rpm-proxy.sh', 'oscar-rpm-proxy.ps1',
     'docker/rpm-proxy/Dockerfile', 'docker/rpm-proxy/oscar_rpm_proxy/main.py',
     'oscar-storage.sh', 'oscar-storage.ps1', 'oscar-usb-backup.sh', 'oscar-usb-backup.ps1', 'oscar-usb-backup-engine.sh',

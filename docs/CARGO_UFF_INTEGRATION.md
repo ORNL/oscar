@@ -1,6 +1,6 @@
 # Cargo Non-Intrusive Inspection (WCO UFF 2.0 & 3.0) Integration Guide
 
-OSCAR 3.11.7 integrates natively with commercial Cargo Non-Intrusive Inspection (NII) X-ray portals and mobile/rail scanners that publish **World Customs Organization (WCO) Unified File Format (`UFF 2.0` and `UFF 3.0.0`)** `.uff` inspection packages.
+OSCAR 3.11.8 integrates natively with commercial Cargo Non-Intrusive Inspection (NII) X-ray portals and mobile/rail scanners that publish **World Customs Organization (WCO) Unified File Format (`UFF 2.0` and `UFF 3.0.0`)** `.uff` inspection packages.
 
 > **Zero-Clutter Shipped Default:** Most radiation portal deployments operate standalone RPMs and cameras without an NII X-ray scanner on day one. Cargo UFF share integration ships **disabled by default** (`enabled = false`). When disabled, OSCAR renders **zero extra buttons, columns, or banners** across the Dashboard, Event Log, Lane View, Navbar, and Event Details, and runs **zero background threads or network polls**. Operators at any site can still inspect individual `.uff` packages on demand at any time through the existing **Upload Files** button in **Secondary Inspection**.
 
@@ -8,7 +8,7 @@ OSCAR 3.11.7 integrates natively with commercial Cargo Non-Intrusive Inspection 
 
 ## 1. Supported Standards & Commercial Share Topologies
 
-OSCAR 3.11.7 parses both major WCO Unified File Format generations inside a single unified model without external native binaries:
+OSCAR 3.11.8 parses both major WCO Unified File Format generations inside a single unified model without external native binaries:
 
 | Capability | WCO `UFF 2.0` | WCO `UFF 3.0.0` |
 | --- | --- | --- |
