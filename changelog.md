@@ -15,6 +15,8 @@ OSCAR `3.11.10` (Amber) is the current general-availability release on the `3.11
   - Updates `Assert-ProtectedAdministratorAcl` in `oscar-storage.ps1` so `OSCAR-UpdateAgent` running as `NT AUTHORITY\SYSTEM` (`S-1-5-18`) recognizes storage directories owned by local `Administrators` (`S-1-5-32-544`) group members who initialized the host, and preserves terminal `COMPLETED` / `ROLLED_BACK` / `FAILED` status across `install-agent` refreshes.
 - **Unified `14+` Character Minimum Password Policy (`OscarIdentityStore`, `BasicSessionAuthenticator`, `UsersAccessManager.tsx`, `oscar-setup.{sh,ps1}`):**
   - Standardizes local PBKDF2 password validation, `/users` forms, `/login/enroll` & `/login/password-change` pages, `reset-admin-password` host CLIs, and all four localized operator manuals (`en`, `es`, `fr`, `el`) to `14+` characters to match `oscar init` without affecting existing accounts or 19-character temporary onboarding passwords.
+- **Immediate Operational View (`Scoped View`) Refresh on Training Sandbox Track Transitions (`Node.ts`, `DataSourceContext.tsx`, `Navbar.tsx`, `TrainingCoachDock.tsx`, `TrainingSandboxManager.java`):**
+  - Invalidates and re-fetches the `OperationalViewCatalog` whenever sandbox tracks switch (for example, **Operator Track → Supervisor Track** adding `south-gate` on `DemoLane02`, or **Administrator Track** lane edits) or when the Scoped View dropdown opens, surfacing `south-gate` immediately without requiring a browser refresh.
 
 ### Release artifacts — which file to download (`v3.11.10`)
 
