@@ -204,6 +204,7 @@ try {
         locale: 'en-US',
     });
     let sawImmutableNextBundle = false;
+    let obs5xxCount = 0;
     const page = await context.newPage();
     page.on('response', (res) => {
         if (res.url().includes('/_next/static/')) {
@@ -211,6 +212,9 @@ try {
             if (cc.includes('private') && cc.includes('immutable')) {
                 sawImmutableNextBundle = true;
             }
+        }
+        if (res.url().includes('/sensorhub/api/observations') && res.status() >= 500) {
+            obs5xxCount += 1;
         }
     });
 
@@ -240,6 +244,22 @@ try {
     assert.ok(scopedRes && scopedRes.status() >= 200 && scopedRes.status() < 400, `Workstation view redirect failed with HTTP ${scopedRes?.status()}`);
     assert.ok(page.url().includes('?view=east-gate'), `Expected workstation URL to canonicalize to ?view=east-gate, got ${page.url()}`);
     assert.ok(sawImmutableNextBundle, 'Expected /_next/static/ assets to serve private immutable Cache-Control');
+
+    // 7b. Verify /event-log Priority and Newest-first sort controls & ConSys alarm/offset queries produce 0 HTTP 5xx
+    await page.goto('https://oscar.local/event-log', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    const newestToggle = page.getByTestId('toolbar-sort-time-only').first();
+    await newestToggle.waitFor({ state: 'visible', timeout: 15000 });
+    assert.equal(await newestToggle.getAttribute('aria-pressed'), 'false');
+    await newestToggle.click();
+    assert.equal(await newestToggle.getAttribute('aria-pressed'), 'true');
+    const cqlOffsetProbe = await context.request.get(
+        'https://oscar.local/sensorhub/api/observations?filter=' +
+            encodeURIComponent('gammaAlarm=true AND neutronAlarm=false') +
+            '&order=desc&offset=45&limit=15',
+        { headers: { Accept: 'application/om+json' } },
+    );
+    assert.equal(cqlOffsetProbe.status(), 200, `Expected 200 on offset CQL observation query, got ${cqlOffsetProbe.status()}`);
+    assert.equal(obs5xxCount, 0, `Expected 0 HTTP 5xx responses on /sensorhub/api/observations*, got ${obs5xxCount}`);
 
     const adminRes = await page.goto('https://oscar.local/sensorhub/admin', { waitUntil: 'domcontentloaded', timeout: 30000 });
     assert.ok(adminRes && adminRes.status() >= 200 && adminRes.status() < 400, `SensorHub Admin returned HTTP ${adminRes?.status()}`);
