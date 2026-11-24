@@ -1,6 +1,6 @@
 # EML (Enhanced Machine Learning) Runtime Plugin & Automated Adjudication Guide
 
-OSCAR 3.11.12 supports optional runtime integration with the external **Enhanced Machine Learning (EML)** VM-250 analyzer (such as `EML-VM250-v1.0.2`) for Rapiscan radiation portal monitor (RPM) lanes.
+OSCAR 3.11.13 supports optional runtime integration with the external **Enhanced Machine Learning (EML)** VM-250 analyzer (such as `EML-VM250-v1.0.2`) for Rapiscan radiation portal monitor (RPM) lanes.
 
 Because EML is separately licensed and maintained outside the open-source OSCAR repositories, **OSCAR never bundles, commits, or distributes EML JARs, models, or XML configuration files** in source repositories, Docker images, or GitHub Release assets. Instead, site administrators obtain an authorized EML distribution separately, upload the EML plugin archive once in SensorHub Admin (**Services -> OSCAR Service**), and enable EML per Rapiscan lane.
 
@@ -150,7 +150,7 @@ Each automated `Code 9999` adjudication writes a human-readable summary line fol
 
 ## 6. Developer API for Custom Alarm Assessment Algorithms (`EmlAlarmAssessmentAlgorithm`)
 
-In addition to supporting external LLNL ERNIE VM-250 bundles (`config/vm250Analysis.xml` + `gov.llnl.ernie.*`), OSCAR 3.11.12 provides a clean, first-class plugin API so developers can create custom alarm assessment algorithms and upload them through the exact same **Services -> OSCAR Service -> EML Plugin Path** capability (`.jar`, `.zip`, `.tar.gz`, `.tgz`, or `.tar`).
+In addition to supporting external LLNL ERNIE VM-250 bundles (`config/vm250Analysis.xml` + `gov.llnl.ernie.*`), OSCAR 3.11.13 provides a clean, first-class plugin API so developers can create custom alarm assessment algorithms and upload them through the exact same **Services -> OSCAR Service -> EML Plugin Path** capability (`.jar`, `.zip`, `.tar.gz`, `.tgz`, or `.tar`).
 
 Custom alarm assessment plugins run inside an isolated `URLClassLoader`, receive the per-lane calibration parameters and ordered Rapiscan daily-file occupancy lines on every `GX` (Gamma Exit) event, publish their output on the `emlAnalysis` and `emlContextual` datastreams (`PARQUET_PRIMARY`), and automatically trigger `t = 0` Dashboard suppression and **`Code 9999: EML Non-Threat`** adjudication whenever they return `result = "RELEASE"` with `fallback = false`.
 
