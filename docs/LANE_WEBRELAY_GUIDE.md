@@ -1,6 +1,6 @@
-# OSCAR 3.11.11 Per-Lane Physical RPM Lights & Sound Control (`WebRelay-Quad`)
+# OSCAR 3.11.12 Per-Lane Physical RPM Lights & Sound Control (`WebRelay-Quad`)
 
-OSCAR 3.11.11 adds optional per-lane physical radiation portal monitor (RPM) lights and sounder control over standard Ethernet using **ControlByWeb® WebRelay-Quad™** (`X-WR-4R3-E` PoE / non-PoE and `X-410`) network relay modules.
+OSCAR 3.11.12 adds optional per-lane physical radiation portal monitor (RPM) lights and sounder control over standard Ethernet using **ControlByWeb® WebRelay-Quad™** (`X-WR-4R3-E` PoE / non-PoE and `X-410`) network relay modules.
 
 ---
 
@@ -8,7 +8,7 @@ OSCAR 3.11.11 adds optional per-lane physical radiation portal monitor (RPM) lig
 
 At high-throughput ports of entry, benign Naturally Occurring Radioactive Material (`NORM`) cargo and stationary vehicles holding a lane frequently trigger raw RPM gamma alarms. Without software relay gatekeeping, every raw gamma trigger activates the lane's physical red beacon and audible sounder — creating gatehouse alarm fatigue while operators still need immediate physical visual/audible signaling for real un-suppressed Gamma and Neutron threats.
 
-OSCAR 3.11.11 solves this per lane with **zero clutter when unconfigured** (`enabled = false` by default: `0` background threads, `0` open sockets, and `0` extra UI chips on disabled lanes) and **hardware fail-safe pass-through**:
+OSCAR 3.11.12 solves this per lane with **zero clutter when unconfigured** (`enabled = false` by default: `0` background threads, `0` open sockets, and `0` extra UI chips on disabled lanes) and **hardware fail-safe pass-through**:
 
 | Logical Relay Channel | Function in `AUTO` Gatekeeping Mode | State When De-Energized (`0`) | State When Energized (`1`) |
 | :--- | :--- | :--- | :--- |

@@ -1,4 +1,4 @@
-# OSCAR 3.11.11 data lifecycle and retention policy
+# OSCAR 3.11.12 data lifecycle and retention policy
 
 This document defines when OSCAR data changes form, when it may be removed, and which safety gates
 apply. It complements the [storage architecture](STORAGE_ARCHITECTURE.md) and the operational
@@ -45,7 +45,7 @@ workflows, adjudications, reports, archive control state, and observations not s
 primary cold tier. For allowlisted immutable outputs, a successful commit to a LOGGED PostgreSQL
 child is the durable staging boundary; OSCAR does not acknowledge those observations through a direct-to-Parquet path.
 Parquet is the primary cold tier, not a backup, and only output names listed in
-`archive.outputNames` are eligible for cold tiering. The 3.11.11 default list is:
+`archive.outputNames` are eligible for cold tiering. The 3.11.12 default list is:
 
 ```text
 gammaCounts
@@ -173,7 +173,7 @@ its rows in ID order, loads the exact hot IDs in bounded batches, and compares c
 digests. The receipt records expected/actual rows and success or failure. A failed receipt leaves
 all hot data in place.
 
-The shipped 3.11.11 profile sets `deleteHotAfterArchive=true`. In `PARQUET_PRIMARY`, this means
+The shipped 3.11.12 profile sets `deleteHotAfterArchive=true`. In `PARQUET_PRIMARY`, this means
 relation-level retirement rather than row-wise deletion or a rollback-grace overlap. Before a child
 can retire, every row must have an `ACTIVE` or `SEALED` exact owner with a successful
 `HOT_COLD_PARITY` receipt, and the worker re-hashes each authoritative Parquet object. Under the
@@ -296,7 +296,7 @@ recovered journal; a conflicting immutable CSV or manifest is not overwritten.
   retain one value.
 - `NONE` disables compatibility observations but does not disable the durable journal.
 
-The 3.11.11 standard profile uses `LATEST`. The lane system consumes each live `dailyFile` event to
+The 3.11.12 standard profile uses `LATEST`. The lane system consumes each live `dailyFile` event to
 derive occupancy transitions, so `NONE` would disable a required operational input. `LATEST` keeps
 that live stream and registered datastream. The compatibility table contains the current unsealed
 local day plus any manifest-blocked backlog; the journal and immutable daily CSV are the
