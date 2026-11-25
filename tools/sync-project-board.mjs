@@ -45,6 +45,7 @@ const BOARD_ITEMS = [
     // Planned / Backlog (v3.12.0 Scale Architecture, Field Cutover & Polish)
     { repo: 'ORNL/oscar', kind: 'issue', number: 84, targetColumn: 'Todo' },
     { repo: 'ORNL/osh-addons', kind: 'issue', number: 21, targetColumn: 'Todo' },
+    { repo: 'ORNL/osh-oakridge-modules', kind: 'issue', number: 63, targetColumn: 'Todo' },
     { repo: 'ORNL/oscar', kind: 'issue', number: 77, targetColumn: 'Todo' },
     { repo: 'ORNL/oscar', kind: 'issue', number: 75, targetColumn: 'Todo' },
     { repo: 'ORNL/oscar', kind: 'issue', number: 74, targetColumn: 'Todo' },

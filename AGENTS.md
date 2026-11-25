@@ -37,7 +37,7 @@ Workspace skills for AI agents are also checked into [`.agents/skills/`](.agents
   - [Milestone `#2` — Planned `v3.12.0`: Mobile Detector System (RS-350 & Kromek D5)](https://github.com/ORNL/oscar/milestone/2) ([`#80`](https://github.com/ORNL/oscar/issues/80))
   - [Milestone `#3` — Planned `v3.12.0`: Opt-In Custom Widget Dashboards (`/dashboards`)](https://github.com/ORNL/oscar/milestone/3) ([`#81`](https://github.com/ORNL/oscar/issues/81))
   - [Milestone `#4` — Planned `v3.12.0`: Field Cutover & Operational Polish](https://github.com/ORNL/oscar/milestone/4) ([`#74`](https://github.com/ORNL/oscar/issues/74), [`#75`](https://github.com/ORNL/oscar/issues/75), [`#77`](https://github.com/ORNL/oscar/issues/77))
-  - [Milestone `#5` — Planned `v3.12.0`: Multi-Year Cold Parquet CQL Count & Query Scale](https://github.com/ORNL/oscar/milestone/5) ([`#84`](https://github.com/ORNL/oscar/issues/84), [`ORNL/osh-addons#21`](https://github.com/ORNL/osh-addons/issues/21))
+  - [Milestone `#5` — Planned `v3.12.0`: Multi-Year Cold Parquet CQL Count & Query Scale](https://github.com/ORNL/oscar/milestone/5) ([`#84`](https://github.com/ORNL/oscar/issues/84), [`ORNL/osh-addons#21`](https://github.com/ORNL/osh-addons/issues/21), [`ORNL/osh-oakridge-modules#63`](https://github.com/ORNL/osh-oakridge-modules/issues/63))
 - **GitHub Projects v2 Kanban Sync Tool:** [`tools/sync-project-board.mjs`](tools/sync-project-board.mjs) (`node tools/sync-project-board.mjs`)
 
 ### 2.2 Branch-Maintainer (`Write`) Workflow & Admin-Gated Releases
