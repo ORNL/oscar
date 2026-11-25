@@ -21,8 +21,9 @@ Use this skill before proposing, implementing, or reviewing changes in [`ORNL/os
    - Never persist unbounded `>= 1 Hz` telemetry (`gammaCounts`, `neutronCounts`, `LiveDriverLocationOutput`, RS-350/D5 `ForegroundOutput` / `BackgroundOutput`, `connectionStatus`) permanently in `ONLY oscar.obs`.
    - If adding a new datastream, verify `OscarTieredObsStore` (`osh-addons`), `DatabasePurger` (`osh-oakridge-modules`), and `dist/config/standard/config.json` (`archive.outputNames`, if cold-archived) in lockstep.
    - Never add growing B-tree/GIN SQL indexes or raw `?` JSONB operators in JDBC `PreparedStatement` queries (`use jsonb_typeof(col->'key')`).
-2. **DuckDB `2`-Session Cap & Time-Bounded ConSys Queries:**
+2. **DuckDB `2`-Session Cap, Mandatory `try-with-resources` Stream Closure & Time-Bounded ConSys Queries:**
    - Never trigger background timers or per-lane `searchObservations` fan-out that scan cold Parquet generations.
+   - Always wrap every Java `IObsStore.select(...)`, `selectKeys(...)`, and `selectEntries(...)` (plus `ISystemDescStore.select*`) stream in `try-with-resources`, and pass `.withLimit(1)` on single-record `ObsFilter.Builder` lookups (`findFirst()`, `withLatestResult()`, exact-timestamp correlation).
    - Note that `osh-js` `DataStream.searchObservations(filter, pageSize)` strips `phenomenonTime` (`toQueryString([], ['phenomenonTime'])`); always bound `DataStream.searchObservations` calls using `resultTime: "<startIso>/<endIso>"` alongside any CQL `filter` (see `web/oscar-viewer/src/app/_components/adjudication/WebIdAnalysis.tsx`).
 3. **`1 Hz+` Driver Allocation & Non-Blocking Teardown:**
    - Initialize `liveDataStruct = dataStruct.copy()` once in `init()` rather than calling `dataStruct.copy()` every second; keep `getRecordDescription()` pristine and assign `latestRecord = dataBlock`.

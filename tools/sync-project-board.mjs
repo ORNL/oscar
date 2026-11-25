@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Idempotently creates and synchronizes the ORNL GitHub Projects v2 Kanban board
- * ("OSCAR Platform Roadmap & Release Tracker") with Incorporated (v3.10-v3.11.14),
+ * ("OSCAR Platform Roadmap & Release Tracker") with Incorporated (v3.10-v3.11.15),
  * In Review / Draft PR (v3.12.0), and Planned (v3.12.0) items across ORNL/*.
  *
  * Prerequisite (one-time token scope grant):
@@ -18,13 +18,16 @@ const PROJECT_TITLE = 'OSCAR Platform Roadmap & Release Tracker';
 const DRY_RUN = process.argv.includes('--dry-run');
 
 const BOARD_ITEMS = [
-    // Incorporated (v3.10.0 - v3.11.14)
+    // Incorporated (v3.10.0 - v3.11.15)
     { repo: 'ORNL/oscar', kind: 'issue', number: 78, targetColumn: 'Done' },
     { repo: 'ORNL/oscar', kind: 'issue', number: 79, targetColumn: 'Done' },
     { repo: 'ORNL/oscar', kind: 'issue', number: 73, targetColumn: 'Done' },
     { repo: 'ORNL/oscar', kind: 'issue', number: 49, targetColumn: 'Done' },
     { repo: 'ORNL/osh-core', kind: 'pr', number: 10, targetColumn: 'Done' },
+    { repo: 'ORNL/osh-addons', kind: 'pr', number: 20, targetColumn: 'Done' },
     { repo: 'ORNL/osh-oakridge-modules', kind: 'pr', number: 58, targetColumn: 'Done' },
+    { repo: 'ORNL/osh-oakridge-modules', kind: 'pr', number: 60, targetColumn: 'Done' },
+    { repo: 'ORNL/osh-oakridge-modules', kind: 'pr', number: 61, targetColumn: 'Done' },
     { repo: 'ORNL/oscar-viewer', kind: 'pr', number: 51, targetColumn: 'Done' },
 
     // In Progress / Active v3.12.0 Draft PRs

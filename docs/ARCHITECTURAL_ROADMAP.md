@@ -1,6 +1,6 @@
 # OSCAR Architectural Roadmap, Governance & Feature Blueprints
 
-This document provides the engineering roadmap, multi-repository collaboration rules, incorporated release ledger (`v3.10.0`–`v3.11.14`), and planned `v3.12.0` implementation blueprints for **OSCAR** across all 9 `ORNL/*` repositories. It is written for **both human developers and AI coding agents** (`Antigravity` / `Gemini`, `Codex`, `Claude Code`, `Cursor`, `GitHub Copilot`); pair it with [`../AGENTS.md`](../AGENTS.md), [`STORAGE_ARCHITECTURE.md`](STORAGE_ARCHITECTURE.md), and [`REGRESSION_AND_RELEASE_CERTIFICATION.md`](REGRESSION_AND_RELEASE_CERTIFICATION.md).
+This document provides the engineering roadmap, multi-repository collaboration rules, incorporated release ledger (`v3.10.0`–`v3.11.15`), and planned `v3.12.0` implementation blueprints for **OSCAR** across all 9 `ORNL/*` repositories. It is written for **both human developers and AI coding agents** (`Antigravity` / `Gemini`, `Codex`, `Claude Code`, `Cursor`, `GitHub Copilot`); pair it with [`../AGENTS.md`](../AGENTS.md), [`STORAGE_ARCHITECTURE.md`](STORAGE_ARCHITECTURE.md), and [`REGRESSION_AND_RELEASE_CERTIFICATION.md`](REGRESSION_AND_RELEASE_CERTIFICATION.md).
 
 ---
 
@@ -9,9 +9,9 @@ This document provides the engineering roadmap, multi-repository collaboration r
 ### 1.1 GitHub Milestones & Project Board
 Progress across **Incorporated** and **Planned** work is tracked in two synchronized surfaces:
 1. **GitHub Milestones on `ORNL/oscar`:** <https://github.com/ORNL/oscar/milestones>
-   - [**Milestone `#1` — Incorporated: `v3.10.0 – v3.11.14` Platform, Security & 50-Lane Scale Hardening**](https://github.com/ORNL/oscar/milestone/1)
+   - [**Milestone `#1` — Incorporated: `v3.10.0 – v3.11.15` Platform, Security & 50-Lane Scale Hardening**](https://github.com/ORNL/oscar/milestone/1)
      - [`ORNL/oscar#78`](https://github.com/ORNL/oscar/issues/78) — Incorporated Platform Baseline (`v3.10.0` – `v3.11.13`)
-     - [`ORNL/oscar#79`](https://github.com/ORNL/oscar/issues/79) — Incorporated `OSCAR v3.11.14` Multi-Repo Bugfix & 50-Lane Scale Hardening
+     - [`ORNL/oscar#79`](https://github.com/ORNL/oscar/issues/79) — Incorporated `OSCAR v3.11.14` & `v3.11.15` Multi-Repo Bugfix & 50-Lane Scale Hardening
    - [**Milestone `#2` — Planned `v3.12.0`: Mobile Detector System (RS-350 & Kromek D5)**](https://github.com/ORNL/oscar/milestone/2)
      - [`ORNL/oscar#80`](https://github.com/ORNL/oscar/issues/80) — Architecture & Cross-Repo Integration Checklist (`osh-oakridge-modules#57`, `oscar-viewer#49`, `oscar#76`)
    - [**Milestone `#3` — Planned `v3.12.0`: Opt-In Custom Widget Dashboards (`/dashboards`)**](https://github.com/ORNL/oscar/milestone/3)
@@ -42,7 +42,7 @@ flowchart LR
 
 ---
 
-## 2. Incorporated Architecture Ledger (`v3.10.0` – `v3.11.14`)
+## 2. Incorporated Architecture Ledger (`v3.10.0` – `v3.11.15`)
 
 ### 2.1 Core Platform & 50-Lane Scale Foundation (`v3.10.0` – `v3.11.13`, [`ORNL/oscar#78`](https://github.com/ORNL/oscar/issues/78))
 - **`PARQUET_PRIMARY` Two-Tier Storage & DuckDB Federation (`STORAGE_ARCHITECTURE.md`):**
@@ -59,7 +59,14 @@ flowchart LR
 | --- | --- | --- | --- |
 | [`ORNL/osh-core#10`](https://github.com/ORNL/osh-core/pull/10) (`8c7d82a07`) | [`#6`](https://github.com/ORNL/osh-core/pull/6) (`@kalynstricklin`), [`#7`](https://github.com/ORNL/osh-core/pull/7) (partial, `@kalynstricklin`), [`#8`](https://github.com/ORNL/osh-core/pull/8) (`@mjd948`), [`#9`](https://github.com/ORNL/osh-core/pull/9) (`@mjd948`) | Guard null SensorML description (`#6`); stop Jetty handler dispatch once response is committed (`#8`, fixing [`ORNL/oscar#73`](https://github.com/ORNL/oscar/issues/73)); roll back failed driver registrations, guard variable-size SWE array resizing, and synchronize subsystem SensorML cloning (`#9`). | Added `DisplayUtils.escapeHtml` XSS escaping on Admin UI descriptions; ported idempotent same-system command-stream replacement in `InMemoryCommandStreamStore` (`#7`) while rejecting `#7`'s `log.warn` relaxation in `CommandStreamTransactionHandler` (which would cause duplicate command execution); isolated `TestHttpServer` onto ephemeral ports. |
 | [`ORNL/osh-oakridge-modules#58`](https://github.com/ORNL/osh-oakridge-modules/pull/58) (`7a7324ae`) | [`#48`](https://github.com/ORNL/osh-oakridge-modules/pull/48) (`@kalynstricklin`), [`#54`](https://github.com/ORNL/osh-oakridge-modules/pull/54) (`@mjd948`), [`#55`](https://github.com/ORNL/osh-oakridge-modules/pull/55) (`@mjd948`), [`#56`](https://github.com/ORNL/osh-oakridge-modules/pull/56) (`@mjd948`) | Single-response session guard + case-insensitive sign-in (`#54`, [`ORNL/oscar#73`](https://github.com/ORNL/oscar/issues/73)); RS-350 silence socket rebuild, `HlsStreamHandler` `.ts` segment freshness, and duplicate video clip suppression (`#55`); `RpmRecoverySupervisor`, `ApplicationReadiness`, and late `WebId`/`OCR`/`EML` helper re-attach (`#56`, `#48`, closing `#45`, `#46`, `#50`, `#51`, `#53`). | Eliminated 1 Hz SWE `dataStruct.copy()` tree cloning in RS-350 `BackgroundOutput` & `ForegroundOutput` via reusable `liveDataStruct`; replaced coarse `synchronized` reconnect lock in `RS350Sensor` with non-blocking `connectionSwapLock`; removed unclosed wildcard `ModuleRegistry` listener in `Rs350OccupancyProcessModule` (`#48`) and extended `OccupancyProcessStarter` to await `initAsync = true` (`INITIALIZING -> INITIALIZED`) off the EventBus thread. |
-| [`ORNL/oscar-viewer#51`](https://github.com/ORNL/oscar-viewer/pull/51) | [`#47`](https://github.com/ORNL/oscar-viewer/pull/47) (`@mjd948`), [`#48`](https://github.com/ORNL/oscar-viewer/pull/48) (`@mjd948`) | Keep onboarding banner QR synchronized with re-issued invites (`#47`, [`ORNL/oscar#73`](https://github.com/ORNL/oscar/issues/73)); `30 s` detector-silence liveness (`deriveDeviceLiveness`), occupancy-scoped `WebIdAnalysis.tsx`, and `hls.js` `enableWorker: false` + `[5 s, 15 s, 30 s, 60 s]` auto-retry (`#48`). | Preserved `"unknown"` (`Waiting`) in `deriveDeviceLiveness` when neither `connectionStatus` nor device heartbeats have ever reported (and cleared cached `reportedRpmState` / heartbeat timestamps on missing-observation reconciliations); compensated for `> 2 s` NTP drift via HTTP `Date` headers; bounded `WebIdAnalysis.tsx` CQL queries by `resultTime` and gated fallback scans on `!exactFilterSucceeded`. |
+| [`ORNL/oscar-viewer#51`](https://github.com/ORNL/oscar-viewer/pull/51) (`37b8de8`) | [`#47`](https://github.com/ORNL/oscar-viewer/pull/47) (`@mjd948`), [`#48`](https://github.com/ORNL/oscar-viewer/pull/48) (`@mjd948`) | Keep onboarding banner QR synchronized with re-issued invites (`#47`, [`ORNL/oscar#73`](https://github.com/ORNL/oscar/issues/73)); `30 s` detector-silence liveness (`deriveDeviceLiveness`), occupancy-scoped `WebIdAnalysis.tsx`, and `hls.js` `enableWorker: false` + `[5 s, 15 s, 30 s, 60 s]` auto-retry (`#48`). | Preserved `"unknown"` (`Waiting`) in `deriveDeviceLiveness` when neither `connectionStatus` nor device heartbeats have ever reported (and cleared cached `reportedRpmState` / heartbeat timestamps on missing-observation reconciliations); compensated for `> 2 s` NTP drift via HTTP `Date` headers; bounded `WebIdAnalysis.tsx` CQL queries by `resultTime` and gated fallback scans on `!exactFilterSucceeded`. |
+
+### 2.3 `OSCAR v3.11.15` Tiered DuckDB Stream Lifecycle & Store Cursor Hardening ([`ORNL/oscar#79`](https://github.com/ORNL/oscar/issues/79))
+
+| Repository & Integration PR | Contributor PRs Integrated | Capability / Bugfix | 50-Lane Scale / Safety Refinement Applied |
+| --- | --- | --- | --- |
+| [`ORNL/osh-addons#20`](https://github.com/ORNL/osh-addons/pull/20) (`c206a0a1`) | — | Lazy cold-tier Parquet & overlay cursor opening in `OscarTieredObsStore`. | Wrapped cold Parquet (`streamColdBases*`) and JDBC overlay (`streamOverlays`) streams in `OscarTieredObsStore.lazyStream(...)` and deferred upstream `Iterator` acquisition in `MergingIterator`, `MutationFilteringIterator`, and `ClosingLimitIterator` (`TestLazyTieredStreamLifecycle`) so `selectEntries`/`selectKeys` never acquires a `DuckDbResourcePolicy.Session` permit before terminal iteration reaches the cold tier. |
+| [`ORNL/osh-oakridge-modules#61`](https://github.com/ORNL/osh-oakridge-modules/pull/61) (`eed1679c`) | [`#60`](https://github.com/ORNL/osh-oakridge-modules/pull/60) (`@mjd948`) | Close `WebIdHelper` observation lookup streams so they release DuckDB sessions (`#60`). | Added `.withLimit(1)` to both `WebIdHelper` `ObsFilter.Builder` lookups (`WebIdHelperStreamCloseTest`) and wrapped all remaining unclosed `IObsStore.select*` and `ISystemDescStore.select*` streams across `DatabasePurger`, `OccupancyDataRecorder`, RS-350 `MessageHandler`, `StatisticsOutput`, `OSCARServiceModule`, `TrainingSandboxManager`, and `LaneSystem` in `try-with-resources`. |
 
 ---
 
@@ -70,12 +77,12 @@ The `v3.12.0` feature cycle focuses on three planned tracks. Because OSCAR is va
 ### 3.1 Track A — Mobile Detector System (`RS-350` Backpack & `Kromek D5` Walker)
 - **Tracking Milestone & Issue:** [Milestone `#2`](https://github.com/ORNL/oscar/milestone/2) · [`ORNL/oscar#80`](https://github.com/ORNL/oscar/issues/80) (originating enhancement: [`ORNL/osh-oakridge-modules#52`](https://github.com/ORNL/osh-oakridge-modules/issues/52))
 - **Active Draft PRs:** [`ORNL/osh-oakridge-modules#57`](https://github.com/ORNL/osh-oakridge-modules/pull/57) · [`ORNL/oscar-viewer#49`](https://github.com/ORNL/oscar-viewer/pull/49) · [`ORNL/oscar#76`](https://github.com/ORNL/oscar/pull/76)
-- **Recommended Shared Branch Name (across all 3 repos):** `feat/v3.12.0-mobile-detector-system` (rebased onto `v3.11.14` `main`)
+- **Recommended Shared Branch Name (across all 3 repos):** `feat/v3.12.0-mobile-detector-system` (rebased onto `v3.11.15` `main`)
 
 #### Required Architectural Refinements Before Merge
-1. **Clean Rebase onto `v3.11.14` `main`:** Drop stacked `v3.11.14` bugfix commits already merged on `main` (`#48` in `oscar-viewer`, `#55`/`#56` in `osh-oakridge-modules`), keep the hardened `v3.11.14` implementations of `HLSVideoComponent.tsx`, `useLaneHealth.ts`, and `WebIdAnalysis.tsx`, and remove `.DS_Store`.
+1. **Clean Rebase onto `v3.11.15` `main`:** Drop stacked `v3.11.14`–`v3.11.15` bugfix commits already merged on `main` (`#48` in `oscar-viewer`, `#55`/`#56`/`#60` in `osh-oakridge-modules`), keep the hardened `v3.11.15` implementations of `HLSVideoComponent.tsx`, `useLaneHealth.ts`, `WebIdAnalysis.tsx`, and `WebIdHelper.java`, and remove `.DS_Store`.
 2. **Unified Async Submodule Lifecycle (`sensorhub-system-mobile`):**
-   - Reuse [`OccupancyProcessStarter`](https://github.com/ORNL/osh-oakridge-modules/blob/main/sensors/sensorhub-system-lane/src/main/java/com/botts/impl/system/lane/helpers/occupancy/OccupancyProcessStarter.java) (which in `v3.11.14` handles both synchronous `INITIALIZED` and `initAsync = true` `INITIALIZING -> INITIALIZED` occupancy modules off the EventBus thread) and [`RpmRecoverySupervisor`](https://github.com/ORNL/osh-oakridge-modules/blob/main/sensors/sensorhub-system-lane/src/main/java/com/botts/impl/system/lane/helpers/RpmRecoverySupervisor.java).
+   - Reuse [`OccupancyProcessStarter`](https://github.com/ORNL/osh-oakridge-modules/blob/main/sensors/sensorhub-system-lane/src/main/java/com/botts/impl/system/lane/helpers/occupancy/OccupancyProcessStarter.java) (which handles both synchronous `INITIALIZED` and `initAsync = true` `INITIALIZING -> INITIALIZED` occupancy modules off the EventBus thread) and [`RpmRecoverySupervisor`](https://github.com/ORNL/osh-oakridge-modules/blob/main/sensors/sensorhub-system-lane/src/main/java/com/botts/impl/system/lane/helpers/RpmRecoverySupervisor.java), and wrap all `IObsStore.select*` streams in `try-with-resources`.
    - Scope camera/HLS capability state to the `MobileDetectorSystem` instance (cleared in `doStop()`) rather than process-global static `ConcurrentHashMap` caches keyed by UID.
 3. **`PARQUET_PRIMARY` Storage & Hot-Tier Allowlist Lockstep:**
    - Verify mobile stream routing across [`OscarTieredObsStore`](https://github.com/ORNL/osh-addons/blob/OSCAR/persistence/sensorhub-datastore-postgis/src/main/java/org/sensorhub/impl/datastore/postgis/store/obs/OscarTieredObsStore.java), [`dist/config/standard/config.json`](../dist/config/standard/config.json) (`archive.outputNames` if new cold stream names are introduced), and [`DatabasePurger`](https://github.com/ORNL/osh-oakridge-modules/blob/main/services/sensorhub-service-oscar/src/main/java/com/botts/impl/service/oscar/purge/DatabasePurger.java).
@@ -92,7 +99,7 @@ The `v3.12.0` feature cycle focuses on three planned tracks. Because OSCAR is va
 ### 3.2 Track B — Opt-In Custom Widget Dashboards (`/dashboards`)
 - **Tracking Milestone & Issue:** [Milestone `#3`](https://github.com/ORNL/oscar/milestone/3) · [`ORNL/oscar#81`](https://github.com/ORNL/oscar/issues/81) (originating enhancement: [`ORNL/oscar-viewer#46`](https://github.com/ORNL/oscar-viewer/issues/46))
 - **Active Draft PR:** [`ORNL/oscar-viewer#50`](https://github.com/ORNL/oscar-viewer/pull/50)
-- **Recommended Shared Branch Name (in `ORNL/oscar-viewer`):** `feat/v3.12.0-custom-dashboards` (rebased directly onto `v3.11.14` `main`, unstacked from `#49` so both tracks can iterate independently)
+- **Recommended Shared Branch Name (in `ORNL/oscar-viewer`):** `feat/v3.12.0-custom-dashboards` (rebased directly onto `v3.11.15` `main`, unstacked from `#49` so both tracks can iterate independently)
 
 #### Required Architectural Refinements Before Merge
 1. **Opt-In Additive Route Design (`/dashboards`):**
