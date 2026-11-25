@@ -36,9 +36,11 @@ Use this skill before proposing, implementing, or reviewing changes in [`ORNL/os
 3. Maintain 4-locale parity (`en`, `es`, `fr`, `el`) across `ConfigMessages*.properties`, `README{,_es,_fr,_el}.md`, and `web/oscar-viewer/src/locales/*.json`.
 4. Scrub all private RFC1918 IPs, internal `.local` hostnames, `.DS_Store`, and credentials.
 
-## Step 4 — Run Mandatory Local Checks
+## Step 4 — Run Mandatory Local Checks & Full Release Regression Gate
 ```bash
 node tools/validate-release-metadata.js
 ./gradlew --no-parallel :sensorhub-service-oscar:test :sensorhub-webui-oscar:test :sensorhub-system-lane:test :sensorhub-security-basic-session:test :sensorhub-driver-rs350:test
 (cd web/oscar-viewer && npm run validate:locales && npm run lint && npm run build && npm run test:component)
 ```
+
+- **Mandatory Release Sign-Off Gate (`ORNL/oscar-regression`):** Never certify an `ORNL/oscar` `v3.x.y` release using `smoke` or `--scenario` subsets alone. Every release sign-off requires an **unfiltered `./scripts/run-regression.sh full` `PASS` (`0` incorrect checks)** on the 50-lane Ubuntu 24.04 LTS certification portal plus Windows 11 + WSL 2 upgrade and multi-host soak verification.

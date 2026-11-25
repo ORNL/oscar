@@ -82,10 +82,12 @@ Whenever you unpack and deploy a new OSCAR 3.11.15 build into a clean versioned 
 | Profile | Command | When to Use |
 | --- | --- | --- |
 | **`smoke`** | `npm run test:smoke` *(or `./scripts/run-regression.sh smoke`)* | Fast, non-fault-injecting verification across all 14 read-only, reporting, QR camera-scan, `runtime-extensions`, and `storage-health` scenarios |
-| **`full`** | `npm run test:full` *(or `./scripts/run-regression.sh full`)* | Complete 26-scenario regression: runs `smoke` plus reserved-lane disconnect, detector/tamper faults, alarms, UUID, adjudication, `cargo-uff`, `training-sandbox`, EML, Vehicle OCR, `>= 150 s` extended occupancy, and natural `PARQUET_PRIMARY` partition retirement |
+| **`full`** | `npm run test:full` *(or `./scripts/run-regression.sh full`)* | **Mandatory pre-release / release sign-off gate:** Complete 26-scenario regression (`smoke` plus reserved-lane disconnect, detector/tamper faults, alarms, UUID, adjudication, `cargo-uff`, `training-sandbox`, EML, Vehicle OCR, `>= 150 s` extended occupancy, and natural `PARQUET_PRIMARY` partition retirement) |
 | **`3.11.0-release`** | `npm run test:3.11.0-release` | Strict unfiltered release certification gate (rejects `--scenario` filters, skipped required workflows, or mismatched `OSCAR_BUILD_LABEL`) |
 | **`restore-drill`** | `OSCAR_BACKUP_MODE=single STORAGE_WORKFLOW=required STORAGE_BACKUP_WORKFLOW=required npm run test:restore-drill` | Destructive isolated single-snapshot backup, database/state/archive canary mutation, streamed-WAL base-backup restore, and timeline-promotion proof (requires the 4 `OSCAR_RESTORE_*_ACK` interlocks) |
 | **`ui-endurance`** | `./scripts/run-ui-endurance.sh` | Continuous never-reloaded 24/7 Wallboard Watcher + PWA Service Worker notification + scoped/unscoped adjudication soak loop |
+
+> **Non-Negotiable Release Sign-Off Rule:** `smoke` and `--scenario` filters are fast iteration and post-upgrade sanity checks only — they **never** certify an `ORNL/oscar` release (`v3.x.y`). Every release sign-off requires an unfiltered `./scripts/run-regression.sh full` `PASS` (`0` incorrect checks, `0` runtime errors, `0` restarts, `0` OOMs) on the 50-lane Ubuntu 24.04 LTS emulator-backed portal alongside live Ubuntu 24.04 LTS + Windows 11 WSL 2 upgrade acceptance and multi-host soak verification.
 
 ### Targeted Scenario Filtering (`--scenario`)
 

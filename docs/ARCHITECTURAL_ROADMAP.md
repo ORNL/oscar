@@ -18,6 +18,8 @@ Progress across **Incorporated** and **Planned** work is tracked in two synchron
      - [`ORNL/oscar#81`](https://github.com/ORNL/oscar/issues/81) — Additive Route, Global `AlarmAudio` & Resource-Cap Blueprint (`oscar-viewer#50`)
    - [**Milestone `#4` — Planned `v3.12.0`: Field Cutover & Operational Polish**](https://github.com/ORNL/oscar/milestone/4)
      - [`ORNL/oscar#74`](https://github.com/ORNL/oscar/issues/74), [`ORNL/oscar#75`](https://github.com/ORNL/oscar/issues/75), [`ORNL/oscar#77`](https://github.com/ORNL/oscar/issues/77)
+   - [**Milestone `#5` — Planned `v3.12.0`: Multi-Year Cold Parquet CQL Count & Query Scale**](https://github.com/ORNL/oscar/milestone/5)
+     - [`ORNL/oscar#84`](https://github.com/ORNL/oscar/issues/84) & [`ORNL/osh-addons#21`](https://github.com/ORNL/osh-addons/issues/21) — `O(1)` Overlay-Fingerprinted Per-Generation CQL Count Cache & Summary Upper-Bound Pruning
 2. **`ORNL` GitHub Projects v2 Kanban Board (`OSCAR Platform Roadmap & Release Tracker`):**
    - Synchronized deterministically from repository state via [`../tools/sync-project-board.mjs`](../tools/sync-project-board.mjs):
      ```bash
@@ -72,12 +74,13 @@ flowchart LR
 
 ## 3. Planned `v3.12.0` Feature Blueprints & Acceptance Gates
 
-The `v3.12.0` feature cycle focuses on three planned tracks. Because OSCAR is validated against 50-lane portals with multi-million-row archives, contributors and AI agents **must** satisfy the checklists below on shared `ORNL/*` branches before marking Draft PRs Ready for Review.
+The `v3.12.0` feature cycle focuses on four planned tracks. Because OSCAR is validated against 50-lane portals with multi-million-row archives, contributors and AI agents **must** satisfy the checklists below on shared `ORNL/*` branches before marking Draft PRs Ready for Review, and every `v3.x.y` release sign-off requires an **unfiltered `./scripts/run-regression.sh full` (`26`-scenario) `PASS`** on the 50-lane Ubuntu 24.04 LTS certification portal plus Windows 11 + WSL 2 upgrade and soak verification.
 
 ### 3.1 Track A — Mobile Detector System (`RS-350` Backpack & `Kromek D5` Walker)
 - **Tracking Milestone & Issue:** [Milestone `#2`](https://github.com/ORNL/oscar/milestone/2) · [`ORNL/oscar#80`](https://github.com/ORNL/oscar/issues/80) (originating enhancement: [`ORNL/osh-oakridge-modules#52`](https://github.com/ORNL/osh-oakridge-modules/issues/52))
 - **Active Draft PRs:** [`ORNL/osh-oakridge-modules#57`](https://github.com/ORNL/osh-oakridge-modules/pull/57) · [`ORNL/oscar-viewer#49`](https://github.com/ORNL/oscar-viewer/pull/49) · [`ORNL/oscar#76`](https://github.com/ORNL/oscar/pull/76)
-- **Recommended Shared Branch Name (across all 3 repos):** `feat/v3.12.0-mobile-detector-system` (rebased onto `v3.11.15` `main`)
+- **Recommended Shared Branch Name (across all 3 repos):** `feat/v3.12.0-mobile-detector-system` (rebased onto `v3.11.15`+ `main`)
+- **Quantified Multi-Year Scale Risk Prevented:** A single Kromek D5 walker emitting `1 Hz` 1,024-channel spectra plus `1 Hz` GPS (`LiveDriverLocationOutput`) generates `~63M` rows/year (`~365–500 GiB/year` per walker). Routing mobile outputs through `PARQUET_PRIMARY` stage partitions and `oscar_obs_latest` prevents hot PostgreSQL B-tree bloat in `ONLY oscar.obs`.
 
 #### Required Architectural Refinements Before Merge
 1. **Clean Rebase onto `v3.11.15` `main`:** Drop stacked `v3.11.14`–`v3.11.15` bugfix commits already merged on `main` (`#48` in `oscar-viewer`, `#55`/`#56`/`#60` in `osh-oakridge-modules`), keep the hardened `v3.11.15` implementations of `HLSVideoComponent.tsx`, `useLaneHealth.ts`, `WebIdAnalysis.tsx`, and `WebIdHelper.java`, and remove `.DS_Store`.
@@ -99,24 +102,43 @@ The `v3.12.0` feature cycle focuses on three planned tracks. Because OSCAR is va
 ### 3.2 Track B — Opt-In Custom Widget Dashboards (`/dashboards`)
 - **Tracking Milestone & Issue:** [Milestone `#3`](https://github.com/ORNL/oscar/milestone/3) · [`ORNL/oscar#81`](https://github.com/ORNL/oscar/issues/81) (originating enhancement: [`ORNL/oscar-viewer#46`](https://github.com/ORNL/oscar-viewer/issues/46))
 - **Active Draft PR:** [`ORNL/oscar-viewer#50`](https://github.com/ORNL/oscar-viewer/pull/50)
-- **Recommended Shared Branch Name (in `ORNL/oscar-viewer`):** `feat/v3.12.0-custom-dashboards` (rebased directly onto `v3.11.15` `main`, unstacked from `#49` so both tracks can iterate independently)
+- **Recommended Shared Branch Name (in `ORNL/oscar-viewer`):** `feat/v3.12.0-custom-dashboards` (rebased directly onto `v3.11.15`+ `main`, unstacked from `#49` so both tracks can iterate independently)
+- **Quantified Multi-Year Scale Risk Prevented:** In the initial draft of `ORNL/oscar-viewer#50`, `AlarmStatsRegistry` polled `50` per-lane unbounded `searchObservations` cursors plus `1,440` `/observations/count` requests every `300 s` (`POOL = 4`), which would permanently saturate the `2`-session `DuckDbResourcePolicy` cold-tier cap on 50-lane portals.
 
 #### Required Architectural Refinements Before Merge
 1. **Opt-In Additive Route Design (`/dashboards`):**
    - Adopt the opt-in additive route model offered on `ORNL/oscar-viewer#50`: preserve all **8 canonical ORNL routes** (`/`, `/map`, `/event-log`, `/lane-view`, `/report-view`, `/health`, `/servers`, `/users`) untouched as the default operator experience, and expose **Custom Dashboards** at `/dashboards` in `Navbar.tsx` using `scopedHref("/dashboards", activeView)`.
-   - This guarantees zero breaking changes to operator muscle memory, the `25`-scenario `ORNL/oscar-regression` suite, the `54` localized manual screenshots, and the `29` `ORNL/oscar-video-guides` recordings.
+   - This guarantees zero breaking changes to operator muscle memory, the `26`-scenario `ORNL/oscar-regression` suite, the `54` localized manual screenshots, and the `29` `ORNL/oscar-video-guides` recordings.
 2. **Safety-Critical Global `AlarmAudio` Invariant:**
    - Keep `<AlarmAudio />` mounted **exclusively** inside `src/app/Providers.tsx`. Never remove it from `Providers.tsx` or mount `<AlarmAudio />` inside per-widget components (which would mute radiation alarms when a user creates a dashboard without an alarm widget, or play overlapping audio when multiple alarm widgets exist). Visual alarm-queue widgets may subscribe to Redux alarm state without owning audio playback.
 3. **50-Lane Browser & Backend Resource Guardrails:**
    - Enforce explicit per-dashboard widget caps: at most **`4` simultaneous live-video widgets** and **`6` simultaneous live-chart widgets** per active dashboard view, releasing all `SharedConnectionPool` leases immediately on tab switch or unmount.
-   - Ensure no widget polls historical cold Parquet observations on a background timer (`DuckDB` `2`-session cap).
+   - Replace `AlarmStatsRegistry` client-side historical `searchObservations` / `1,440`-count polling with summarized server-side or bounded hot-state metrics (`0` periodic DuckDB cold scans).
 4. **Scoped Views, State Versioning & 4-Locale Parity:**
    - Filter available lanes inside every dashboard widget through the active `?view=<scope>` operational view so gate-scoped operators only see permitted lanes.
    - Version the `redux-persist` slice cleanly (so upgrading existing browsers never crashes hydration), remove `.DS_Store`, complete `en`/`es`/`fr`/`el` locale catalogs (`npm run validate:locales`), and add Chrome Cypress component specs verifying widget CRUD, caps, and scoped-view filtering.
 
 ---
 
-### 3.3 Track C — Field Cutover & Operational Polish ([Milestone `#4`](https://github.com/ORNL/oscar/milestone/4))
+### 3.3 Track C — Multi-Year Cold Parquet CQL Count Caching & Upper-Bound Pruning (`O(1)` Warm Counts)
+- **Tracking Milestone & Issues:** [Milestone `#5`](https://github.com/ORNL/oscar/milestone/5) · [`ORNL/oscar#84`](https://github.com/ORNL/oscar/issues/84) · [`ORNL/osh-addons#21`](https://github.com/ORNL/osh-addons/issues/21)
+- **Recommended Shared Branch Name (across `ORNL/osh-addons`, `ORNL/oscar-viewer`, `ORNL/oscar`):** `feat/v3.12.0-parquet-cql-count-cache`
+- **Empirical Motivation (30-Day 50-Lane Profiling on `v3.11.15`):**
+  - Interactive filtered pages (`offset=0`, `offset=15`, and deep offsets up to `offset=1,500,000` across `1.87M+` occupancies) settle in **`322–492 ms` (`O(1)`)**, and summarized filter counts (`gammaAlarm`, `neutronAlarm`, `adjudicatedIdsCount`, disjoint multi-`Status`, `base_summary_mask` windows) settle in **`< 5–50 ms` (`0` DuckDB sessions)**.
+  - However, unsummarized numeric/timestamp/text CQL `/observations/count` queries (such as `maxGamma >= 50` or `endTime > '<iso>'`) currently bypass `ParquetArchiveReader.unmutatedCqlCounts` whenever a sealed 30-minute Parquet generation has `>= 1` `Code 9999` EML or operator overlay (`excludedNav` hit). On 50-lane portals with EML enabled, over half of all sealed generations (`~2,300` of `4,456` at 30 days) have EML overlays, causing background counts to rescan `~2,300` Parquet files in DuckDB (`22.1 s` warm / `42.0 s` cold inside the `1`-session `cold-cql-count` lane) and scaling linearly toward `17,520+` generations at 1 year.
+
+#### Required Architectural Implementation Before Merge
+1. **Overlay-Fingerprinted Per-Generation Count Cache (`ORNL/osh-addons` — `ParquetArchiveReader.java`):**
+   - Extend `CqlGenerationCountKey` to include a compact deterministic digest of `genExcludedIds` (`(generation.sha256, normalizedDatastreamIds, cqlAstDigest, phenomenonWindow, resultCutoffBucket, genExcludedIdsDigest)`) rather than disqualifying generations that contain `excludedNav` overlays.
+   - Because `genExcludedIds` for a sealed historical generation only changes on retroactive cold re-adjudications, EML-adjudicated generations become `99.9%+` cache-eligible (`< 50 ms` warm count, `0` DuckDB sessions).
+2. **Generation Summary Numeric Upper-Bound Pruning (`oscar_archive_generation_summary`):**
+   - Persist compact numeric upper bounds (`max_gamma_max`, `max_neutron_max`, `max_occupancy_duration_ms`) in `oscar_archive_generation_summary` (and prune `0`-alarm generations when combined with `Status = Gamma | Neutron`) so cold cache misses skip non-matching 30-minute Parquet files in memory before opening DuckDB.
+3. **Viewer Count Coalescing & Abort Hygiene (`ORNL/oscar-viewer`):**
+   - Abort superseded `/observations/count` `AbortController` requests cleanly on rapid filter/sort toggles and decouple DataGrid interactive row settlement from slow cold count badges.
+
+---
+
+### 3.4 Track D — Field Cutover & Operational Polish ([Milestone `#4`](https://github.com/ORNL/oscar/milestone/4))
 - [`ORNL/oscar#75`](https://github.com/ORNL/oscar/issues/75) — **Legacy `v3.5` Camera RTSP Path Migration / Validation:** Detect legacy `remoteHost: "<ip>"` + `streamPath: ":9001/cam1"` configurations on load/import and normalize or warn clearly instead of constructing `rtsp://<ip>/:9001/cam1`.
 - [`ORNL/oscar#74`](https://github.com/ORNL/oscar/issues/74) — **Non-443 Gateway Port-80 Redirect Polish:** HTTPS upstream `Host` preservation is already handled via `map $http_host $oscar_public_host` in [`dist/release/docker/gateway/default.conf`](../dist/release/docker/gateway/default.conf); evaluate optional custom HTTPS port propagation on the port-80 redirect when `OSCAR_HTTPS_PORT != 443`.
 - [`ORNL/osh-oakridge-modules#41`](https://github.com/ORNL/osh-oakridge-modules/issues/41) — **SensorHub Admin Logout `continue` Target:** Preserve `continue=/sensorhub/admin` when signing out from `/sensorhub/admin`.
