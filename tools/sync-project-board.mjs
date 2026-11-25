@@ -29,6 +29,10 @@ const BOARD_ITEMS = [
     { repo: 'ORNL/osh-oakridge-modules', kind: 'pr', number: 60, targetColumn: 'Done' },
     { repo: 'ORNL/osh-oakridge-modules', kind: 'pr', number: 61, targetColumn: 'Done' },
     { repo: 'ORNL/oscar-viewer', kind: 'pr', number: 51, targetColumn: 'Done' },
+    { repo: 'ORNL/oscar-viewer', kind: 'pr', number: 52, targetColumn: 'Done' },
+    { repo: 'ORNL/oscar-regression', kind: 'pr', number: 33, targetColumn: 'Done' },
+    { repo: 'ORNL/oscar-video-guides', kind: 'pr', number: 11, targetColumn: 'Done' },
+    { repo: 'ORNL/oscar', kind: 'pr', number: 83, targetColumn: 'Done' },
 
     // In Progress / Active v3.12.0 Draft PRs
     { repo: 'ORNL/oscar', kind: 'issue', number: 80, targetColumn: 'In Progress' },
@@ -38,7 +42,9 @@ const BOARD_ITEMS = [
     { repo: 'ORNL/oscar', kind: 'pr', number: 76, targetColumn: 'In Progress' },
     { repo: 'ORNL/oscar-viewer', kind: 'pr', number: 50, targetColumn: 'In Progress' },
 
-    // Planned / Backlog (v3.12.0 Field Cutover & Polish)
+    // Planned / Backlog (v3.12.0 Scale Architecture, Field Cutover & Polish)
+    { repo: 'ORNL/oscar', kind: 'issue', number: 84, targetColumn: 'Todo' },
+    { repo: 'ORNL/osh-addons', kind: 'issue', number: 21, targetColumn: 'Todo' },
     { repo: 'ORNL/oscar', kind: 'issue', number: 77, targetColumn: 'Todo' },
     { repo: 'ORNL/oscar', kind: 'issue', number: 75, targetColumn: 'Todo' },
     { repo: 'ORNL/oscar', kind: 'issue', number: 74, targetColumn: 'Todo' },

@@ -10,13 +10,14 @@ description: >-
 
 # OSCAR `v3.12.0` Feature Blueprints
 
-Use this skill when developing, rebasing, or reviewing the planned `v3.12.0` feature branches tracked in [`docs/ARCHITECTURAL_ROADMAP.md`](../../../docs/ARCHITECTURAL_ROADMAP.md) and [GitHub Milestones `#2`–`#4`](https://github.com/ORNL/oscar/milestones).
+Use this skill when developing, rebasing, or reviewing the planned `v3.12.0` feature branches tracked in [`docs/ARCHITECTURAL_ROADMAP.md`](../../../docs/ARCHITECTURAL_ROADMAP.md) and [GitHub Milestones `#2`–`#5`](https://github.com/ORNL/oscar/milestones).
 
 ## Shared Branch Collaboration Rules
-1. Collaborate directly on `ORNL/*` branches (`Write` branch-maintainer access is enabled for the review group; default branches and `v*` tags require Repository Admin merge after 50-lane certification).
+1. Collaborate directly on `ORNL/*` branches (`Write` branch-maintainer access is enabled for the review group; default branches and `v*` tags require Repository Admin merge after 50-lane certification, including an unfiltered `./scripts/run-regression.sh full` `PASS`).
 2. Use **matching branch names** across coordinated repositories so `.github/workflows/ci.yml` resolves the matching `ORNL/oscar` branch automatically:
    - Mobile Detector System (`#80`): `feat/v3.12.0-mobile-detector-system`
    - Opt-In Custom Widget Dashboards (`#81`): `feat/v3.12.0-custom-dashboards` (keep unstacked from `feat/v3.12.0-mobile-detector-system`)
+   - Multi-Year Cold Parquet CQL Count Cache (`#84` / `osh-addons#21`): `feat/v3.12.0-parquet-cql-count-cache`
 
 ## Blueprint A — Mobile Detector System ([`ORNL/oscar#80`](https://github.com/ORNL/oscar/issues/80))
 1. **Rebase cleanly onto `v3.11.15`+ `main`** across `osh-oakridge-modules`, `oscar-viewer`, and `oscar`, dropping already-merged `v3.11.15` bugfix commits and preserving hardened `HLSVideoComponent.tsx`, `useLaneHealth.ts`, and `WebIdAnalysis.tsx`.
@@ -36,4 +37,12 @@ Use this skill when developing, rebasing, or reviewing the planned `v3.12.0` fea
    - Add `/dashboards` as an opt-in workspace in `Navbar.tsx` wrapped in `scopedHref("/dashboards", activeView)`.
 3. **Safety & 50-Lane Resource Caps:**
    - Never remove `<AlarmAudio />` from `src/app/Providers.tsx` or mount `<AlarmAudio />` inside widgets.
-   - Enforce per-dashboard widget caps (`<= 4` simultaneous live-video widgets, `<= 6` simultaneous live-chart widgets), use `SharedConnectionPool` with clean teardown, honor `?view=<scope>` lane filtering, version `redux-persist` state, remove `.DS_Store`, and pass `npm run validate:locales` + Cypress component specs.
+   - Enforce per-dashboard widget caps (`<= 4` simultaneous live-video widgets, `<= 6` simultaneous live-chart widgets), replace `AlarmStatsRegistry` historical `searchObservations` / `1,440`-count polling with summarized server-side or bounded hot-state metrics (`0` periodic DuckDB cold scans), use `SharedConnectionPool` with clean teardown, honor `?view=<scope>` lane filtering, version `redux-persist` state, remove `.DS_Store`, and pass `npm run validate:locales` + Cypress component specs.
+
+## Blueprint C — Multi-Year Cold Parquet CQL Count Caching & Upper-Bound Pruning ([`ORNL/oscar#84`](https://github.com/ORNL/oscar/issues/84), [`ORNL/osh-addons#21`](https://github.com/ORNL/osh-addons/issues/21))
+1. **Overlay-Fingerprinted Per-Generation Count Cache (`ORNL/osh-addons` — `ParquetArchiveReader.java`):**
+   - Extend `CqlGenerationCountKey` to include a compact deterministic digest of `genExcludedIds` (`(generation.sha256, normalizedDatastreamIds, cqlAstDigest, phenomenonWindow, resultCutoffBucket, genExcludedIdsDigest)`) rather than bypassing `unmutatedCqlCounts` whenever a 30-minute Parquet generation has `Code 9999` EML or operator overlays.
+2. **Summary Upper-Bound Pruning (`oscar_archive_generation_summary`):**
+   - Persist compact numeric upper bounds (`max_gamma_max`, `max_neutron_max`, `max_occupancy_duration_ms`) so cold cache misses prune non-matching generations in memory before opening DuckDB.
+3. **Viewer Count Abort & Coalescing (`ORNL/oscar-viewer`):**
+   - Abort superseded `/observations/count` `AbortController` requests on rapid filter/sort toggles (`<= 50 ms` warm unsummarized count, `0` DuckDB sessions, `0` `cold-cql-count` timeouts under unfiltered `full` regression).

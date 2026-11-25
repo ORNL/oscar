@@ -37,12 +37,16 @@ Workspace skills for AI agents are also checked into [`.agents/skills/`](.agents
   - [Milestone `#2` — Planned `v3.12.0`: Mobile Detector System (RS-350 & Kromek D5)](https://github.com/ORNL/oscar/milestone/2) ([`#80`](https://github.com/ORNL/oscar/issues/80))
   - [Milestone `#3` — Planned `v3.12.0`: Opt-In Custom Widget Dashboards (`/dashboards`)](https://github.com/ORNL/oscar/milestone/3) ([`#81`](https://github.com/ORNL/oscar/issues/81))
   - [Milestone `#4` — Planned `v3.12.0`: Field Cutover & Operational Polish](https://github.com/ORNL/oscar/milestone/4) ([`#74`](https://github.com/ORNL/oscar/issues/74), [`#75`](https://github.com/ORNL/oscar/issues/75), [`#77`](https://github.com/ORNL/oscar/issues/77))
+  - [Milestone `#5` — Planned `v3.12.0`: Multi-Year Cold Parquet CQL Count & Query Scale](https://github.com/ORNL/oscar/milestone/5) ([`#84`](https://github.com/ORNL/oscar/issues/84), [`ORNL/osh-addons#21`](https://github.com/ORNL/osh-addons/issues/21))
 - **GitHub Projects v2 Kanban Sync Tool:** [`tools/sync-project-board.mjs`](tools/sync-project-board.mjs) (`node tools/sync-project-board.mjs`)
 
 ### 2.2 Branch-Maintainer (`Write`) Workflow & Admin-Gated Releases
 1. **Shared Feature/Fix Branches (`Write` Access):** Review-group developers have **Write (branch-maintainer)** access across all 9 `ORNL/*` repositories so multiple contributors and AI agents can push directly to shared branches (`feat/*`, `fix/*`) inside `ORNL/*` without fork-sync friction, triggering GitHub Actions CI automatically on every push.
 2. **Matching Branch Names Across Repositories:** In [`ORNL/osh-oakridge-modules/.github/workflows/ci.yml`](https://github.com/ORNL/osh-oakridge-modules/blob/main/.github/workflows/ci.yml), CI automatically checks whether `ORNL/oscar` has a branch with the **exact same name** as the PR branch (`refs/heads/<branch>`), using it as the composite build root when present. Always use matching branch names across coordinated PRs (e.g., `feat/v3.12.0-mobile-detector-system`).
-3. **Protected Default Branches & Release Tags:** Active GitHub Rulesets on all 9 repositories block direct pushes, force-pushes, deletions, and unreviewed merges on default branches (`main` / `OSCAR` / `add-consys`) and `refs/tags/v*`. Only the Repository Admin merges certified PRs into default branches and publishes `v*` releases after 50-lane Ubuntu 24.04 LTS and Windows 11 + WSL 2 regression and soak profiling pass.
+3. **Protected Default Branches, Release Tags & Mandatory `full` Regression Gate:** Active GitHub Rulesets on all 9 repositories block direct pushes, force-pushes, deletions, and unreviewed merges on default branches (`main` / `OSCAR` / `add-consys`) and `refs/tags/v*`. Only the Repository Admin merges certified PRs into default branches and signs off on `v*` releases after:
+   - **Unfiltered `ORNL/oscar-regression` `full` suite `PASS` (`./scripts/run-regression.sh full` with zero `--scenario` filters and `0` incorrect checks)** on the 50-lane Ubuntu 24.04 LTS certification portal (`smoke` or targeted `--scenario` runs never substitute for `full`);
+   - Live upgrade / deployment acceptance on **both** Ubuntu Server 24.04 LTS and Windows 11 + WSL 2 (`3/3` healthy services, `0` restarts, `0` OOMs); and
+   - Bounded multi-host soak verification (`0` leaked DuckDB sessions, bounded anonymous heap).
 
 ---
 
