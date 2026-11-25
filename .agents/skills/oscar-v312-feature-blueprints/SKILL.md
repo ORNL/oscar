@@ -19,7 +19,7 @@ Use this skill when developing, rebasing, or reviewing the planned `v3.12.0` fea
    - Opt-In Custom Widget Dashboards (`#81`): `feat/v3.12.0-custom-dashboards` (keep unstacked from `feat/v3.12.0-mobile-detector-system`)
 
 ## Blueprint A — Mobile Detector System ([`ORNL/oscar#80`](https://github.com/ORNL/oscar/issues/80))
-1. **Rebase cleanly onto `v3.11.14`+ `main`** across `osh-oakridge-modules`, `oscar-viewer`, and `oscar`, dropping already-merged `v3.11.14` bugfix commits and preserving hardened `HLSVideoComponent.tsx`, `useLaneHealth.ts`, and `WebIdAnalysis.tsx`.
+1. **Rebase cleanly onto `v3.11.15`+ `main`** across `osh-oakridge-modules`, `oscar-viewer`, and `oscar`, dropping already-merged `v3.11.15` bugfix commits and preserving hardened `HLSVideoComponent.tsx`, `useLaneHealth.ts`, and `WebIdAnalysis.tsx`.
 2. **Backend (`sensorhub-system-mobile`, `ORNL/osh-oakridge-modules#57`):**
    - Reuse `OccupancyProcessStarter` (including `initAsync = true` `INITIALIZING -> INITIALIZED` support) and `RpmRecoverySupervisor`.
    - Scope camera/HLS capability tracking to the `MobileDetectorSystem` instance (`doStop()` cleanup; no static global `ConcurrentHashMap`).
@@ -30,7 +30,7 @@ Use this skill when developing, rebasing, or reviewing the planned `v3.12.0` fea
    - Bound GPS trail queries with explicit `resultTime` / `phenomenonTime` windows + `limit` (`<= 500`), manage live feeds via `SharedConnectionPool`, keep dev simulators excluded from `build/install/oscar` (`tools/validate-packaged-release.js`), and complete `en`/`es`/`fr`/`el` locale keys + Cypress component tests.
 
 ## Blueprint B — Opt-In Custom Widget Dashboards ([`ORNL/oscar#81`](https://github.com/ORNL/oscar/issues/81))
-1. **Rebase directly onto `v3.11.14`+ `main`** in `ORNL/oscar-viewer` (`feat/v3.12.0-custom-dashboards`).
+1. **Rebase directly onto `v3.11.15`+ `main`** in `ORNL/oscar-viewer` (`feat/v3.12.0-custom-dashboards`).
 2. **Additive Opt-In Route (`/dashboards`):**
    - Keep all 8 canonical routes (`/`, `/map`, `/event-log`, `/lane-view`, `/report-view`, `/health`, `/servers`, `/users`) untouched as the default operator experience (`/` remains the canonical Dashboard).
    - Add `/dashboards` as an opt-in workspace in `Navbar.tsx` wrapped in `scopedHref("/dashboards", activeView)`.

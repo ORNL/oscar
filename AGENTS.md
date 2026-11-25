@@ -33,7 +33,7 @@ Workspace skills for AI agents are also checked into [`.agents/skills/`](.agents
 ### 2.1 Live Roadmap & Tracking Links
 - **In-Repository Engineering Roadmap:** [`docs/ARCHITECTURAL_ROADMAP.md`](docs/ARCHITECTURAL_ROADMAP.md)
 - **GitHub Milestones (Live Progress View):** <https://github.com/ORNL/oscar/milestones>
-  - [Milestone `#1` — Incorporated: `v3.10.0 – v3.11.14` Platform, Security & 50-Lane Scale Hardening](https://github.com/ORNL/oscar/milestone/1) ([`#78`](https://github.com/ORNL/oscar/issues/78), [`#79`](https://github.com/ORNL/oscar/issues/79))
+  - [Milestone `#1` — Incorporated: `v3.10.0 – v3.11.15` Platform, Security & 50-Lane Scale Hardening](https://github.com/ORNL/oscar/milestone/1) ([`#78`](https://github.com/ORNL/oscar/issues/78), [`#79`](https://github.com/ORNL/oscar/issues/79))
   - [Milestone `#2` — Planned `v3.12.0`: Mobile Detector System (RS-350 & Kromek D5)](https://github.com/ORNL/oscar/milestone/2) ([`#80`](https://github.com/ORNL/oscar/issues/80))
   - [Milestone `#3` — Planned `v3.12.0`: Opt-In Custom Widget Dashboards (`/dashboards`)](https://github.com/ORNL/oscar/milestone/3) ([`#81`](https://github.com/ORNL/oscar/issues/81))
   - [Milestone `#4` — Planned `v3.12.0`: Field Cutover & Operational Polish](https://github.com/ORNL/oscar/milestone/4) ([`#74`](https://github.com/ORNL/oscar/issues/74), [`#75`](https://github.com/ORNL/oscar/issues/75), [`#77`](https://github.com/ORNL/oscar/issues/77))
@@ -53,8 +53,9 @@ OSCAR is certified for **continuous 24/7 multi-year operation at 50-lane scale**
 1. **Constant Hot PostgreSQL Footprint (`PARQUET_PRIMARY`) & Zero Growing SQL Indexes:**
    - All 22 operational and evidentiary datastreams (`gammaCounts`, `gammaThreshold`, `neutronCounts`, `setupGamma`, `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`, `status`, `emlContextual`, `emlScanContextual`, `emlAnalysis`, `dailyFile`, `connectionStatus`, `occupancyStatus`, `tamper`, `occupancy`, `adjudication`, `report`, `siteStatistics`, `nationalSummary`, `vehicleOcr`) route into 30-minute PostgreSQL stage partitions (`osg_*`) that retire to Zstandard Parquet after SHA-256 parity (`ONLY oscar.obs` stays permanently near-empty at `~52` static singleton rows).
    - **Never** add growing B-tree or GIN indexes over unbounded historical observations (`docs/STORAGE_ARCHITECTURE.md`), and **never** use raw `?` JSONB operators inside JDBC `PreparedStatement` SQL (use `jsonb_typeof(col->'key')`).
-2. **Bounded DuckDB Cold-Tier Concurrency (`max 2` sessions per JVM):**
+2. **Bounded DuckDB Cold-Tier Concurrency (`max 2` sessions per JVM) & Mandatory `try-with-resources` Stream Closure:**
    - `DuckDbResourcePolicy` caps concurrent Parquet queries at `2` sessions (`30 s` timeout). **Never** introduce background UI timers, per-lane `searchObservations` loops, or premature bucket-count fan-out that open cold Parquet scans without an explicit user filter/sort action.
+   - **Always** wrap every Java `IObsStore.select(...)`, `selectKeys(...)`, and `selectEntries(...)` (plus `ISystemDescStore.select*`) stream in `try-with-resources`, and pass `.withLimit(1)` on single-record `ObsFilter.Builder` lookups (`findFirst()`, `withLatestResult()`, exact-timestamp correlation) so tiered PostgreSQL/DuckDB cursors close deterministically on both hit and miss.
    - Always bound routine ConSys observation lookups by narrow time windows (`phenomenonTime` on `/sensorhub/api/observations`, or `resultTime` when calling `osh-js` `DataStream.searchObservations`, which strips `phenomenonTime`).
 3. **Zero Per-Tick SWE `DataComponent.copy()` Tree Cloning on `>= 1 Hz` Drivers:**
    - Initialize a reusable `liveDataStruct = dataStruct.copy()` once in `init()`, reuse `DataBlock` / `liveDataStruct` across 1 Hz frames without mutating the canonical `getRecordDescription()` schema, and never hold coarse module locks shared with `doStop()` across blocking TCP/serial `tryConnect()` calls.

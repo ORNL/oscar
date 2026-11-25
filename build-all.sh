@@ -28,7 +28,10 @@ node --test tools/update-version.test.js tools/collect-release-contributors.test
     --tests org.sensorhub.impl.datastore.postgis.archive.TestDuckDbResourcePolicy \
     --tests org.sensorhub.impl.datastore.postgis.archive.TestArchiveLifecycleInvariants \
     --tests org.sensorhub.impl.datastore.postgis.database.TestOscarTieredModuleProvider \
-    --tests org.sensorhub.impl.datastore.postgis.TestParameterizedQueryBuilder
+    --tests org.sensorhub.impl.datastore.postgis.TestParameterizedQueryBuilder \
+    --tests org.sensorhub.impl.datastore.postgis.store.obs.TestObservationKeysetIterator \
+    --tests org.sensorhub.impl.datastore.postgis.store.obs.TestLazyTieredStreamLifecycle \
+    --tests org.sensorhub.impl.datastore.postgis.connection.TestCancellableConnectionScope
 
 ./gradlew --no-parallel \
     :osh-core:sensorhub-service-consys:test \
