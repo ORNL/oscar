@@ -1,6 +1,6 @@
 # Status of Health
 
-The OSCAR 3.11.13 Status of Health page gives operators one current-status row for every lane visible in the current Viewer scope. Open it with the **Status of Health** navigation item — identified by the **heart-pulse monitor icon** in the left navigation rail (or click **Highlight Status of Health Icon** inside **Guided Walkthrough** / **Help (`?`)** to spotlight it on screen).
+The OSCAR 3.11.14 Status of Health page gives operators one current-status row for every lane visible in the current Viewer scope. Open it with the **Status of Health** navigation item — identified by the **heart-pulse monitor icon** in the left navigation rail (or click **Highlight Status of Health Icon** inside **Guided Walkthrough** / **Help (`?`)** to spotlight it on screen).
 
 > **Companion Video Guide:** Watch [Module 15 — Monitor Status of Health & Georeferenced Site Map (`15-status-of-health-and-site-map.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/15-status-of-health-and-site-map.mp4) ([WebVTT captions](https://github.com/ORNL/oscar-video-guides/blob/main/captions/15-status-of-health-and-site-map.vtt)) in [VIDEO_GUIDES.md](VIDEO_GUIDES.md#15-status-of-health-and-site-map).
 
@@ -17,7 +17,7 @@ Operational views are a presentation boundary, not an authorization mechanism. S
 | Group | Meaning |
 | --- | --- |
 | RPM connection | **Online** or **Offline** from the RPM connection-status stream. **Waiting** means that the Viewer has not received a usable current value. |
-| Camera connections | One indicator per configured FFmpeg camera. OSCAR 3.11.13 publishes an explicit connection value after stream startup, reconnection failure, and shutdown, then republishes the current value every 30 seconds while the driver is running. |
+| Camera connections | One indicator per configured FFmpeg camera. OSCAR 3.11.14 publishes an explicit connection value after stream startup, reconnection failure, and shutdown, then republishes the current value every 30 seconds while the driver is running. |
 | Optional WebRelay lights & sound | Hidden when `webRelayConfig.enabled = false` (default). On enabled lanes, displays read-only `WebRelay (<mode>)` / `Offline` health chips for operators and a per-lane **Lights & Sound** control button for Administrators (see [LANE_WEBRELAY_GUIDE.md](LANE_WEBRELAY_GUIDE.md)). |
 | Gamma high / gamma low / neutron high | **Fault**, **Clear**, or **Unknown** from the corresponding detector alarm-state telemetry. Missing or failed telemetry remains Unknown rather than appearing clear. |
 | Tamper | **Fault**, **Clear**, or **Unknown** from the lane's tamper telemetry. |
@@ -55,6 +55,8 @@ The dashboard retains only the existing gamma and neutron real-time listeners ne
 
 The FFmpeg driver also republishes each camera's unchanged connection state every 30 seconds. Connection-status observations older than one hour are removed by the normal database-retention job, so the heartbeat keeps a healthy running camera current without weakening stale-data detection. If the driver stops publishing, its last value ages out and the Viewer returns to **Waiting** rather than displaying an indefinitely stale **Online** state.
 
+For radiation detectors, the Viewer also verifies **device-data liveness (`30 s` silence window)** across the lane's ~1 Hz device streams (`gammaCounts` and `neutronCounts` on portals, or GPS / radiometric status on mobile detectors). If a detector module is stopped from the admin console or stops emitting frames for more than 30 seconds while its last `connectionStatus` observation still says `true`, the lane transitions to **Offline**; if neither `connectionStatus` nor device heartbeats have ever reported an observation, the lane stays **Waiting** (`Unknown`); and server-to-browser clock drift exceeding `2 seconds` is automatically compensated using each node's HTTP `Date` response header.
+
 Connection, fault, and occupancy changes can therefore take up to one 30-second refresh interval to appear. Once an active occupancy has been observed, its elapsed-time display continues to advance between refreshes.
 
 ## Extended-occupancy threshold and automated `Code 9998` gamma alarm adjudication
@@ -88,7 +90,7 @@ Hardware fault tests must follow the site's approved procedures. Do not create a
 | --- | --- |
 | Lane is missing | Check node reachability, lane discovery, operational-view assignment, and the exact `?view=` key. |
 | RPM remains Waiting | Verify the RPM driver exposes `connectionStatus`, the stream is reachable, and the Viewer can query its latest observation. |
-| Camera remains Waiting | Confirm the lane generated the FFmpeg child, the child is running OSCAR 3.11.13 code with the 30-second connection heartbeat, and its connection-status datastream was discovered. Query the latest observation twice at least 30 seconds apart; its timestamp should advance while the driver is running. If it does not, inspect the FFmpeg reconnect/heartbeat logs and deployed image. |
+| Camera remains Waiting | Confirm the lane generated the FFmpeg child, the child is running OSCAR 3.11.14 code with the 30-second connection heartbeat, and its connection-status datastream was discovered. Query the latest observation twice at least 30 seconds apart; its timestamp should advance while the driver is running. If it does not, inspect the FFmpeg reconnect/heartbeat logs and deployed image. |
 | Camera shows Offline | Verify RTSP host, port, credentials, codec/path, network reachability, and FFmpeg reconnect logs. |
 | Fault remains Unknown | Confirm the expected detector or tamper datastream exists, its latest observation is readable, and the next per-node refresh completes. Unknown is deliberately not treated as Clear. |
 | Rapiscan tamper remains Unknown while other values update | A current Rapiscan driver publishes Clear whenever it establishes the RPM connection. Confirm the child driver actually reconnected, its tamper datastream exists, the baseline observation is readable, and the deployment includes the connection-baseline fix. A later device `TT` must still change the state to Fault. |
