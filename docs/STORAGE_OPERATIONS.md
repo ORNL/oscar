@@ -50,7 +50,7 @@ New installations receive these defaults from `dist/config/standard/config.json`
 | Sealed journal lifecycle queue | bounded durable batches | Avoids startup and periodic all-history directory scans while recovery and deletion backlogs converge |
 | Database `idProviderType` | `SEQUENTIAL` | Required for exact, race-free archive ownership |
 | Database batch | 10,000 rows / 1 s | Bounded insert transaction and commit period |
-| Primary stage window / delay / future skew | 30 min / 5 min / 5 min | The 22 allowlisted operational and evidentiary outputs (`gammaCounts`, `gammaThreshold`, `neutronCounts`, `setupGamma`, `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`, `status`, `emlContextual`, `emlScanContextual`, `emlAnalysis`, `dailyFile`, `connectionStatus`, `occupancyStatus`, `tamper`, `occupancy`, `adjudication`, `report`, `siteStatistics`, `nationalSummary`, `vehicleOcr`) commit to UTC-aligned LOGGED PostgreSQL children first; a closed child becomes Parquet-eligible after the delay, and farther-future detector clocks are rejected |
+| Primary stage window / delay / future skew | 30 min / 5 min / 5 min | The 26 allowlisted operational and evidentiary outputs (`gammaCounts`, `gammaThreshold`, `neutronCounts`, `setupGamma`, `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`, `status`, `emlContextual`, `emlScanContextual`, `emlAnalysis`, `dailyFile`, `connectionStatus`, `occupancyStatus`, `tamper`, `occupancy`, `adjudication`, `report`, `siteStatistics`, `nationalSummary`, `vehicleOcr`, `location`, `alarm`, `KromekDetectorRadiometricsV1Report`, `KromekSerialRadiometricStatusReport`) commit to UTC-aligned LOGGED PostgreSQL children first; a closed child becomes Parquet-eligible after the delay, and farther-future detector clocks are rejected |
 | Hourly mutable health & command cleanup | 1 h (`connectionStatus`, routine `Clear` `occupancyStatus` when `PARQUET_PRIMARY` is disabled) / 24 h (transient `cmd_commands`) | In `PARQUET_PRIMARY`, operational streams retire by dropping verified 30-minute `osg_*` partitions (`DatabasePurger` skips row-wise observation deletes so zero tombstones are created), while `PostgisCommandStoreImpl` prunes completed transient non-`adjudicationControl` commands > 24 h old |
 | Parquet-primary worker interval | 1 min | Background export, parity, and retirement cadence; the at-most-one-hour normal staging budget is an SLO, not a hard deadline during failure or backlog |
 | Archive work bounds | 2 generations / 2 verifications / 8 partition retirements / 15 min | Independently bounds each lifecycle phase and stops starting new generations at the duration bound; in-progress publication completes safely |
@@ -248,14 +248,15 @@ Do not erase an old production volume simply to make the 3.11.15 module start.
 
 ### Phase 1: validate the primary cold tier
 
-The shipping profile commits all 22 allowlisted operational and evidentiary outputs
+The shipping profile commits all 26 allowlisted operational and evidentiary outputs
 (`gammaCounts`, `gammaThreshold`, `neutronCounts`, `setupGamma`, `setupNeutron`, `speed`,
 `backgroundReport`, `foregroundReport`, `status`, `emlContextual`, `emlScanContextual`,
 `emlAnalysis`, `dailyFile`, `connectionStatus`, `occupancyStatus`, `tamper`, `occupancy`,
-`adjudication`, `report`, `siteStatistics`, `nationalSummary`, `vehicleOcr`) to LOGGED,
+`adjudication`, `report`, `siteStatistics`, `nationalSummary`, `vehicleOcr`, `location`, `alarm`,
+`KromekDetectorRadiometricsV1Report`, `KromekSerialRadiometricStatusReport`) to LOGGED,
 UTC-aligned 30-minute PostgreSQL staging children, then makes each closed child Parquet-eligible
 after five minutes and runs the worker every minute (while reconciling existing route entries and
-retroactively migrating any legacy unarchived parent-table rows for those 22 outputs to Parquet on
+retroactively migrating any legacy unarchived parent-table rows for those 26 outputs to Parquet on
 startup and compacting `ONLY oscar.obs`). After manifest-last activation, object re-hash,
 and exact row/UUID parity, it populates `oscar_obs_latest`, 22 per-generation summary counters on
 `oscar_archive_schema`, and `oscar_event_locator`, then transactionally detaches and drops the

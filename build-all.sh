@@ -31,7 +31,8 @@ node --test tools/update-version.test.js tools/collect-release-contributors.test
     --tests org.sensorhub.impl.datastore.postgis.TestParameterizedQueryBuilder \
     --tests org.sensorhub.impl.datastore.postgis.store.obs.TestObservationKeysetIterator \
     --tests org.sensorhub.impl.datastore.postgis.store.obs.TestLazyTieredStreamLifecycle \
-    --tests org.sensorhub.impl.datastore.postgis.connection.TestCancellableConnectionScope
+    --tests org.sensorhub.impl.datastore.postgis.connection.TestCancellableConnectionScope \
+    --tests org.sensorhub.impl.datastore.postgis.archive.TestCqlMutatedGenerationCountCache
 
 ./gradlew --no-parallel \
     :osh-core:sensorhub-service-consys:test \
@@ -44,6 +45,8 @@ node --test tools/update-version.test.js tools/collect-release-contributors.test
     :sensorhub-service-bucket:test \
     :sensorhub-service-dailyfile-journal:test \
     :sensorhub-process-ocr:test \
+    :sensorhub-process-d5-occupancy:test \
+    :sensorhub-driver-kromek-d5:test \
     :sensorhub-system-lane:test
 
 ./gradlew --no-parallel \

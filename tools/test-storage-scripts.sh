@@ -86,7 +86,8 @@ const outputs = [
     'emlContextual', 'emlScanContextual', 'emlAnalysis',
     'dailyFile', 'connectionStatus', 'occupancyStatus', 'tamper',
     'occupancy', 'adjudication', 'report', 'siteStatistics', 'nationalSummary',
-    'vehicleOcr',
+    'vehicleOcr', 'location', 'alarm',
+    'KromekDetectorRadiometricsV1Report', 'KromekSerialRadiometricStatusReport',
 ];
 const expectedVideoRetention = {
     timeToRetention: 0,

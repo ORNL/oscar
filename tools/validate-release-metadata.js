@@ -151,10 +151,11 @@ const expectedArchiveOutputs = [
     'emlContextual', 'emlScanContextual', 'emlAnalysis',
     'dailyFile', 'connectionStatus', 'occupancyStatus', 'tamper',
     'occupancy', 'adjudication', 'report', 'siteStatistics', 'nationalSummary',
-    'vehicleOcr',
+    'vehicleOcr', 'location', 'alarm',
+    'KromekDetectorRadiometricsV1Report', 'KromekSerialRadiometricStatusReport',
 ];
 if (JSON.stringify(archive?.outputNames) !== JSON.stringify(expectedArchiveOutputs)) {
-    throw new Error('dist/config/standard/config.json: expected the approved twenty-two-output immutable archive allowlist.');
+    throw new Error('dist/config/standard/config.json: expected the approved twenty-six-output immutable archive allowlist.');
 }
 requireMatch('dist/release/.env.example', /^OSCAR_VERSION=(.+)$/m, version, 'OSCAR_VERSION');
 requireMatch(
