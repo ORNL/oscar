@@ -19,7 +19,7 @@ Progress across **Incorporated** and **Planned** work is tracked in two synchron
    - [**Milestone `#4` — Planned `v3.12.0`: Field Cutover & Operational Polish**](https://github.com/ORNL/oscar/milestone/4)
      - [`ORNL/oscar#74`](https://github.com/ORNL/oscar/issues/74), [`ORNL/oscar#75`](https://github.com/ORNL/oscar/issues/75), [`ORNL/oscar#77`](https://github.com/ORNL/oscar/issues/77)
    - [**Milestone `#5` — Planned `v3.12.0`: Multi-Year Cold Parquet CQL Count & Query Scale**](https://github.com/ORNL/oscar/milestone/5)
-     - [`ORNL/oscar#84`](https://github.com/ORNL/oscar/issues/84) & [`ORNL/osh-addons#21`](https://github.com/ORNL/osh-addons/issues/21) — `O(1)` Overlay-Fingerprinted Per-Generation CQL Count Cache & Summary Upper-Bound Pruning
+     - [`ORNL/oscar#84`](https://github.com/ORNL/oscar/issues/84), [`ORNL/osh-addons#21`](https://github.com/ORNL/osh-addons/issues/21) & [`ORNL/osh-oakridge-modules#63`](https://github.com/ORNL/osh-oakridge-modules/issues/63) — `O(1)` Overlay-Fingerprinted Per-Generation CQL Count Cache, Summary Upper-Bound Pruning & Per-Stream Vehicle Search Watermarks
 2. **`ORNL` GitHub Projects v2 Kanban Board (`OSCAR Platform Roadmap & Release Tracker`):**
    - Synchronized deterministically from repository state via [`../tools/sync-project-board.mjs`](../tools/sync-project-board.mjs):
      ```bash
@@ -120,20 +120,23 @@ The `v3.12.0` feature cycle focuses on four planned tracks. Because OSCAR is val
 
 ---
 
-### 3.3 Track C — Multi-Year Cold Parquet CQL Count Caching & Upper-Bound Pruning (`O(1)` Warm Counts)
-- **Tracking Milestone & Issues:** [Milestone `#5`](https://github.com/ORNL/oscar/milestone/5) · [`ORNL/oscar#84`](https://github.com/ORNL/oscar/issues/84) · [`ORNL/osh-addons#21`](https://github.com/ORNL/osh-addons/issues/21)
-- **Recommended Shared Branch Name (across `ORNL/osh-addons`, `ORNL/oscar-viewer`, `ORNL/oscar`):** `feat/v3.12.0-parquet-cql-count-cache`
-- **Empirical Motivation (30-Day 50-Lane Profiling on `v3.11.15`):**
-  - Interactive filtered pages (`offset=0`, `offset=15`, and deep offsets up to `offset=1,500,000` across `1.87M+` occupancies) settle in **`322–492 ms` (`O(1)`)**, and summarized filter counts (`gammaAlarm`, `neutronAlarm`, `adjudicatedIdsCount`, disjoint multi-`Status`, `base_summary_mask` windows) settle in **`< 5–50 ms` (`0` DuckDB sessions)**.
-  - However, unsummarized numeric/timestamp/text CQL `/observations/count` queries (such as `maxGamma >= 50` or `endTime > '<iso>'`) currently bypass `ParquetArchiveReader.unmutatedCqlCounts` whenever a sealed 30-minute Parquet generation has `>= 1` `Code 9999` EML or operator overlay (`excludedNav` hit). On 50-lane portals with EML enabled, over half of all sealed generations (`~2,300` of `4,456` at 30 days) have EML overlays, causing background counts to rescan `~2,300` Parquet files in DuckDB (`22.1 s` warm / `42.0 s` cold inside the `1`-session `cold-cql-count` lane) and scaling linearly toward `17,520+` generations at 1 year.
+### 3.3 Track C — Multi-Year Cold Parquet CQL Count & Vehicle Search Scale (`O(1)` Warm Lookups)
+- **Tracking Milestone & Issues:** [Milestone `#5`](https://github.com/ORNL/oscar/milestone/5) · [`ORNL/oscar#84`](https://github.com/ORNL/oscar/issues/84) · [`ORNL/osh-addons#21`](https://github.com/ORNL/osh-addons/issues/21) · [`ORNL/osh-oakridge-modules#63`](https://github.com/ORNL/osh-oakridge-modules/issues/63)
+- **Recommended Shared Branch Name (across `ORNL/osh-addons`, `ORNL/osh-oakridge-modules`, `ORNL/oscar-viewer`, `ORNL/oscar`):** `feat/v3.12.0-parquet-cql-count-cache`
+- **Empirical Motivation (30-Day 50-Lane `full` Regression & 8.4h Endurance on `v3.11.15`):**
+  - Interactive filtered pages (`offset=0`, `offset=15`, and deep offsets up to `offset=1,500,000` across `1.90M` occupancies) settle in **`322–523 ms` (`O(1)`)**, and summarized filter counts (`gammaAlarm`, `neutronAlarm`, `adjudicatedIdsCount`, disjoint multi-`Status`, `base_summary_mask` windows) settle in **`< 5–50 ms` (`0` DuckDB sessions)**.
+  - **Finding 1 — Unsummarized CQL `/observations/count` Over EML-Mutated Generations:** Unsummarized numeric/timestamp/text CQL `/observations/count` queries (such as `maxGamma >= 50` or `endTime > '<iso>'`) currently bypass `ParquetArchiveReader.unmutatedCqlCounts` whenever a sealed 30-minute Parquet generation has `>= 1` `Code 9999` EML or operator overlay (`excludedNav` hit). On 50-lane portals with EML enabled, over half of all sealed generations (`~2,300` of `4,456` at 30 days) have EML overlays, causing background counts to rescan `~2,300` Parquet files in DuckDB (`22.1 s` warm / `42.0 s` cold inside the `1`-session `cold-cql-count` lane).
+  - **Finding 2 — `VehicleIncidentAggregator` Cache-Key Invalidation Rescan (`GET /buckets/adjudication/vehicle-search`):** `OcrSearchCacheSlot` and `AdjudicationSearchCacheSlot` currently key on `db + "|" + String.join(",", sortedStreamKeys)`. Enabling OCR on an additional lane (`Lane50` in `vehicle-ocr`) or querying a lane subset changes `sortedOcrKeys` and triggers a synchronous `Instant.MIN..Instant.MAX` `selectEntries` rescan across all `4,456` Parquet files (`> 30 s`), even when `Lane41..Lane49` are already cached in memory; in addition, `PROFILE_LOAD_PARALLELISM = 4` exceeds `DuckDbResourcePolicy`'s `2`-session ceiling.
 
 #### Required Architectural Implementation Before Merge
-1. **Overlay-Fingerprinted Per-Generation Count Cache (`ORNL/osh-addons` — `ParquetArchiveReader.java`):**
+1. **Overlay-Fingerprinted Per-Generation Count Cache (`ORNL/osh-addons#21` — `ParquetArchiveReader.java`):**
    - Extend `CqlGenerationCountKey` to include a compact deterministic digest of `genExcludedIds` (`(generation.sha256, normalizedDatastreamIds, cqlAstDigest, phenomenonWindow, resultCutoffBucket, genExcludedIdsDigest)`) rather than disqualifying generations that contain `excludedNav` overlays.
    - Because `genExcludedIds` for a sealed historical generation only changes on retroactive cold re-adjudications, EML-adjudicated generations become `99.9%+` cache-eligible (`< 50 ms` warm count, `0` DuckDB sessions).
 2. **Generation Summary Numeric Upper-Bound Pruning (`oscar_archive_generation_summary`):**
    - Persist compact numeric upper bounds (`max_gamma_max`, `max_neutron_max`, `max_occupancy_duration_ms`) in `oscar_archive_generation_summary` (and prune `0`-alarm generations when combined with `Status = Gamma | Neutron`) so cold cache misses skip non-matching 30-minute Parquet files in memory before opening DuckDB.
-3. **Viewer Count Coalescing & Abort Hygiene (`ORNL/oscar-viewer`):**
+3. **Per-Stream `VehicleIncidentAggregator` Cache Watermarks & `PROFILE_LOAD_PARALLELISM <= 2` (`ORNL/osh-oakridge-modules#63`):**
+   - Key `OcrSearchCacheSlot` and `AdjudicationSearchCacheSlot` per `IObsSystemDatabase` (`db`) with per-stream watermarks (`Map<String, Instant>`) so dynamically added OCR lanes or scoped lane subsets reuse warmed streams in `0 ms` and scan only newly added streams (`< 5 ms`), avoid synchronous full-archive `slot.clear()` rescans inside HTTP request threads, and cap `PROFILE_LOAD_PARALLELISM` to `<= 2`.
+4. **Viewer Count Coalescing & Abort Hygiene (`ORNL/oscar-viewer`):**
    - Abort superseded `/observations/count` `AbortController` requests cleanly on rapid filter/sort toggles and decouple DataGrid interactive row settlement from slow cold count badges.
 
 ---

@@ -39,10 +39,12 @@ Use this skill when developing, rebasing, or reviewing the planned `v3.12.0` fea
    - Never remove `<AlarmAudio />` from `src/app/Providers.tsx` or mount `<AlarmAudio />` inside widgets.
    - Enforce per-dashboard widget caps (`<= 4` simultaneous live-video widgets, `<= 6` simultaneous live-chart widgets), replace `AlarmStatsRegistry` historical `searchObservations` / `1,440`-count polling with summarized server-side or bounded hot-state metrics (`0` periodic DuckDB cold scans), use `SharedConnectionPool` with clean teardown, honor `?view=<scope>` lane filtering, version `redux-persist` state, remove `.DS_Store`, and pass `npm run validate:locales` + Cypress component specs.
 
-## Blueprint C — Multi-Year Cold Parquet CQL Count Caching & Upper-Bound Pruning ([`ORNL/oscar#84`](https://github.com/ORNL/oscar/issues/84), [`ORNL/osh-addons#21`](https://github.com/ORNL/osh-addons/issues/21))
+## Blueprint C — Multi-Year Cold Parquet CQL Count & Vehicle Search Scale ([`ORNL/oscar#84`](https://github.com/ORNL/oscar/issues/84), [`ORNL/osh-addons#21`](https://github.com/ORNL/osh-addons/issues/21), [`ORNL/osh-oakridge-modules#63`](https://github.com/ORNL/osh-oakridge-modules/issues/63))
 1. **Overlay-Fingerprinted Per-Generation Count Cache (`ORNL/osh-addons` — `ParquetArchiveReader.java`):**
    - Extend `CqlGenerationCountKey` to include a compact deterministic digest of `genExcludedIds` (`(generation.sha256, normalizedDatastreamIds, cqlAstDigest, phenomenonWindow, resultCutoffBucket, genExcludedIdsDigest)`) rather than bypassing `unmutatedCqlCounts` whenever a 30-minute Parquet generation has `Code 9999` EML or operator overlays.
 2. **Summary Upper-Bound Pruning (`oscar_archive_generation_summary`):**
    - Persist compact numeric upper bounds (`max_gamma_max`, `max_neutron_max`, `max_occupancy_duration_ms`) so cold cache misses prune non-matching generations in memory before opening DuckDB.
-3. **Viewer Count Abort & Coalescing (`ORNL/oscar-viewer`):**
+3. **Per-Stream `VehicleIncidentAggregator` Cache Watermarks & `PROFILE_LOAD_PARALLELISM <= 2` (`ORNL/osh-oakridge-modules`):**
+   - Key `OcrSearchCacheSlot` and `AdjudicationSearchCacheSlot` per `db` with per-stream watermarks (`Map<String, Instant>`), avoid synchronous multi-month `slot.clear()` rescans inside HTTP request threads, and cap `PROFILE_LOAD_PARALLELISM` to `<= 2`.
+4. **Viewer Count Abort & Coalescing (`ORNL/oscar-viewer`):**
    - Abort superseded `/observations/count` `AbortController` requests on rapid filter/sort toggles (`<= 50 ms` warm unsummarized count, `0` DuckDB sessions, `0` `cold-cql-count` timeouts under unfiltered `full` regression).
