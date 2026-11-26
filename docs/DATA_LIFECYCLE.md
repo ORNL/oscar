@@ -1,4 +1,4 @@
-# OSCAR 3.11.15 data lifecycle and retention policy
+# OSCAR 3.12.0 data lifecycle and retention policy
 
 This document defines when OSCAR data changes form, when it may be removed, and which safety gates
 apply. It complements the [storage architecture](STORAGE_ARCHITECTURE.md) and the operational
@@ -45,7 +45,7 @@ workflows, adjudications, reports, archive control state, and observations not s
 primary cold tier. For allowlisted immutable outputs, a successful commit to a LOGGED PostgreSQL
 child is the durable staging boundary; OSCAR does not acknowledge those observations through a direct-to-Parquet path.
 Parquet is the primary cold tier, not a backup, and only output names listed in
-`archive.outputNames` are eligible for cold tiering. The 3.11.15 default list is:
+`archive.outputNames` are eligible for cold tiering. The 3.12.0 default list is:
 
 ```text
 gammaCounts
@@ -70,9 +70,13 @@ report
 siteStatistics
 nationalSummary
 vehicleOcr
+location
+alarm
+KromekDetectorRadiometricsV1Report
+KromekSerialRadiometricStatusReport
 ```
 
-Only static singleton configuration streams (`sensorLocation`, `adjudicationCodes`, and `siteInfo`, ~52 rows total across a 50-lane deployment) remain permanently in `ONLY oscar.obs`. After verified stage retirement, Parquet and the independently published daily files are the durable long-term representations of all 22 operational and evidentiary streams, while PostgreSQL retains `oscar_obs_latest` (one row per datastream for `< 0.5 ms` `resultTime=latest` / `phenomenonTime=latest` lookups), `oscar_archive_schema` (22 per-generation, per-datastream summary counters for `< 1 ms` SQL alarm/fault/adjudication counts and zero-match generation pruning), `oscar_event_locator` (`event_id` index), `oscar_obs_overlay` (for adjudicated or re-adjudicated archived occupancies), and datastream-scoped `oscar_tombstone`.
+Only static singleton configuration streams (`sensorLocation`, `adjudicationCodes`, and `siteInfo`, ~52 rows total across a 50-lane deployment) remain permanently in `ONLY oscar.obs`. After verified stage retirement, Parquet and the independently published daily files are the durable long-term representations of all 26 operational, evidentiary, and mobile-detector streams, while PostgreSQL retains `oscar_obs_latest` (one row per datastream for `< 0.5 ms` `resultTime=latest` / `phenomenonTime=latest` lookups), `oscar_archive_schema` (26 per-generation, per-datastream summary counters for `< 1 ms` SQL alarm/fault/tamper/adjudication counts and zero-match generation pruning, plus 256-byte `ocr_bloom` filters on `vehicleOcr`), `oscar_event_locator` (`event_id` index), `oscar_obs_overlay` (for adjudicated or re-adjudicated archived occupancies), and datastream-scoped `oscar_tombstone`.
 
 ### 2. Non-disruptive archive export
 
@@ -90,15 +94,28 @@ generations after `maximumCycleMinutes` (15); in-progress publication is allowed
 The worker is independent of the ingestion thread: it runs once immediately at module startup and
 then at the dedicated primary interval. New observations are committed to PostgreSQL staging first
 and are not individually converted to Parquet. The worker selects a half-open 30-minute UTC window
-`[start, end)`. It uses a PostgreSQL read-only
-`REPEATABLE READ` snapshot and a 5,000-row fetch size while flushing explicitly cleared 500-row
-inserts into embedded DuckDB. Live inserts continue. Rows are ordered by `(phenomenontime, id)` and
-the exporter publishes the largest deterministic prefix permitted by the configured row cap and
-the effective byte cap. The effective byte cap is the lower of the operator setting and one eighth
-of DuckDB session memory—32 MiB with the standard 256 MiB session—leaving room for table pages,
-sort keys, compression, and Parquet buffers. Remaining unowned rows become normal same-window job
-revisions, so a restart resumes safely without tiny time slices or duplicate ownership. A single
+`[start, end)` and splits it directly at export into two complementary Parquet V2 profiles:
+`RAW_EVENTS` (the 9 searchable event/summary streams: `occupancy`, `alarm`, `adjudication`,
+`report`, `vehicleOcr`, `emlAnalysis`, `tamper`, `siteStatistics`, `nationalSummary`, with 9
+pre-extracted projected scalar columns and Split-Block Bloom filters) and write-once `RAW_TELEMETRY`
+(the exact complement of all 17 remaining high-rate `1 Hz` telemetry/status/mobile streams,
+including `dailyFile`, `connectionStatus`, `occupancyStatus`, `location`, and Kromek D5 streams,
+written once at `1.0x` write amplification and never re-compacted). Each export uses a PostgreSQL
+read-only `REPEATABLE READ` snapshot and a 5,000-row fetch size streaming directly into a
+file-backed embedded DuckDB staging table via native `DuckDBAppender`. Live inserts continue.
+Rows are ordered by `(phenomenontime, id)` and the exporter publishes the largest deterministic
+prefix permitted by the configured row cap and the effective byte cap: the lower of the operator
+setting and `1/2` of DuckDB session memory for `RAW_TELEMETRY` (`128 MiB` with the standard
+`256 MiB` session, fitting an entire 50-lane 30-minute telemetry window into `1` file) or `1/8` of
+DuckDB session memory for `RAW_EVENTS` (`32 MiB`). Remaining unowned rows become normal same-window
+job revisions, so a restart resumes safely without tiny time slices or duplicate ownership. A single
 row larger than the effective cap fails closed and remains hot for operator action.
+
+Once closed `RAW_EVENTS` generations age past the 2-hour settling window, `ArchiveCompactionManager`
+compacts only the compact event tier (`RAW_EVENTS` -> `DAILY_EVENTS` -> `MONTHLY_EVENTS` plus
+independent per-part monthly overlay defragmentation for `>= 64` settled overlays `>= 7d` old),
+preserving write-once `RAW_TELEMETRY` at `1.0x` write amplification and maintaining read-only
+compatibility with legacy pre-split `RAW_GATED` and `DAILY_TELEMETRY` generations.
 
 On upgrade, the worker first reclaims the exact window of any latest-revision `FAILED` job or
 two-hour-stale `EXPORTING` job that is wholly older than the cutoff. This includes sub-hour windows
@@ -173,7 +190,7 @@ its rows in ID order, loads the exact hot IDs in bounded batches, and compares c
 digests. The receipt records expected/actual rows and success or failure. A failed receipt leaves
 all hot data in place.
 
-The shipped 3.11.15 profile sets `deleteHotAfterArchive=true`. In `PARQUET_PRIMARY`, this means
+The shipped 3.12.0 profile sets `deleteHotAfterArchive=true`. In `PARQUET_PRIMARY`, this means
 relation-level retirement rather than row-wise deletion or a rollback-grace overlap. Before a child
 can retire, every row must have an `ACTIVE` or `SEALED` exact owner with a successful
 `HOT_COLD_PARITY` receipt, and the worker re-hashes each authoritative Parquet object. Under the
@@ -236,8 +253,9 @@ queryable outside OSCAR, but the export is not live OSCAR storage and is not a c
 
 When `OscarTieredObsSystemDatabase` starts in `PARQUET_PRIMARY` mode:
 
-- **Route reconciliation (`reconcileRoutes`):** Existing `oscar_obs_storage_route` rows whose output name belongs to the 22 allowlisted `archive.outputNames` (`gammaCounts`, `gammaThreshold`, `neutronCounts`, `setupGamma`, `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`, `status`, `emlContextual`, `emlScanContextual`, `emlAnalysis`, `dailyFile`, `connectionStatus`, `occupancyStatus`, `tamper`, `occupancy`, `adjudication`, `report`, `siteStatistics`, `nationalSummary`, `vehicleOcr`) are automatically upgraded to `immutable=true` and the in-memory route cache is invalidated so subsequent writes route into 30-minute `osg_*` staging partitions.
+- **Route reconciliation (`reconcileRoutes`):** Existing `oscar_obs_storage_route` rows whose output name belongs to the 26 allowlisted `archive.outputNames` (`gammaCounts`, `gammaThreshold`, `neutronCounts`, `setupGamma`, `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`, `status`, `emlContextual`, `emlScanContextual`, `emlAnalysis`, `dailyFile`, `connectionStatus`, `occupancyStatus`, `tamper`, `occupancy`, `adjudication`, `report`, `siteStatistics`, `nationalSummary`, `vehicleOcr`, `location`, `alarm`, `KromekDetectorRadiometricsV1Report`, `KromekSerialRadiometricStatusReport`) are automatically upgraded to `immutable=true` and the in-memory route cache is invalidated so subsequent writes route into 30-minute `osg_*` staging partitions.
 - **Empty and retired stage cleanup (`reclaimEmptyOrRetiredStages`):** Empty expired `ATTACHED` stage partitions and any leftover `DETACHED` stage partitions are dropped cleanly on startup and during lifecycle maintenance.
+- **Split-at-export & event-only multi-tier compaction (`ArchiveExporter` + `ArchiveCompactionManager`):** Each closed 30-minute stage window exports directly into complementary Parquet V2 `RAW_EVENTS` (the 9 searchable event/summary streams, compacted at Day-1 into `DAILY_EVENTS` and Month+15d into `MONTHLY_EVENTS` with `1,000,000`-row / `192 MiB` rollover bounds and settled-overlay folding) and write-once `RAW_TELEMETRY` (the 17 high-rate `1 Hz` telemetry/status streams written once at `1.0x` write amplification and never rewritten). During `drainDeletingGenerations`, stale (`>= 2h`) unregistered `.partial` files are swept automatically while preserving registered UUIDs and fresh in-flight files.
 - **Retroactive parent-table migration and compaction (`ArchiveLifecycleManager`):** If an upgraded or reconciled deployment contains historical unarchived rows (`archivegenerationid IS NULL`) in the parent `ONLY oscar.obs` table for datastreams now marked `immutable=true`, the archive exporter selects those windows, publishes verified ZSTD Parquet generations, populates `oscar_obs_latest`, `oscar_archive_schema` summary counters, and `oscar_event_locator`, removes the sealed rows from `ONLY oscar.obs` after parity verification, deduplicates singleton configuration streams (`sensorLocation`, `adjudicationCodes`, `siteInfo`), and runs `VACUUM (FULL, ANALYZE) ONLY obs` once drained.
 
 For overlay-backed evidentiary mutations, non-`PARQUET_PRIMARY` compatibility streams, and command streams (`cmd_commands` / `cmd_status`), OSCAR enforces:
@@ -296,7 +314,7 @@ recovered journal; a conflicting immutable CSV or manifest is not overwritten.
   retain one value.
 - `NONE` disables compatibility observations but does not disable the durable journal.
 
-The 3.11.15 standard profile uses `LATEST`. The lane system consumes each live `dailyFile` event to
+The 3.12.0 standard profile uses `LATEST`. The lane system consumes each live `dailyFile` event to
 derive occupancy transitions, so `NONE` would disable a required operational input. `LATEST` keeps
 that live stream and registered datastream. The compatibility table contains the current unsealed
 local day plus any manifest-blocked backlog; the journal and immutable daily CSV are the

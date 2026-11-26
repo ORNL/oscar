@@ -1,9 +1,12 @@
-# OSCAR 3.11.15 storage architecture
+# OSCAR 3.12.0 storage architecture
 
-OSCAR 3.11.15 separates live operational data, durable RPM source records, retained media, and
+OSCAR 3.12.0 separates live operational data, durable RPM source records, retained media, and
 long-term observation history. PostgreSQL remains the authoritative hot store and metadata catalog;
-immutable files carry the high-volume history. This keeps normal Open Sensor Hub (OSH) reads and
-identities intact while removing the requirement that every raw count remain in PostgreSQL forever.
+immutable Apache Parquet V2 files carry the high-volume history using a **Split-at-Export +
+Event-Only Multi-Tier Compaction** design. This keeps normal Open Sensor Hub (OSH) reads and
+identities intact while eliminating telemetry write amplification (`1.0x` write-once storage for
+`98.77%` of ingested rows) and keeping searchable operational event queries fast across multi-year
+archives.
 
 This guide describes the architecture. See [Data lifecycle](DATA_LIFECYCLE.md) for retention rules,
 [archive format](ARCHIVE_FORMAT.md) for the portable file contract,
@@ -82,22 +85,22 @@ invokes a legacy publisher or merge helper, and OSCAR does not provide PITR.
 
 ## Write and query path
 
-```text
-RPM record
-  |-- synchronous per-lane journal append --> framed segment --> daily CSV + manifest
-  `-- parse/publish --> in-memory batch --> PostgreSQL commit-durable staging/transactions
-                                              |
-                                              | repeatable-read snapshot of an eligible closed stage window
-                                              v
-                          Parquet + schema snapshot + manifest
-                                              |
-                     catalog activation + compact exact-owner ledger
-                                              |
-                         object hash + exact parity receipt
-                                              v
-                    transactional detach + whole-child drop
+```mermaid
+flowchart TD
+    RPM["RPM / Camera / OCR / Mobile Detector Record"] --> JRN["Per-lane Daily File Journal (CRC32C framed)"]
+    RPM --> PG["PostgreSQL 30-Min LOGGED Stage Partition (osg_*)"]
+    PG -->|"Window closed + 5m delay (REPEATABLE READ + file-backed DuckDBAppender)"| SPLIT{"Split-at-Export Partition"}
+    SPLIT -->|"9 Searchable Event Streams (~1.23% rows, ~1.8 MiB/day @ 50 lanes)"| RE["RAW_EVENTS (Parquet V2, 20 cols, RG 8192, Bloom 0.01 FPR)"]
+    SPLIT -->|"17 High-Rate 1 Hz Telemetry & Status Streams (~98.77% rows, ~172 MiB/day)"| RT["RAW_TELEMETRY (Parquet V2, 11 cols, RG 65536, 128 MiB cap, NEVER rewritten)"]
+    RE --> ACT["Catalog Activation + Exact osg_stage_owner Ledger + Parity Verify"]
+    RT --> ACT
+    ACT --> DROP["Transactional Detach + Whole-Child DROP TABLE (Zero Row DELETEs)"]
+    RE -->|"Day-1 (window_end & activated_at <= now - 2h, folds overlays >= 2h)"| DE["DAILY_EVENTS (Parquet V2, 20 cols, RG 8192, 1M row / 192 MiB rollover)"]
+    DE -->|"Month+15d (activated_at <= now - 7d, folds overlays >= 7d)"| ME["MONTHLY_EVENTS (Parquet V2, 20 cols, RG 16384, independent per-part defrag >= 64 overlays)"]
+```
 
-Viewer/OSH query --> PostgreSQL candidates + catalog-authorized Parquet candidates
+```text
+Viewer/OSH query --> PostgreSQL hot stage + catalog-authorized Parquet V2/V1 candidates
                     --> overlays/tombstones --> de-duplicate (hot wins) --> order/limit
 ```
 
@@ -117,7 +120,7 @@ avoids reconstructing a regulatory/source artifact from an already-purged databa
 
 ### PostgreSQL hot store
 
-The 3.11.15 database configuration uses sequential observation IDs, snapshots mutable OSH `DataBlock`
+The 3.12.0 database configuration uses sequential observation IDs, snapshots mutable OSH `DataBlock`
 values when they are accepted, and commits a prepared-statement batch at 10,000 rows or the
 configured `autoCommitPeriod` (one second in the standard configuration). The PostgreSQL JDBC
 driver rewrites compatible batches into multi-row inserts. A statement-level transition-table
@@ -194,12 +197,22 @@ configuration streams (`sensorLocation`, `adjudicationCodes`, `siteInfo`, ~52 ro
 `datastream_id` (with startup backfill of legacy `NULL` tombstones) so `resultTime=latest` pushdown
 applies to any datastream without active overlays or tombstones. Meanwhile, `oscar_obs_latest` serves `< 0.5 ms`
 `resultTime=latest` / `phenomenonTime=latest` queries for sparse streams, `oscar_archive_schema`
-stores 22 per-generation, per-datastream summary counters (including per-category unadjudicated and
-adjudicated Gamma, Neutron, and Gamma-Neutron alarm counters) so `StatisticsOutput` and
-Dashboard/Event Log alarm & fault counts sum interior unmutated generations in SQL in `< 1 ms` and
-prune zero-match generations without opening Parquet files, and `PostgisCommandStoreImpl` prunes
-completed transient (`fileControl` / `hlsControl`, non-`adjudicationControl`) commands older than
-24 hours. On startup,
+stores 26 per-generation, per-datastream summary counters (including per-category unadjudicated and
+adjudicated Gamma, Neutron, and Gamma-Neutron alarm counters, `Fault - Neutron High` and Gamma/Extended-Occupancy
+fault counters, and RS-350 `alarmCategoryCode = 'Gamma'` / `'Neutron'` counters) so `StatisticsOutput`,
+`ReportDataAggregator`, and Dashboard/Event Log/StatusTable alarm, tamper, & fault counts sum interior
+unmutated generations in SQL in `< 1 ms` and prune zero-match generations without opening Parquet files
+(including exact disjoint cross-property `tamperStatus = true OR alarmState = 'Fault - ...'` pushdown).
+Every summary lookup keeps `s.generation_id = ANY (?::uuid[])` chunked in `2,048`-UUID batches so
+bounded `7d`/`15d`/`30d` windows stay strictly `O(window_size)` across 10 years (`175,200+`
+`RAW_TELEMETRY` generations); pure event-stream queries restrict catalog scans via
+`oscar_archive_generation_time_idx` to `EVENT_QUERY_PROFILES` (`RAW_GATED`, `RAW_EVENTS`,
+`DAILY_EVENTS`, `MONTHLY_EVENTS`, verified per-stream to have no legacy telemetry generations); plain
+unfiltered `LIMIT`-bounded reads slice `candidatesInitialClusters` by `row_count` so DuckDB opens only
+the minimum prefix of Parquet files needed; nightly `reindexMutableTables()` bloat-gates
+`oscar_archive_schema` once it exceeds `256 MiB` (`>= 50,000` dead tuples or `>= 10%` dead ratio); and
+`PostgisCommandStoreImpl` prunes completed transient (`fileControl` / `hlsControl`, non-`adjudicationControl`)
+commands older than 24 hours. On startup,
 OSCAR reconciles existing `oscar_obs_storage_route` entries for all 26 allowlisted outputs to
 `immutable=true`, reclaims empty expired or retired `osg_*` stage partitions, retroactively drains
 and compacts (`VACUUM (FULL, ANALYZE) ONLY obs`) any legacy parent-table rows for newly-promoted
@@ -231,23 +244,127 @@ for sub-hour jobs produced by earlier releases and clears their durable failure 
 An exact retry that has become empty is recorded as `SUPERSEDED`, so it cannot starve later windows.
 
 The exporter uses a read-only PostgreSQL `REPEATABLE READ` transaction and does not update or lock
-the selected rows while producing the files. PostgreSQL is fetched in 5,000-row pages while
-DuckDB insertion is flushed and explicitly cleared every 500 rows, preventing the JDBC batch from
-retaining the entire hour in native memory. It sorts observations by datastream and time, writes
-ZSTD Parquet, verifies the row count and ID range through DuckDB, records a compressed datastream
-schema snapshot, and publishes the manifest last. Catalog activation then records exact ownership
-in a compact, short-lived ledger and requires the owned count and UUID set to equal the manifest.
-New or late rows remain unowned and are picked up by a later generation. After every row in a stage
-child has an active, parity-verified owner, the worker re-hashes the authoritative Parquet objects,
-transactionally detaches and drops the complete child, clears its temporary ownership entries, and
-seals fully retired generations. PostgreSQL therefore performs no large row-wise raw-data delete in
-the primary mode.
+the selected rows while producing the files. PostgreSQL is fetched in 5,000-row pages while rows
+stream directly into a file-backed DuckDB session via native `DuckDBAppender`, avoiding JDBC
+multi-row SQL construction overhead and keeping Java heap bounded. In `PARQUET_PRIMARY` mode,
+`OscarTieredObsSystemDatabase.runArchiveCycle()` first drains any pre-upgrade retryable `RAW_GATED`
+job, then processes closed 30-minute UTC windows oldest-first by exporting each window's
+complementary `RAW_EVENTS` and `RAW_TELEMETRY` generations back-to-back before advancing to the next
+window (ensuring every staging child completes both profiles and retires immediately even during
+backlog catch-up). Because `RAW_EVENTS` selects the 9 searchable event/summary streams via `JOIN`
+and `RAW_TELEMETRY` selects the exact complement via `LEFT JOIN ... AND NOT (COALESCE(outputName,'') = ANY(...))`,
+every staged row belongs to exactly one profile even if a datastream label is renamed later.
+Each generation sorts observations by `(datastream_id, phenomenon_time, result_time, id_value)`,
+writes ZSTD Parquet V2, verifies row count, ID range, and (for event profiles) projected columns
+through DuckDB, writes a compressed datastream schema snapshot, and publishes the manifest last.
+Catalog activation records exact ownership in `oscar_obs_stage_owner` and requires the owned count
+and UUID set to equal the manifest. After every row in a stage child has an active, parity-verified
+owner, the worker re-hashes the authoritative Parquet objects, transactionally detaches and drops
+the complete child, clears its temporary ownership entries, and seals fully retired generations.
+PostgreSQL therefore performs no large row-wise raw-data delete in `PARQUET_PRIMARY` mode.
 
 Normal reads merge PostgreSQL staging and all catalog-authorized Parquet generations. PostgreSQL
 wins during the brief verified transition when the same ID exists in both tiers. Archived updates are stored as small
 PostgreSQL overlays, and archived deletes become PostgreSQL tombstones; immutable Parquet files are
 not rewritten for individual mutations. If a live datastream schema is no longer present, the
 generation's schema snapshot is used to decode its observations.
+
+### Split-at-Export & Event-Only Multi-Tier Compaction
+
+Measured 50-lane live production traffic (`~12.38M` rows/day on Ubuntu Server 24.04 LTS; `~1.43M` rows/day on a 6-lane Type A portal) is sharply bimodal:
+
+| Workload Tier | Streams | Measured 50-Lane Volume (`6`-Lane Type A) | Typical Query Pattern | Storage Strategy |
+| :--- | :--- | :--- | :--- | :--- |
+| **High-rate telemetry, status & mobile (`RAW_TELEMETRY`)** | 17 streams: `gammaCounts`, `gammaThreshold`, `neutronCounts`, `dailyFile`, `connectionStatus`, `occupancyStatus`, `emlScanContextual`, `emlContextual`, `setupGamma`, `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`, `status`, `location`, `KromekDetectorRadiometricsV1Report`, `KromekSerialRadiometricStatusReport` | **`98.73%` of rows** (`12.22M` rows/day, **`226.0 MiB/day` = `80.6 GiB/yr`**, `4.71 MiB` per 30-min file, `19.4 B/row` ZSTD)<br>*(6-lane: `98.79%`, `1.41M` rows/day, **`24.6 MiB/day` = `8.8 GiB/yr`**, `525 KiB/file`)* | Narrow 15-second to 5-minute lane-inspection windows (`1–2` files opened) | **Write-once Parquet V2** (`archive_version = 2`, 11 base columns, `ROW_GROUP_SIZE = 65536`, `effectiveTelemetryExportUncompressedBytes = 128 MiB` at `256 MiB` DuckDB limit, `ocr_bloom = NULL`). **Exactly `1` file per 30m window (`48` files/day), `1.0x` write amplification, NEVER rewritten.** |
+| **Searchable events & summaries (`RAW_EVENTS` -> `DAILY_EVENTS` -> `MONTHLY_EVENTS`)** | 9 streams: `occupancy`, `alarm`, `adjudication`, `report`, `vehicleOcr`, `emlAnalysis`, `tamper`, `siteStatistics`, `nationalSummary` | **`1.27%` of rows** (`156.9k` rows/day, **`7.0 MiB/day` raw -> `~1.5–2.0 GiB/yr` compacted**)<br>*(6-lane: `1.21%`, `17.3k` rows/day, `1.0 MiB/day` raw -> `~0.25–0.36 GiB/yr` compacted)* | Multi-week/multi-year Event Log, Dashboard, OCR container search, and adjudication queries | **Parquet V2 + Bloom + Event-Only LSM Compaction** (`archive_version = 2`, 20 columns = 11 base + 9 pre-extracted projected scalar columns `ocr_norm`, `occ_obs_id`, `event_id`, `adj_code`, `adj_count`, `gamma_alarm`, `neutron_alarm`, `max_gamma`, `max_neutron`, Split-Block Bloom filters at `0.01` FPR, 26 `oscar_archive_schema` summary counters, selective 256-byte `ocr_bloom` + `[ocr_min_norm, ocr_max_norm]` on `vehicleOcr`). |
+
+Re-compacting `1 Hz` telemetry creates `2.0x` write amplification (`~806 GiB` of unnecessary NVMe rewrites over 10 years on 50 lanes), heavy background CPU/disk/WSL 2 `9p` I/O contention, and zero query-latency gain for 15-second event charts. Splitting at export time leaves telemetry permanent at `1.0x` write amplification while `ArchiveCompactionManager` compacts ONLY the compact `~1.27%` event tier:
+
+1. **Tier-1 Live 30-Minute Split Export (`RAW_EVENTS` + `RAW_TELEMETRY`, `archive_version = 2`):**
+   Keeps live PostgreSQL `osg_*` staging bounded under the `< 60` minute SLO while immediately
+   giving recent `RAW_EVENTS` full Parquet V2 projected columns, Split-Block Bloom filters
+   (`ROW_GROUP_SIZE = 8192`), and catalog OCR Bloom pruning before Day-1 compaction even runs.
+2. **Tier-2 Day-1 Event Compaction (`RAW_EVENTS` -> `DAILY_EVENTS`, `archive_version = 2`):**
+   Once a prior UTC day's `RAW_EVENTS` generations have both `window_end <= now - 2h` and
+   `activated_at <= now - 2h` (with zero active retention holds, deletion plans, or unretired stage
+   partitions), `ArchiveCompactionManager` compacts those `48` tiny event files (`~60 KiB` each)
+   into `DAILY_EVENTS` (`ROW_GROUP_SIZE = 8192`, `~1.8 MiB` ZSTD on 50 lanes), folding settled
+   `oscar_obs_overlay` rows (`updated_at <= now - 2h`) and recomputing exact summary counters,
+   `oscar_obs_latest`, and `oscar_event_locator` mappings under 576-bit SHA-256 multiset parity.
+3. **Tier-3 Mature Monthly Event Consolidation & Per-Part Defragmentation (`DAILY_EVENTS` -> `MONTHLY_EVENTS`, `archive_version = 2`):**
+   Fifteen days after a UTC calendar month closes (with `DAILY_EVENTS.activated_at <= now - 7d`),
+   OSCAR consolidates that month's `DAILY_EVENTS` files into `date=YYYY-MM-01/profile=MONTHLY_EVENTS/`
+   (`ROW_GROUP_SIZE = 16384`, `~12` event files/year instead of `17,520`), and independently
+   defragments any single `MONTHLY_EVENTS` part that accumulates `>= 64` settled overlays (`>= 7d` old).
+4. **Explicit Rollover Ceilings, Bounded Memory, & Disjoint Windows:**
+   Every compacted `DAILY_EVENTS` and `MONTHLY_EVENTS` part enforces explicit rollover ceilings
+   (`effectiveCompactionPartMaxRows() = 1,000,000` rows and
+   `effectiveCompactionPartUncompressedBytes() = 192 MiB` uncompressed = `~16–32 MiB` ZSTD Parquet,
+   with a `2x` hard cap for pathological equal-timestamp bursts). Overlapping source generations are
+   grouped (`clusterOverlappingSources`), streamed in `50,000`-row chunks, and spilled through
+   `DuckDbResourcePolicy.ScratchDirectory` so JVM heap stays `< 20 MiB` and at most `1` DuckDB
+   session is held at any instant. Rollovers cut on strict `phenomenon_time` boundaries so multi-part
+   days or months receive strictly disjoint `[window_start, window_end)` intervals, preserving
+   temporal catalog pruning and independent per-part defragmentation.
+5. **Online-Backup Safety, Legacy Read-Only Compatibility, & Stale `.partial` Self-Healing:**
+   Superseded event generations transition atomically to `DELETING` with `row_count = 0` and remain
+   on disk for `compactionUnlinkGraceMinutes` (default `15` minutes) plus zero active reader pins so
+   online `pg_basebackup` snapshots remain race-free. Legacy `3.11.x` `RAW_GATED` and pre-split
+   `DAILY_TELEMETRY` generations remain transparently readable via `union_by_name = true` without
+   triggering an upgrade rewrite storm. During `drainDeletingGenerations`, when no `EXPORTING` job
+   is active, `sweepStaleUnregisteredPartials` removes unregistered `.partial` artifacts older than
+   `2` hours (`7200` seconds) and prunes empty `profile=` / `date=` directories (failing closed on
+   any UUID present in `oscar_archive_generation`) so `oscar.sh archive verify` stays self-healing.
+
+#### Projected 50-Lane Steady-State Footprint (1-Year, 5-Year & 10-Year Horizon)
+
+| Metric | Legacy Unsplit (`RAW_GATED` 30m) | Option A Split-at-Export + Event-Only Compaction (Measured & Projected) |
+| :--- | :--- | :--- |
+| Telemetry write amplification | `1.0x` (or `2.0x` if re-compacted daily) | **`1.0x` (written once, never rewritten — saves `~806 GiB` NVMe rewrites over 10 yrs)** |
+| Event files per year (50 lanes) | `17,520` mixed files/year | **`~12` `MONTHLY_EVENTS` + `~30` `DAILY_EVENTS` + `<= 48` `RAW_EVENTS`** |
+| Event files over 5 / 10 years (50 lanes) | `87,600` / `175,200` mixed files | **`~60` (`~8–10 GiB`) / `~120` `MONTHLY_EVENTS` (`~15–20 GiB` ZSTD total, all Bloom-indexed; `<= 198` event catalog rows via `EVENT_QUERY_PROFILES`)** |
+| Telemetry files per day / 10-yr size (50 lanes) | `66–141` size-capped fragments/day | **`48` right-sized `4.71 MiB` `RAW_TELEMETRY` files/day (`80.6 GiB/yr` measured -> `~806 GiB` over 10 yrs; `~88 GiB` over 10 yrs on 6 lanes)** |
+| `oscar_archive_schema` annual / 10-yr growth | High churn + dead-tuple bloat | Zero telemetry churn (`20,789` rows/day on 50 lanes = `~3.8 GiB/yr`, **`~38 GiB` over 10 yrs**; `2,371` rows/day on 6 lanes = `~0.42 GiB/yr`, **`~4.2 GiB` over 10 yrs**; `ocr_bloom = NULL` on telemetry, bloat-gated nightly reindex `>= 256 MiB`, chunked `ANY(?::uuid[])` at `<= 2,048`) |
+| Certified 50-lane latencies (`277.5M` archived rows, `2.00M` occupancies) | `40–150 ms` latest/cold; `329 s` `StatisticsOutput` | **`7.2–9.9 ms` `latestArchivedMs`, `105–145 ms` `unboundedWindowNonArchivedMs`, `103–161 ms` `fiftyLaneBurstMs`, `17 s` `StatisticsOutput` (31-day 50-lane pass), `97 ms` Dashboard Next-Page, `580 ms` `off=1.5M` deep probe** |
+
+#### Developer Anti-Regression Rules for Summary Pushdown & Cold Queries
+
+When extending CQL filters, statistics, reports, or Parquet archive code:
+
+- **Keep CQL strings and summary counters in strict lockstep:** Every CQL predicate executed by
+  `StatisticsOutput` or `ReportDataAggregator` over high-volume streams (`gammaCounts`,
+  `neutronCounts`, `occupancyStatus`, `alarm`) must resolve to an exact
+  `JsonCqlEvaluator.SummaryCounterSpec` populated by both `ArchiveCatalog` and
+  `ArchiveCompactionManager` and covered by unit tests in `TestArchiveLifecycleInvariants`. Even a
+  single string mismatch (such as `"Fault - Neutron"` vs `"Fault - Neutron High"`) breaks summary
+  pushdown for the entire `OR` filter (`faultCQL`), triggering 5-minute DuckDB full scans of 30 days
+  of telemetry.
+- **Guard nullable upgrade columns & keep `migrate()` / startup $O(1)$ (`< 60 s` datastore timeout):**
+  Any new nullable column added to `oscar_archive_schema` must use
+  `COALESCE(s.<col>, COALESCE(s.row_count, 0))` as its `upperBoundExpr` and
+  `(s.summary_populated AND s.<col> IS NOT NULL)` as its `exactReadyExpr`.
+  Because `ModuleRegistry.loadAllModules` enforces a hard `60-second` datastore
+  startup timeout, **never** run unbounded full-table `UPDATE oscar_archive_schema`
+  or multi-generation DuckDB scans synchronously inside `ArchiveCatalog.migrate()`
+  or `OscarTieredObsStore` startup: gate inline backfills to `<= 64` generations
+  and drain larger multi-week/multi-year upgrades newest-first in bounded committed
+  batches (`backfillPendingSchemaUpgradeColumnsBatch(128)` combining schema-blob
+  zero-fills into one pass per batch, then targeted DuckDB
+  `read_parquet(..., filename=true, union_by_name=true)` registered in
+  `DuckDbResourcePolicy.AdmissionController.isBackgroundCountOperation`) on the
+  `oscar-base-summary-backfill` daemon thread, latching completed phases so
+  steady-state maintenance performs zero full-table scans.
+  always remains free for interactive queries.
+- **Version persisted `base_summary_mask` bits:** New `JsonCqlEvaluator.computeSummaryMask` bits
+  must be gated behind a version bit (`BIT_MASK_V2 = 1 << 30`) so pre-upgrade persisted masks on
+  `oscar_obs_overlay` and `oscar_tombstone` never silently mis-evaluate new predicates.
+- **Always pass `union_by_name=true` across mixed generations:** Multi-file DuckDB reads can combine
+  11-column (`RAW_GATED`, `RAW_TELEMETRY`) and 20-column (`RAW_EVENTS`, `DAILY_EVENTS`,
+  `MONTHLY_EVENTS`) Parquet files in the same batch.
+- **Stage `9p`/`drvfs` Parquet files before DuckDB reads on Windows 11 + WSL 2:** Every DuckDB path
+  reading `/var/lib/oscar/archive` must check `ParquetArchiveReader.isPathOn9pMount(...)` and stage
+  into the local Linux `ext4` `operationDirectory` (via 16 KiB bounded reads in
+  `ArchiveExporter.stageToLocalDirectory`) so DuckDB native `pread` never hits WSL 2 `9p` `ENOMEM`.
 
 For an explicit set of datastreams with `resultTime=latest` and no sparse mutation records, OSCAR
 pushes latest-per-stream selection into both tiers before the union. PostgreSQL performs one
@@ -267,7 +384,7 @@ tools; see [Archive format](ARCHIVE_FORMAT.md).
 
 Every embedded DuckDB connection—export, post-write verification, activation staging, hot/cold
 parity, cold result streaming, metadata scans, and counts—uses the same bounded
-resource policy. The 3.11.15 production defaults are 256 MiB of DuckDB memory, two worker threads,
+resource policy. The 3.12.0 production defaults are 256 MiB of DuckDB memory, two worker threads,
 and 4 GiB of spill per operation, with at most two embedded sessions admitted process-wide. A
 fair first-in/first-out gate waits up to 30 seconds and then fails busy; all independently
 configured archive stores share the gate, and the smallest cap registered by an active or waiting
@@ -409,9 +526,9 @@ policy to hot, cold, exported, and backup copies.
 - Do not include secrets, full manifests, raw records, or images in ordinary support tickets or
   unredacted diagnostic bundles.
 
-## 3.11.15 compatibility boundary
+## 3.12.0 compatibility boundary
 
-OSCAR 3.11.15 is a substantial storage-profile update. A new installation uses:
+OSCAR 3.12.0 is a substantial storage-profile update. A new installation uses:
 
 - `OscarTieredObsSystemDatabaseConfig` with explicit `PARQUET_PRIMARY`, sequential IDs, and batched
   commit-durable PostgreSQL staging for the allowlisted immutable outputs;
@@ -425,7 +542,7 @@ The legacy occupancy `videoPaths` field, legacy daily CSV syntax, and OSH identi
 However, an existing deployment's persistent `config.json` is intentionally not overwritten by
 `oscar upgrade`, and PostgreSQL data checksums are selected only when a new database cluster is
 initialized. There is no automatic conversion of an old database/configuration into the complete
-3.11.15 storage profile. The corrected 3.11.15 observation natural-key index also treats null fields as
+3.12.0 storage profile. The corrected 3.12.0 observation natural-key index also treats null fields as
 equal; index creation fails safely if a legacy database contains duplicates under that definition,
 and those rows require an explicit reviewed migration decision. Natural-key verification uses the
 same `COALESCE` expressions as the unique index, including for null fields, so PostgreSQL generic
@@ -435,7 +552,7 @@ ID. If the observation is already archive-owned, OSCAR writes the correction to 
 generation's PostgreSQL overlay—both during the brief verified staging transition and after the staging child has been dropped—
 instead of modifying Parquet or inserting a duplicate hot identity.
 
-For the current test systems and for new production deployments, initialize a fresh 3.11.15 database
+For the current test systems and for new production deployments, initialize a fresh 3.12.0 database
 and configuration. For a production system whose history must be preserved, keep the old deployment
 read-only, take and verify a backup, export records required by policy, and perform a separately
 validated migration rather than deleting volumes or assuming `upgrade` enabled the new lifecycle.

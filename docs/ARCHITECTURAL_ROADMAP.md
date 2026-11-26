@@ -1,6 +1,6 @@
 # OSCAR Architectural Roadmap, Governance & Feature Blueprints
 
-This document provides the engineering roadmap, multi-repository collaboration rules, incorporated release ledger (`v3.10.0`–`v3.11.15`), and planned `v3.12.0` implementation blueprints for **OSCAR** across all 9 `ORNL/*` repositories. It is written for **both human developers and AI coding agents** (`Antigravity` / `Gemini`, `Codex`, `Claude Code`, `Cursor`, `GitHub Copilot`); pair it with [`../AGENTS.md`](../AGENTS.md), [`STORAGE_ARCHITECTURE.md`](STORAGE_ARCHITECTURE.md), and [`REGRESSION_AND_RELEASE_CERTIFICATION.md`](REGRESSION_AND_RELEASE_CERTIFICATION.md).
+This document provides the engineering roadmap, multi-repository collaboration rules, incorporated release ledger (`v3.10.0`–`v3.12.0`), and forward infrastructure roadmap for **OSCAR** across all 9 `ORNL/*` repositories. It is written for **both human developers and AI coding agents** (`Antigravity` / `Gemini`, `Codex`, `Claude Code`, `Cursor`, `GitHub Copilot`); pair it with [`../AGENTS.md`](../AGENTS.md), [`STORAGE_ARCHITECTURE.md`](STORAGE_ARCHITECTURE.md), and [`REGRESSION_AND_RELEASE_CERTIFICATION.md`](REGRESSION_AND_RELEASE_CERTIFICATION.md).
 
 ---
 
@@ -12,14 +12,16 @@ Progress across **Incorporated** and **Planned** work is tracked in two synchron
    - [**Milestone `#1` — Incorporated: `v3.10.0 – v3.11.15` Platform, Security & 50-Lane Scale Hardening**](https://github.com/ORNL/oscar/milestone/1)
      - [`ORNL/oscar#78`](https://github.com/ORNL/oscar/issues/78) — Incorporated Platform Baseline (`v3.10.0` – `v3.11.13`)
      - [`ORNL/oscar#79`](https://github.com/ORNL/oscar/issues/79) — Incorporated `OSCAR v3.11.14` & `v3.11.15` Multi-Repo Bugfix & 50-Lane Scale Hardening
-   - [**Milestone `#2` — Planned `v3.12.0`: Mobile Detector System (RS-350 & Kromek D5)**](https://github.com/ORNL/oscar/milestone/2)
-     - [`ORNL/oscar#80`](https://github.com/ORNL/oscar/issues/80) — Architecture & Cross-Repo Integration Checklist (`osh-oakridge-modules#57`, `oscar-viewer#49`, `oscar#76`)
-   - [**Milestone `#3` — Planned `v3.12.0`: Opt-In Custom Widget Dashboards (`/dashboards`)**](https://github.com/ORNL/oscar/milestone/3)
-     - [`ORNL/oscar#81`](https://github.com/ORNL/oscar/issues/81) — Additive Route, Global `AlarmAudio` & Resource-Cap Blueprint (`oscar-viewer#50`)
-   - [**Milestone `#4` — Planned `v3.12.0`: Field Cutover & Operational Polish**](https://github.com/ORNL/oscar/milestone/4)
-     - [`ORNL/oscar#74`](https://github.com/ORNL/oscar/issues/74), [`ORNL/oscar#75`](https://github.com/ORNL/oscar/issues/75), [`ORNL/oscar#77`](https://github.com/ORNL/oscar/issues/77)
-   - [**Milestone `#5` — Planned `v3.12.0`: Multi-Year Cold Parquet CQL Count & Query Scale**](https://github.com/ORNL/oscar/milestone/5)
-     - [`ORNL/oscar#84`](https://github.com/ORNL/oscar/issues/84), [`ORNL/osh-addons#21`](https://github.com/ORNL/osh-addons/issues/21) & [`ORNL/osh-oakridge-modules#63`](https://github.com/ORNL/osh-oakridge-modules/issues/63) — `O(1)` Overlay-Fingerprinted Per-Generation CQL Count Cache, Summary Upper-Bound Pruning & Per-Stream Vehicle Search Watermarks
+   - [**Milestone `#2` — Incorporated in `v3.12.0`: Mobile Detector System (RS-350 & Kromek D5)**](https://github.com/ORNL/oscar/milestone/2)
+     - [`ORNL/oscar#80`](https://github.com/ORNL/oscar/issues/80) — Cross-Repo Integration (`osh-oakridge-modules#57`, `oscar-viewer#49`, `oscar#76`, `osh-oakridge-modules#52`)
+   - [**Milestone `#3` — Incorporated in `v3.12.0`: Opt-In Custom Widget Dashboards (`/dashboards`)**](https://github.com/ORNL/oscar/milestone/3)
+     - [`ORNL/oscar#81`](https://github.com/ORNL/oscar/issues/81) — Additive Route, Global `AlarmAudio` & Resource-Cap Implementation (`oscar-viewer#50`, `oscar-viewer#46`)
+   - [**Milestone `#4` — Incorporated in `v3.12.0`: Field Cutover & Operational Polish**](https://github.com/ORNL/oscar/milestone/4)
+     - [`ORNL/oscar#74`](https://github.com/ORNL/oscar/issues/74), [`ORNL/oscar#75`](https://github.com/ORNL/oscar/issues/75), [`ORNL/oscar#77`](https://github.com/ORNL/oscar/issues/77), [`ORNL/osh-oakridge-modules#41`](https://github.com/ORNL/osh-oakridge-modules/issues/41), [`ORNL/osh-oakridge-modules#49`](https://github.com/ORNL/osh-oakridge-modules/issues/49), [`ORNL/oscar-viewer#44`](https://github.com/ORNL/oscar-viewer/issues/44)
+   - [**Milestone `#5` — Incorporated in `v3.12.0`: Option A Storage, Multi-Year Cold Parquet CQL Count & 10-Year Scale Hardening**](https://github.com/ORNL/oscar/milestone/5)
+     - [`ORNL/oscar#84`](https://github.com/ORNL/oscar/issues/84), [`ORNL/osh-addons#19`](https://github.com/ORNL/osh-addons/issues/19), [`ORNL/osh-addons#21`](https://github.com/ORNL/osh-addons/issues/21), & [`ORNL/osh-oakridge-modules#63`](https://github.com/ORNL/osh-oakridge-modules/issues/63) — Split-at-Export (`RAW_TELEMETRY` + `RAW_EVENTS -> DAILY_EVENTS -> MONTHLY_EVENTS`), 26 Summary Counters, Non-Blocking `< 60 s` Upgrade Migration, `O(1)` Overlay-Fingerprinted CQL Count Cache, and Per-Stream Vehicle Search Watermarks
+   - [**Milestone `#6` — Self-Contained 50-Lane Regression Test Node Blueprint**](https://github.com/ORNL/oscar/milestone/6)
+     - [`ORNL/oscar#87`](https://github.com/ORNL/oscar/issues/87) — Dedicated Bare-Metal Ubuntu Server 24.04 LTS 50-Lane Staging & Certification Runner (co-located emulators, `DOCKER-USER` LAN isolation, ZFS instant snapshots, `oscar-self-test`, Tailscale-ready)
 2. **`ORNL` GitHub Projects v2 Kanban Board (`OSCAR Platform Roadmap & Release Tracker`):**
    - Synchronized deterministically from repository state via [`../tools/sync-project-board.mjs`](../tools/sync-project-board.mjs):
      ```bash
@@ -72,9 +74,9 @@ flowchart LR
 
 ---
 
-## 3. Planned `v3.12.0` Feature Blueprints & Acceptance Gates
+## 3. Incorporated `v3.12.0` Feature Tracks & Acceptance Gates
 
-The `v3.12.0` feature cycle focuses on four planned tracks. Because OSCAR is validated against 50-lane portals with multi-million-row archives, contributors and AI agents **must** satisfy the checklists below on shared `ORNL/*` branches before marking Draft PRs Ready for Review, and every `v3.x.y` release sign-off requires an **unfiltered `./scripts/run-regression.sh full` (`26`-scenario) `PASS`** on the 50-lane Ubuntu 24.04 LTS certification portal plus Windows 11 + WSL 2 upgrade and soak verification.
+The `v3.12.0` release cycle delivers all four tracks below, certified against 50-lane Ubuntu Server 24.04 LTS and 6-lane Windows 11 + WSL 2 portals with multi-million-row archives. Every `v3.x.y` release sign-off requires an **unfiltered `./scripts/run-regression.sh full` (`28`-scenario) `PASS`** on the 50-lane Ubuntu 24.04 LTS certification portal plus Windows 11 + WSL 2 `full` certification and multi-host soak verification.
 
 ### 3.1 Track A — Mobile Detector System (`RS-350` Backpack & `Kromek D5` Walker)
 - **Tracking Milestone & Issue:** [Milestone `#2`](https://github.com/ORNL/oscar/milestone/2) · [`ORNL/oscar#80`](https://github.com/ORNL/oscar/issues/80) (originating enhancement: [`ORNL/osh-oakridge-modules#52`](https://github.com/ORNL/osh-oakridge-modules/issues/52))
@@ -138,6 +140,10 @@ The `v3.12.0` feature cycle focuses on four planned tracks. Because OSCAR is val
    - Key `OcrSearchCacheSlot` and `AdjudicationSearchCacheSlot` per `IObsSystemDatabase` (`db`) with per-stream watermarks (`Map<String, Instant>`) so dynamically added OCR lanes or scoped lane subsets reuse warmed streams in `0 ms` and scan only newly added streams (`< 5 ms`), avoid synchronous full-archive `slot.clear()` rescans inside HTTP request threads, and cap `PROFILE_LOAD_PARALLELISM` to `<= 2`.
 4. **Viewer Count Coalescing & Abort Hygiene (`ORNL/oscar-viewer`):**
    - Abort superseded `/observations/count` `AbortController` requests cleanly on rapid filter/sort toggles and decouple DataGrid interactive row settlement from slow cold count badges.
+5. **Split-at-Export (`RAW_EVENTS` + `RAW_TELEMETRY`), Event-Only Multi-Tier Parquet V2 Compaction, Bloom Filters, Projected Event Columns & 10-Year Scale Hardening (`ORNL/osh-addons`, `ORNL/osh-oakridge-modules`, `ORNL/oscar`):**
+   - Split closed 30-minute `PARQUET_PRIMARY` stage windows directly at export via file-backed DuckDB + native `DuckDBAppender` into two complementary Parquet V2 profiles: **`RAW_EVENTS`** (the 9 searchable operational/evidentiary/summary streams, `~1.23%` of rows, 20 columns with 9 pre-extracted projected scalar columns, `ROW_GROUP_SIZE = 8192`, Split-Block Bloom filters at `0.01` FPR, 26 `oscar_archive_schema` summary counters, and selective 256-byte `ocr_bloom` + min/max bounds) and write-once **`RAW_TELEMETRY`** (all 17 remaining high-rate `1 Hz` telemetry/status/mobile streams including `dailyFile`, `connectionStatus`, `occupancyStatus`, `location`, and Kromek D5 streams, `~98.77%` of rows, 11 base columns, `ROW_GROUP_SIZE = 65536`, `128 MiB` uncompressed cap at `256 MiB` DuckDB memory, `ocr_bloom = NULL`, **`1.0x` write amplification, never rewritten**).
+   - Restrict `ArchiveCompactionManager` strictly to event tiers (`RAW_EVENTS -> DAILY_EVENTS -> MONTHLY_EVENTS` + independent per-part monthly overlay defrag for `>= 64` settled overlays `>= 7d` old) with explicit rollover limits (`1,000,000` rows / `192 MiB` uncompressed with `2x` hard cap), overlapping source clustering, chunk-spilled streaming via `DuckDbResourcePolicy.ScratchDirectory` (`< 20 MiB` JVM heap, `<= 1` active DuckDB session), strictly disjoint `[window_start, window_end)` multi-part bounds, a `15m` `DELETING` unlink grace window, automatic self-healing cleanup of stale `>= 2h` unregistered `.partial` files, read-only compatibility with legacy `RAW_GATED` / `DAILY_TELEMETRY` archives, and `.tree`-manifest incremental USB backup invalidation.
+   - Enforce `5 s` anti-starvation aging + `parquet_metadata_cache=true` in `DuckDbResourcePolicy`, day-by-day `sliceWideCluster` (`<= 16` files/batch, bypassed for homogeneous wide clusters with bounded SQL Top-N `LIMIT <= 1_024` so sparse monthly partitions execute in 1 DuckDB open), RFC-3339 temporal, `PropertyIsLike`, and cross-property `tamperStatus=true OR alarmState='Fault - ...'` summary pushdowns in `JsonCqlEvaluator`, chunked `ANY(?::uuid[])` (`<= 2,048`) summary lookups + `EVENT_QUERY_PROFILES` scoping + plain `?limit=N` row-count prefix slicing + `>= 256 MiB` bloat-gated `REINDEX TABLE CONCURRENTLY oscar_archive_schema` in `ArchiveCatalog`/`OscarTieredObsStore`, deferred-interrupt clean stop in `SlidingOccupancyQuery`, rolling `30-day` hot-window `OcrSearchCacheSlot` with cold CQL2 merge in `VehicleIncidentAggregator`, and zero-bloat EML `Code 9999` filtering in `AdjudicationSearchCacheSlot`.
 
 ---
 
@@ -147,3 +153,9 @@ The `v3.12.0` feature cycle focuses on four planned tracks. Because OSCAR is val
 - [`ORNL/osh-oakridge-modules#41`](https://github.com/ORNL/osh-oakridge-modules/issues/41) — **SensorHub Admin Logout `continue` Target:** Preserve `continue=/sensorhub/admin` when signing out from `/sensorhub/admin`.
 - [`ORNL/osh-oakridge-modules#49`](https://github.com/ORNL/osh-oakridge-modules/issues/49) — **`BucketService` Startup Readiness Tolerance:** Bound or retry `OSCARService` startup attachment cleanly if `BucketService` initialization exceeds `10 s` on cold disks.
 - [`ORNL/oscar-viewer#44`](https://github.com/ORNL/oscar-viewer/issues/44) — **RS-350 Additional Status Indicators:** Evaluate RS-350-specific status indicators alongside `MobileDetectorSystem` (`#80`).
+
+---
+
+## 4. Planned (`v3.13.0` CI & Pre-Release Infrastructure — [Milestone `#6`](https://github.com/ORNL/oscar/milestone/6))
+
+- [`ORNL/oscar#87`](https://github.com/ORNL/oscar/issues/87) — **Self-Contained Tailscale Bare-Metal 50-Lane Staging & Certification Runner for Maintainer `-dev` / `-rc` Pre-Releases:** Provision a dedicated bare-metal Ubuntu Server 24.04 LTS 50-lane staging host on a physically isolated ISP circuit connected via Tailscale (seeded with a ZFS/LVM-snapshotted 30+ day `PARQUET_PRIMARY` archive baseline, co-located 50-lane RPM/RTSP/Samba emulators, and local `ORNL/oscar-regression` execution) so maintainers with `Write` branch-management access can produce scale-certified `-dev` and `-rc` pre-releases while keeping `main` and production `v*` tags `Admin`-gated.

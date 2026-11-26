@@ -1,8 +1,8 @@
-# OSCAR 3.11.15 Guided Walkthrough Refresher (`:443`) & Ephemeral Hands-On Training Sandbox (`oscar-sandbox` `:8444`)
+# OSCAR 3.12.0 Guided Walkthrough Refresher (`:443`) & Ephemeral Hands-On Training Sandbox (`oscar-sandbox` `:8444`)
 
-OSCAR 3.11.15 provides two complementary, built-in training and refresher experiences for gatehouse operators, shift supervisors, and system administrators:
+OSCAR 3.12.0 provides two complementary, built-in training and refresher experiences for gatehouse operators, shift supervisors, and system administrators:
 
-1. **Anytime Live Console Guided Walkthrough (`:443` — Read-Only Refresher Mode):** Click **Guided Walkthrough** (*graduation-cap icon* in the top navigation bar, or inside **Help (`?`)** — *circled question-mark icon* — `-> Manual & Video Guides`) at any time during a live shift to open the side-by-side coach (`READ-ONLY REFRESHER` badge). Users can browse all **13 role-based labs**, watch offline `1080p` 4-language (`en`, `es`, `fr`, `el`) captioned videos, view annotated `1920×1080` reference screenshots, read inline visual symbol introductions for every navigation icon, navigate to pages, and click **Highlight [Page / Tool] Icon** (for example, **Highlight Status of Health Icon** on the *heart-pulse monitor icon* or **Highlight Help (`?`)** on the *circled question-mark icon*) with **zero** simulated alarm injections, **zero** `/stage-track` server mutations, and **zero** background polling when closed.
+1. **Anytime Live Console Guided Walkthrough (`:443` — Read-Only Refresher Mode):** Click **Guided Walkthrough** (*graduation-cap icon* in the top navigation bar, or inside **Help (`?`)** — *circled question-mark icon* — `-> Manual & Video Guides`) at any time during a live shift to open the side-by-side coach (`READ-ONLY REFRESHER` badge). Users can browse all **15 role-based labs**, watch offline `1080p` 4-language (`en`, `es`, `fr`, `el`) captioned videos, view annotated `1920×1080` reference screenshots, read inline visual symbol introductions for every navigation icon, navigate to pages, and click **Highlight [Page / Tool] Icon** (for example, **Highlight Status of Health Icon** on the *heart-pulse monitor icon* or **Highlight Help (`?`)** on the *circled question-mark icon*) with **zero** simulated alarm injections, **zero** `/stage-track` server mutations, and **zero** background polling when closed.
 2. **Isolated Ephemeral Hands-On Practice Sandbox (`oscar-sandbox` on `:8444`):** Launch a completely isolated disposable practice stack (`1-click` from inside **Guided Walkthrough** or **Help (`?`)** when `enable-ui-bridge` is active on Ubuntu, or via `oscar.sh` / `oscar.bat sandbox start`) to inject simulated radiation alarms and detector faults, upload practice `.n42` / `.uff` / `.csv` / `.pmtiles` files, and practice **Split-Pane SensorHub Admin** edits with 100% zero impact on live PostgreSQL, Parquet archives, `config.json`, or physical RPM relays.
 
 ---
@@ -31,7 +31,7 @@ A core requirement of radiation portal operations is that training data, practic
 | Dimension | Operational OSCAR (`compose.yaml`, `:443`) | Ephemeral Training Sandbox (`compose.sandbox.yaml`, `:8444`) |
 | :--- | :--- | :--- |
 | **Docker Compose Project** | `oscar` | `oscar-sandbox` |
-| **Container Images** | `oscar:3.11.15`, `oscar-postgis:3.11.15`, `nginx-unprivileged:1.30.7-alpine` | Reuses the exact already-installed `3.11.15` images (`0 B` extra image download) |
+| **Container Images** | `oscar:3.12.0`, `oscar-postgis:3.12.0`, `nginx-unprivileged:1.30.7-alpine` | Reuses the exact already-installed `3.12.0` images (`0 B` extra image download) |
 | **PostgreSQL Volume** | `oscar_postgres_data` (persistent, checksummed) | `oscar_sandbox_pg` (disposable, wiped on `stop`/`reset`/TTL) |
 | **Application State Volume** | `oscar_oscar_state` (persistent `config.json`, Passkeys, journals) | `oscar_sandbox_state` (disposable, wiped on `stop`/`reset`/TTL) |
 | **Parquet Cold Archive** | Host bind-mount `OSCAR_ARCHIVE_DIR` (`archive.enabled = true`) | **Zero host bind-mounts**; `tmpfs` `/var/lib/oscar/archive` + `archive.enabled = false` (`0` `.parquet` files written) |
@@ -46,7 +46,7 @@ A core requirement of radiation portal operations is that training data, practic
 
 ### 2.1 Ubuntu Server 24.04 LTS CLI
 
-From the extracted OSCAR 3.11.15 release directory:
+From the extracted OSCAR 3.12.0 release directory:
 
 ```bash
 # Launch the isolated sandbox on HTTPS port 8444 (default 120-minute auto-expiry TTL)
@@ -67,7 +67,7 @@ sudo bash oscar.sh sandbox stop
 
 ### 2.2 Windows 11 + Docker Desktop (WSL 2) CLI
 
-From an Administrator PowerShell or Command Prompt in the OSCAR 3.11.15 release directory:
+From an Administrator PowerShell or Command Prompt in the OSCAR 3.12.0 release directory:
 
 ```powershell
 # Launch the isolated sandbox on HTTPS port 8444
@@ -109,7 +109,9 @@ When `OSCAR_SANDBOX_MODE=true`, `TrainingSandboxManager` starts a zero-hardware 
 3. **Loopback RTSP Moving-Truck Container Camera (`rtsp://127.0.0.1:8554/tutorial-cam` & `/tutorial-cam-2`):**
    - Encodes deterministic `CC0-1.0` `1280×720` (`15 fps`, `0.33 s` GOP) `H.264` gatehouse tractor-trailer drive-through clips (`SCFU8572724` / `SWT03` on `DemoLane01` and `RSTU2402941` / `M50M1` on `DemoLane02`, Modulo-11 valid ISO 6346 container stencils) in-process via JavaCPP JNI (`libopenh264` / `libavformat`) and streams them into loopback `mediamtx` (`< 0.2%` CPU, zero external CLI binary dependencies).
    - Synchronizes each occupancy injection with a full end-to-end lane transit (empty portal -> tractor cab entering -> 40-ft container traversing between the RPM pillars -> rear doors & trailer bumper exiting -> empty portal) at true `1.0×` real-time RTP timestamps, exercising live HLS playback, progressive 5-JPEG alarm frame extraction (`frame-01.jpg`–`frame-05.jpg`), and asynchronous ONNX Container & License Plate OCR (`vehicleOcr`).
-4. **Downloadable Practice Sample Files (`/sensorhub/oscar/sandbox/samples/*`):**
+4. **Loopback RS-350 Backpack Walker Simulator (`127.0.0.1:10110`):**
+   - Streams deterministic 1 Hz `STX (0x02) .. ETX (0x03)` framed ANSI N42.42-2011 XML telemetry bound strictly to `127.0.0.1:10110` inside `oscar-sandbox`, including 1,024-channel gamma spectra, neutron counts, dose rate, synthetic waypoint GPS coordinates, and `1/r²` `Cs-137` / `Co-60` hotspot `<RadAlarm>` excursions so trainees can configure a **Mobile Detector System** (`MobileDetectorConfigForm`) and verify live `/map` GPS breadcrumb trails and `/lane-view` spectroscopy with zero external hardware.
+5. **Downloadable Practice Sample Files (`/sensorhub/oscar/sandbox/samples/*`):**
    - `tutorial-1-lane.csv`: Valid `SpreadsheetParser` V1 CSV pre-targeted at `127.0.0.1:10099` and `127.0.0.1:8554/tutorial-cam` (`archiveEnabled = false`).
    - `sample-cs137-co60.n42`: Synthetic ANSI N42.42 secondary-inspection gamma spectrum (`Cs-137` 662 keV + `Co-60` 1173/1332 keV).
    - `sample-cargo-uff3.uff`: `CC0-1.0` WCO `UFF 3.0.0` tractor-trailer truck NII package (`dfb985c4-eb26-41ab-938b-ad2a1f5966d4`, matching `SCFU8572724` / `SWT03`) containing a `2048×600` Deflate-compressed 16-bit `uint16` Beer-Lambert truck radiograph, 8-bit palettized **HEMD** effective-Z overlay (`Organic`, `Intermediate`, `Inorganic`, `High-Z Shielding`), Bill of Lading Trade Manifest `.pdf`, customs declaration, normalized High-Z bounding-box annotation (`94%`), matching optical camera crops, and embedded `.n42` spectrum (also pre-indexed at `/var/lib/oscar/sandbox-tutorial/uff-share` alongside `RSTU2402941` NORM and `SCFU8S72724` 1-character fuzzy OCR packages).
@@ -118,9 +120,9 @@ When `OSCAR_SANDBOX_MODE=true`, `TrainingSandboxManager` starts a zero-hardware 
 
 ---
 
-## 4. Multi-Modal Guided Academy Curriculum (3 Role Tracks · 13 Guided Labs)
+## 4. Multi-Modal Guided Academy Curriculum (3 Role Tracks · 15 Guided Labs)
 
-Inside `:8444` (and in Read-Only Refresher Mode via **Guided Walkthrough** on `:443`), the collapsible **Training Coach** dock (`en`, `es`, `fr`, `el`) covers **13 guided labs** across three role tracks. Every lab combines **four learning modalities** (`Watch · Read · Do · Auto-Verify`):
+Inside `:8444` (and in Read-Only Refresher Mode via **Guided Walkthrough** on `:443`), the collapsible **Training Coach** dock (`en`, `es`, `fr`, `el`) covers **15 guided labs** across three role tracks. Every lab combines **four learning modalities** (`Watch · Read · Do · Auto-Verify`):
 
 1. **Watch:** Inline click-to-play `1080p` workflow video guide (`/video-guides/videos/*.mp4`) with synchronized `.vtt` closed captions (`preload="none"`).
 2. **Read:** Annotated `1920×1080` reference screenshot (`/manual-screenshots/*.png`) + plain-language **Operational Why**.
@@ -129,13 +131,14 @@ Inside `:8444` (and in Read-Only Refresher Mode via **Guided Walkthrough** on `:
 
 ![Split-Pane SensorHub Admin and Training Coach](https://raw.githubusercontent.com/ORNL/osh-oakridge-modules/main/docs/oscar-operator-manual/images/52-training-sandbox-admin-split-pane.png)
 
-### Track 1 — Gatehouse Operator (`operator`, 5 Labs)
+### Track 1 — Gatehouse Operator (`operator`, 6 Labs)
 *Automatically stages `DemoLane01` (`north-gate`) online with live Rapiscan, RTSP camera, OCR, and Cargo NII samples.*
 - **Lab 1.1 — Live Lane Monitoring, Status of Health & Fault Triage:** Verify `Online` RPM/camera health on `/health`, inject `Fault - Gamma High` (`GH`) and `Tamper` (`TT`), clear faults (`TC`), and observe a clean vehicle pass.
 - **Lab 1.2 — Priority Alarm Queue & 5-Frame Alarm Adjudication:** Inject a localized point-source Gamma Alarm, inspect the count profile and 5 retained JPEG frames on `/`, and submit a disposition code.
 - **Lab 1.3 — NORM (`Code 9999`), Extended Occupancy (`Code 9998`) & Neutron Safety:** Compare spatially uniform NORM auto-release (`Code 9999`) and stalled gamma-only holds (`Code 9998`) against mandatory human review on Neutron alarms (`NA`).
 - **Lab 1.4 — Container OCR, Secondary Spectroscopy (`.n42`) & QR Transfer:** Apply an ISO 6346 OCR container chip (`SCFU8572724`), attach `sample-cs137-co60.n42`, and inspect watermarked air-gapped QR packages.
 - **Lab 1.5 — 16-Bit WCO UFF Cargo X-Ray & HEMD Material Inspection:** Search by UFF UUID (`dfb985c4-eb26-41ab-938b-ad2a1f5966d4`) or container ID (`SCFU8572724`), adjust 16-bit TIFF Window/Level contrast, and toggle HEMD High-Z shielding bands aligned with the RPM radiation strip.
+- **Lab 1.6 — Build & Export a Custom Widget Wallboard (`/dashboards`):** Open **Custom Dashboards** (`/dashboards`, mosaic `+` tile-grid icon), create an opt-in multi-widget workspace from a starter template (**Multi-Lane Wallboard**, **Alarm & Map Overview**, or **Statistics Overview**) within the `<= 4` video and `<= 6` chart per-page guardrails, arrange or resize widgets in **Edit Layout** mode while keeping canonical `/` untouched, and export a validated `<= 512 KiB` dashboard JSON file via **Import / Export**.
 
 ### Track 2 — Shift Supervisor & Analyst (`supervisor`, 3 Labs)
 *Stages 2 lanes (`DemoLane01` `north-gate` & `DemoLane02` `south-gate`) and seeds multi-category `SNM`, `Medical`, `NORM`, and multi-pass container history.*
@@ -143,13 +146,14 @@ Inside `:8444` (and in Read-Only Refresher Mode via **Guided Walkthrough** on `:
 - **Lab 2.2 — UpSet `SNM` Co-Occurrence Analytics & 6-Type Multi-Format Reports:** Generate watermarked `PDF`, `CSV`, `JSON`, and `XLSX` reports in `/report` and inspect crimson `SNM` intersections on the UpSet chart.
 - **Lab 2.3 — National Node Summary & Secret-Redacted Support Bundles:** Review aggregated KPIs on `/national-view` and export a credential-scrubbed `oscar-support-<UTC>.zip` diagnostic bundle from `Help (?)`.
 
-### Track 3 — System Administrator (`administrator`, 5 Labs)
-*Resets to a Day-1 Blank Slate (`0` lanes configured) while loopback Rapiscan `127.0.0.1:10099` and RTSP `127.0.0.1:8554/tutorial-cam` run in the background.*
+### Track 3 — System Administrator (`administrator`, 6 Labs)
+*Resets to a Day-1 Blank Slate (`0` lanes configured) while loopback Rapiscan `127.0.0.1:10099`, loopback RS-350 walker `127.0.0.1:10110`, and RTSP `127.0.0.1:8554/tutorial-cam` run in the background.*
 - **Lab 3.1 — Manual Lane, Rapiscan RPM & Loopback RTSP Camera Setup:** Open **Split-Pane SensorHub Admin** (`/sensorhub/admin` side-by-side with the Training Coach) and configure `DemoLane01` from scratch.
 - **Lab 3.2 — 1-Click Bulk Lane Spreadsheet Import (`tutorial-1-lane.csv`):** Download `tutorial-1-lane.csv` and provision lanes in bulk via `Services -> OSCAR Service`.
 - **Lab 3.3 — Users, RBAC View Scoping, QR Enrollment & Offline Passkeys:** Practice creating view-scoped operators, printable QR enrollment invites, and `oscar_fed_...` tokens in `/users`.
 - **Lab 3.4 — Runtime Extensions (`.pmtiles` Maps, Policy Packs & Cargo NII):** Upload `sample-regional-map.pmtiles` and `sample-policy-pack.json` (`Code 101` & `Code 102`) in `/extensions`, and review `/usb-backups`.
 - **Lab 3.5 — Per-Lane Physical RPM Lights & Sound (`WebRelay-Quad`):** Stage `DemoLane01` + loopback ControlByWeb `WebRelay-Quad` (`127.0.0.1:10180`) in 1 click, test `/stateFull.xml` connectivity, review operating modes (`AUTO` EML `Code 9999` / `Code 9998` suppression, `PASS_THROUGH` `0,0,0,0` fail-safe, `MUTED`), inspect live `R1–R4` coil telemetry, and trigger timed commissioning pulses on `/health` and `/lane-view`.
+- **Lab 3.6 — Configure & Monitor a Mobile Radiation Detector (`127.0.0.1:10110` Loopback RS-350 Walker Simulator):** Open **Split-Pane SensorHub Admin** (`/sensorhub/admin`), add a **Mobile Detector System** (`MobileDetectorConfigForm`, selecting **RS-350 Backpack** at host `127.0.0.1` and port `10110` with automatic GPS `location` output enabled and portal-only Extended Occupancy / WebRelay / camera fields hidden), start the module, and verify live GPS breadcrumb trails and hotspot alarm markers on `/map` plus 1,024-channel real-time spectroscopy on `/lane-view`.
 
 ---
 
@@ -158,7 +162,9 @@ Inside `:8444` (and in Read-Only Refresher Mode via **Guided Walkthrough** on `:
 - [Quick Start Guide](../dist/release/QUICKSTART.md)
 - [Administrator Deployment Guide](../dist/release/DEPLOYMENT.md)
 - [Operator & Administrator Manual (English)](https://github.com/ORNL/osh-oakridge-modules/blob/main/services/sensorhub-service-oscar/src/main/resources/com/botts/impl/service/oscar/i18n/README.md)
-- [How-To Video Guides (`#01`–`#29`)](VIDEO_GUIDES.md)
+- [How-To Video Guides (`#01`–`#33`)](VIDEO_GUIDES.md)
+- [Operational Views & Opt-In Custom Widget Dashboards (`/dashboards`)](OPERATIONAL_VIEWS.md)
+- [Radiation Detector & Mobile Detector System Guide](RADIATION_DETECTOR_DRIVER_GUIDE.md)
 - [Per-Lane Physical RPM Lights & Sound (`WebRelay-Quad`) Guide](LANE_WEBRELAY_GUIDE.md)
 - [Cargo Non-Intrusive Inspection (WCO UFF 2.0 & 3.0) Guide](CARGO_UFF_INTEGRATION.md)
 - [Pluggable Runtime Extensions & Regional Packs Guide](PLUGGABLE_EXTENSIONS_GUIDE.md)

@@ -54,6 +54,7 @@ const BOARD_ITEMS = [
     { repo: 'ORNL/osh-oakridge-modules', kind: 'issue', number: 49, targetColumn: 'Todo' },
     { repo: 'ORNL/osh-oakridge-modules', kind: 'issue', number: 41, targetColumn: 'Todo' },
     { repo: 'ORNL/oscar-viewer', kind: 'issue', number: 44, targetColumn: 'Todo' },
+    { repo: 'ORNL/oscar', kind: 'issue', number: 87, targetColumn: 'Todo' },
 ];
 
 function ghGraphql(query, variables = {}) {
