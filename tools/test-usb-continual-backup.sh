@@ -146,10 +146,35 @@ cp -f "$work_root/server-a/secrets/backup-key.txt" "$work_root/escrow/backup-key
 [[ -f "$work_root/usb-ssd/OSCAR-Backup/packs/archive/archive-2026-10-01.tar" ]]
 
 pack_mtime_before=$(stat -c %Y "$work_root/usb-ssd/OSCAR-Backup/packs/archive/archive-2026-10-01.tar")
+pg_pack_initial=$(find "$work_root/usb-ssd/OSCAR-Backup/packs/postgres" -maxdepth 1 -type f -name 'pg-*.tar' | head -n 1)
+[[ -n $pg_pack_initial && -f "$pg_pack_initial.sha256" ]] || { echo "FAIL: initial packs/postgres/pg-*.tar missing!"; exit 1; }
+pg_pack_mtime_before=$(stat -c %Y "$pg_pack_initial")
 sleep 2
-run_usb_a sync
+# Scheduled continual tick within adaptive PG window must reuse pg-*.tar and run O(delta) incremental state scan!
+OSCAR_USB_PG_BASEBACKUP_INTERVAL_MINUTES=180 run_usb_a sync --if-attached --scheduled
 pack_mtime_after=$(stat -c %Y "$work_root/usb-ssd/OSCAR-Backup/packs/archive/archive-2026-10-01.tar")
 [[ $pack_mtime_before == "$pack_mtime_after" ]] || { echo "FAIL: historical archive pack was rewritten!"; exit 1; }
+[[ -f $pg_pack_initial && $(stat -c %Y "$pg_pack_initial") == "$pg_pack_mtime_before" ]] || {
+    echo "FAIL: scheduled continual tick rewrote PostgreSQL base pack instead of reusing it!"
+    exit 1
+}
+latest_sched_snap=$(awk -F= '$1 == "snapshot_id" { print $2; exit }' "$work_root/usb-ssd/OSCAR-Backup/LATEST" | tr -d '\r[:space:]')
+grep -Fq '"stateScanMode": "incremental"' "$work_root/usb-ssd/OSCAR-Backup/snapshots/$latest_sched_snap/epoch.json" || {
+    echo "FAIL: scheduled continual tick did not record stateScanMode=incremental"
+    cat "$work_root/usb-ssd/OSCAR-Backup/snapshots/$latest_sched_snap/epoch.json"
+    exit 1
+}
+# Manual sync must ALWAYS capture a fresh PostgreSQL base pack, run full state scan, and GC old pg-*.tar!
+run_usb_a sync
+pg_pack_count=$(find "$work_root/usb-ssd/OSCAR-Backup/packs/postgres" -maxdepth 1 -type f -name 'pg-*.tar' | wc -l | tr -d '[:space:]')
+[[ $pg_pack_count == "1" ]] || { echo "FAIL: expected exactly 1 active pg-*.tar after GC, got $pg_pack_count"; exit 1; }
+pg_pack_after_manual=$(find "$work_root/usb-ssd/OSCAR-Backup/packs/postgres" -maxdepth 1 -type f -name 'pg-*.tar' | head -n 1)
+[[ $pg_pack_after_manual != "$pg_pack_initial" ]] || { echo "FAIL: manual sync did not capture a fresh pg-*.tar!"; exit 1; }
+latest_manual_snap=$(awk -F= '$1 == "snapshot_id" { print $2; exit }' "$work_root/usb-ssd/OSCAR-Backup/LATEST" | tr -d '\r[:space:]')
+grep -Fq '"stateScanMode": "full"' "$work_root/usb-ssd/OSCAR-Backup/snapshots/$latest_manual_snap/epoch.json" || {
+    echo "FAIL: manual sync did not record stateScanMode=full"
+    exit 1
+}
 
 echo "=== [3/6] Testing seamless mode switching (continual <-> occasional <-> disabled) ==="
 run_usb_a mode occasional

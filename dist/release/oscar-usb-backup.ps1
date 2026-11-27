@@ -185,7 +185,7 @@ function Configure-ScheduledTask([string]$Mode, [int]$IntervalMinutes) {
     if ($Mode -ceq 'continual') {
         $psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
         $scriptFull = Join-Path $ScriptRoot 'oscar-usb-backup.ps1'
-        $argStr = "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$scriptFull`" sync -IfAttached"
+        $argStr = "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$scriptFull`" sync -IfAttached -Scheduled"
         $action = New-ScheduledTaskAction -Execute $psExe -Argument $argStr -WorkingDirectory $ScriptRoot
         $triggerBoot = New-ScheduledTaskTrigger -AtStartup
         $triggerRepeat = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
@@ -361,16 +361,48 @@ function Invoke-Mode([string[]]$Tokens) {
     }
 }
 
+function Resolve-SnapshotPostgresTarPath([string]$BackupRoot, [string]$SnapId) {
+    $snapDir = Join-Path $BackupRoot "snapshots\$SnapId"
+    $legacyTar = Join-Path $snapDir 'postgres.tar'
+    if (Test-Path -LiteralPath $legacyTar -PathType Leaf) {
+        return $legacyTar
+    }
+    $packIndex = Join-Path $snapDir 'pack-index.txt'
+    if (Test-Path -LiteralPath $packIndex -PathType Leaf) {
+        foreach ($line in [System.IO.File]::ReadAllLines($packIndex)) {
+            if ($line -match '^[0-9a-f]{64}  (packs/postgres/pg-.+\.tar)$') {
+                $candidate = Join-Path $BackupRoot ($Matches[1] -replace '/', '\')
+                if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                    return $candidate
+                }
+            }
+        }
+    }
+    Fail "Could not locate PostgreSQL base backup archive for snapshot $SnapId."
+}
+
+function Get-AdaptivePgBaseBackupIntervalMinutes([long]$DbBytes) {
+    $override = $env:OSCAR_USB_PG_BASEBACKUP_INTERVAL_MINUTES
+    if (-not [string]::IsNullOrWhiteSpace($override) -and $override -match '^[0-9]+$') {
+        return [int]$override
+    }
+    if ($DbBytes -ge 4294967296L) { return 180 }
+    if ($DbBytes -ge 1073741824L) { return 60 }
+    return 15
+}
+
 function Invoke-Sync([string[]]$Tokens) {
     Assert-Administrator
     $cfg = Read-UsbConfig
     if ($null -eq $cfg) { Fail 'No USB backup drive is configured yet. Run .\oscar.bat usb-backup prepare-drive ... first.' }
     $quiesce = $false
     $ifAttached = $false
+    $scheduled = $false
     foreach ($t in $Tokens) {
         switch -Regex ($t) {
             '^(-Quiesce|--quiesce)$'        { $quiesce = $true; continue }
             '^(-IfAttached|--if-attached)$' { $ifAttached = $true; continue }
+            '^(-Scheduled|--scheduled)$'    { $scheduled = $true; continue }
             default { Fail "Unknown sync option: $t" }
         }
     }
@@ -433,34 +465,88 @@ function Invoke-Sync([string[]]$Tokens) {
             if ([string]::IsNullOrWhiteSpace($pgCid)) { Fail 'PostgreSQL container must be running to capture an online backup.' }
 
             $pgPassFile = Join-Path $ScriptRoot 'secrets\postgres-bootstrap-password.txt'
-            $metaLine = ([string](& cmd.exe /c "type `"$pgPassFile`" | docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine -i --network `"container:$pgCid`" --read-only --cap-drop ALL --security-opt no-new-privileges --user 999:999 --entrypoint sh $pgImg -eu -c `"PGPASSWORD=`$(cat) psql -h 127.0.0.1 -p 5432 -U oscar_bootstrap -d gis -tA -c 'SELECT pg_current_wal_lsn()::text, gen_random_uuid()::text;'`"")).Trim()
+            $metaLine = ([string](& cmd.exe /c "type `"$pgPassFile`" | docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine -i --network `"container:$pgCid`" --read-only --cap-drop ALL --security-opt no-new-privileges --user 999:999 --entrypoint sh $pgImg -eu -c `"PGPASSWORD=`$(cat) psql -h 127.0.0.1 -p 5432 -U oscar_bootstrap -d gis -tA -c 'SELECT pg_current_wal_lsn()::text, gen_random_uuid()::text, pg_database_size('\''gis'\'')::text;'`"")).Trim()
             if ($LASTEXITCODE -ne 0 -or -not $metaLine.Contains('|')) { Fail 'Failed querying PostgreSQL LSN.' }
             $parts = $metaLine.Split('|')
             $lsn = $parts[0]; $epochId = $parts[1]
+            $pgDbBytes = 0L
+            if ($parts.Count -ge 3 -and $parts[2] -match '^[0-9]+$') { $pgDbBytes = [long]$parts[2] }
 
-            # 1. Online PostgreSQL pg_basebackup inside WSL2 native volume -> stream tar over stdout (ZERO 9p bind mounts!)
-            $pgStageVol = "oscar_usb_pgstage_$randHex"
-            & docker volume create $pgStageVol | Out-Null
-            & docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --user 0:0 --entrypoint sh `
-                --volume "${pgStageVol}:/pgbackup" $pgImg -eu -c 'rm -rf /pgbackup/* && chown 999:999 /pgbackup && chmod 0700 /pgbackup'
-            & cmd.exe /c "type `"$pgPassFile`" | docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine -i --network `"container:$pgCid`" --read-only --cap-drop ALL --cpus=1 --cpu-shares=128 --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,nodev --user 999:999 --entrypoint sh -v ${pgStageVol}:/pgbackup $pgImg -eu -c `"PGPASSWORD=`$(cat) exec pg_basebackup --pgdata=/pgbackup -h 127.0.0.1 -p 5432 -U oscar_bootstrap --format=plain --wal-method=stream --checkpoint=fast`""
-            if ($LASTEXITCODE -ne 0) { Fail 'Online pg_basebackup failed.' }
+            $pgPacksDir = Join-Path $backupRoot 'packs\postgres'
+            if (-not (Test-Path -LiteralPath $pgPacksDir)) { New-Item -ItemType Directory -Path $pgPacksDir -Force | Out-Null }
 
-            & docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --cap-drop ALL --cap-add DAC_READ_SEARCH `
-                --cpus=1 --cpu-shares=128 `
-                --security-opt no-new-privileges --user 999:999 --entrypoint pg_verifybackup `
-                --volume "${pgStageVol}:/pgbackup:ro" `
-                $pgImg --quiet /pgbackup
-            if ($LASTEXITCODE -ne 0) { Fail 'pg_verifybackup check failed.' }
+            # 1. Adaptive PostgreSQL pg_basebackup deduplication (packs/postgres/pg-<snapId>.tar)
+            $pgPackRel = ''
+            $pgPackSha = ''
+            $reusedPgPack = $false
+            $syncMode = 'full'
+            $prevLiveGzHost = ''
+            $latestPath = Join-Path $backupRoot 'LATEST'
+            if (Test-Path -LiteralPath $latestPath -PathType Leaf) {
+                $prevSnapId = Get-EnvFileValue $latestPath 'snapshot_id' ''
+                if (-not [string]::IsNullOrWhiteSpace($prevSnapId)) {
+                    $candLiveGz = Join-Path $backupRoot "snapshots\$prevSnapId\live-immutable-paths.txt.gz"
+                    if ((Test-Path -LiteralPath $candLiveGz -PathType Leaf) -and ((Get-Item -LiteralPath $candLiveGz).Length -gt 0)) {
+                        $prevLiveGzHost = $candLiveGz
+                    }
+                    if ($scheduled -and (-not $quiesce) -and ([string]$cfg.mode -ceq 'continual')) {
+                        $syncMode = 'incremental'
+                        $pgIntervalMin = Get-AdaptivePgBaseBackupIntervalMinutes $pgDbBytes
+                        $prevPackIdx = Join-Path $backupRoot "snapshots\$prevSnapId\pack-index.txt"
+                        if ($pgIntervalMin -gt 0 -and (Test-Path -LiteralPath $prevPackIdx -PathType Leaf)) {
+                            foreach ($pl in [System.IO.File]::ReadAllLines($prevPackIdx)) {
+                                if ($pl -match '^([0-9a-f]{64})  (packs/postgres/pg-.+\.tar)$') {
+                                    $prevPgFile = Join-Path $backupRoot ($Matches[2] -replace '/', '\')
+                                    if ((Test-Path -LiteralPath $prevPgFile -PathType Leaf) -and (Test-Path -LiteralPath "$prevPgFile.sha256" -PathType Leaf)) {
+                                        $ageSec = ([DateTime]::UtcNow - (Get-Item -LiteralPath $prevPgFile).LastWriteTimeUtc).TotalSeconds
+                                        if ($ageSec -ge 0 -and $ageSec -lt ($pgIntervalMin * 60)) {
+                                            $pgPackSha = $Matches[1]
+                                            $pgPackRel = $Matches[2]
+                                            $reusedPgPack = $true
+                                            Write-Host ("Reusing verified PostgreSQL base pack {0} (age={1}s < adaptive {2}m interval)" -f $pgPackRel, [int]$ageSec, $pgIntervalMin)
+                                        }
+                                    }
+                                    break
+                                }
+                            }
+                        }
+                    }
+                }
+            } elseif ($scheduled -and (-not $quiesce) -and ([string]$cfg.mode -ceq 'continual')) {
+                $syncMode = 'incremental'
+            }
 
-            $pgTarPath = Join-Path $workDir 'postgres.tar'
-            & cmd.exe /c "docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --cpus=1 --cpu-shares=128 --security-opt no-new-privileges --user 0:0 --entrypoint tar -v ${pgStageVol}:/pgbackup:ro $img -C /pgbackup -cf - . > `"$pgTarPath`""
-            if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $pgTarPath)) { Fail 'Failed streaming postgres.tar onto USB target.' }
-            & docker volume rm -f $pgStageVol 2>$null | Out-Null
-            $pgStageVol = $null
+            if (-not $reusedPgPack) {
+                $pgStageVol = "oscar_usb_pgstage_$randHex"
+                & docker volume create $pgStageVol | Out-Null
+                & docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --user 0:0 --entrypoint sh `
+                    --volume "${pgStageVol}:/pgbackup" $pgImg -eu -c 'rm -rf /pgbackup/* && chown 999:999 /pgbackup && chmod 0700 /pgbackup'
+                & cmd.exe /c "type `"$pgPassFile`" | docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine -i --network `"container:$pgCid`" --read-only --cap-drop ALL --cpus=1 --cpu-shares=128 --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,nodev --user 999:999 --entrypoint sh -v ${pgStageVol}:/pgbackup $pgImg -eu -c `"PGPASSWORD=`$(cat) exec pg_basebackup --pgdata=/pgbackup -h 127.0.0.1 -p 5432 -U oscar_bootstrap --format=plain --wal-method=stream --checkpoint=fast`""
+                if ($LASTEXITCODE -ne 0) { Fail 'Online pg_basebackup failed.' }
+
+                & docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --cap-drop ALL --cap-add DAC_READ_SEARCH `
+                    --cpus=1 --cpu-shares=128 `
+                    --security-opt no-new-privileges --user 999:999 --entrypoint pg_verifybackup `
+                    --volume "${pgStageVol}:/pgbackup:ro" `
+                    $pgImg --quiet /pgbackup
+                if ($LASTEXITCODE -ne 0) { Fail 'pg_verifybackup check failed.' }
+
+                $pgPackName = "pg-$snapId.tar"
+                $pgPackRel = "packs/postgres/$pgPackName"
+                $pgTarTmp = Join-Path $pgPacksDir "$pgPackName.tmp"
+                $pgTarFinal = Join-Path $pgPacksDir $pgPackName
+                & cmd.exe /c "docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --cpus=1 --cpu-shares=128 --security-opt no-new-privileges --user 0:0 --entrypoint tar -v ${pgStageVol}:/pgbackup:ro $img -C /pgbackup -cf - . > `"$pgTarTmp`""
+                if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $pgTarTmp)) { Fail 'Failed streaming PostgreSQL pack onto USB target.' }
+                Move-Item -LiteralPath $pgTarTmp -Destination $pgTarFinal -Force
+                $pgPackSha = Get-FileSha256Lower $pgTarFinal
+                [System.IO.File]::WriteAllText("$pgTarFinal.sha256", "$pgPackSha  $pgPackName`n", $Utf8NoBom)
+                & docker volume rm -f $pgStageVol 2>$null | Out-Null
+                $pgStageVol = $null
+            }
 
             # 2. Native Windows NTFS Incremental Parquet Pack Sync (ZERO WSL2 9p hops!)
             $packIndexList = New-Object System.Collections.Generic.List[string]
+            $packIndexList.Add("$pgPackSha  $pgPackRel")
             $recentArchiveItems = New-Object System.Collections.Generic.List[string]
             $obsRoot = Join-Path $archiveReal 'datasets\observations'
             if (Test-Path -LiteralPath $obsRoot -PathType Container) {
@@ -518,10 +604,40 @@ function Invoke-Sync([string[]]$Tokens) {
             New-Item -ItemType Directory -Path $winStageIn, $winStageOut -Force | Out-Null
 
             $catalogFile = Join-Path $statePacksDir 'catalog.tsv'
+            $fullScanMarkerFile = Join-Path $statePacksDir '.last-full-scan-epoch'
+            $incScanMarkerFile = Join-Path $statePacksDir '.last-inc-scan-epoch'
+            $fullScanIntervalSec = 86400L
+            if (-not [string]::IsNullOrWhiteSpace($env:OSCAR_USB_FULL_STATE_SCAN_INTERVAL_SECONDS) -and $env:OSCAR_USB_FULL_STATE_SCAN_INTERVAL_SECONDS -match '^[0-9]+$') {
+                $fullScanIntervalSec = [long]$env:OSCAR_USB_FULL_STATE_SCAN_INTERVAL_SECONDS
+            }
+            $nowEpochSec = [long][Math]::Floor(([DateTime]::UtcNow - [DateTime]'1970-01-01T00:00:00Z').TotalSeconds)
+            $lastFullEpoch = 0L
+            $lastIncEpoch = 0L
+            if (Test-Path -LiteralPath $fullScanMarkerFile -PathType Leaf) {
+                $rawF = ([System.IO.File]::ReadAllText($fullScanMarkerFile)).Trim()
+                if ($rawF -match '^[0-9]+$') { $lastFullEpoch = [long]$rawF }
+            }
+            if (Test-Path -LiteralPath $incScanMarkerFile -PathType Leaf) {
+                $rawI = ([System.IO.File]::ReadAllText($incScanMarkerFile)).Trim()
+                if ($rawI -match '^[0-9]+$') { $lastIncEpoch = [long]$rawI }
+            }
+            $useFastIncrementalState = ($syncMode -ceq 'incremental') `
+                -and (Test-Path -LiteralPath $catalogFile -PathType Leaf) `
+                -and ((Get-Item -LiteralPath $catalogFile).Length -gt 0) `
+                -and (-not [string]::IsNullOrWhiteSpace($prevLiveGzHost)) `
+                -and ($lastFullEpoch -gt 0L) -and ($lastIncEpoch -gt 0L) -and ($fullScanIntervalSec -gt 0L) `
+                -and ($nowEpochSec -ge $lastFullEpoch) -and (($nowEpochSec - $lastFullEpoch) -lt $fullScanIntervalSec)
+            $stateScanKind = if ($useFastIncrementalState) { 'incremental' } else { 'full' }
+            $sinceEpochSec = if ($lastIncEpoch -gt 120L) { $lastIncEpoch - 120L } else { 0L }
+
             if (Test-Path -LiteralPath $catalogFile) {
                 Copy-Item -LiteralPath $catalogFile -Destination (Join-Path $winStageIn 'catalog.tsv') -Force
             } else {
                 [System.IO.File]::WriteAllBytes((Join-Path $winStageIn 'catalog.tsv'), [byte[]]@())
+            }
+            if ($useFastIncrementalState) {
+                Copy-Item -LiteralPath $prevLiveGzHost -Destination (Join-Path $winStageIn 'prev-live-immutable-paths.txt.gz') -Force
+                [System.IO.File]::WriteAllText((Join-Path $winStageIn 'inc-since-epoch.txt'), "$sinceEpochSec`n", $Utf8NoBom)
             }
             Copy-Item -LiteralPath $keyPath -Destination (Join-Path $winStageIn 'backup-key.txt') -Force
             $depStageDir = Join-Path $winStageIn 'deployment'
@@ -556,39 +672,94 @@ function Invoke-Sync([string[]]$Tokens) {
 set -Eeuo pipefail
 mkdir -p /stage/out /stage/work
 export TMPDIR=/stage/work
-: >/stage/work/live.tsv
-for rel_root in "files/dailyfiles" "files/.dailyfile-journal/segments" "files/videos/retained-media/v1/events" "files/ocr/crops" "files/adjudication" "files/reports" "extensions/maps-storage"; do
-    if [[ -d "/state/$rel_root" ]]; then
-        (cd /state && find "$rel_root" -ignore_readdir_race -type f -printf '%p\t%s\t%Ts\n' 2>/dev/null) >>/stage/work/live.tsv || true
+if [[ -f /stage/inc-since-epoch.txt && -s /stage/prev-live-immutable-paths.txt.gz && -s /stage/catalog.tsv ]]; then
+    since_epoch=$(tr -d '[:space:]' </stage/inc-since-epoch.txt)
+    touch -d "@$since_epoch" /stage/work/since.marker
+    : >/stage/work/recent.tsv
+    for rel_root in "files/dailyfiles" "files/.dailyfile-journal/segments" "files/videos/retained-media/v1/events" "files/ocr/crops" "files/adjudication" "files/reports" "extensions/maps-storage"; do
+        if [[ -d "/state/$rel_root" ]]; then
+            (cd /state && find "$rel_root" -ignore_readdir_race -type f \( -newer /stage/work/since.marker -o -cnewer /stage/work/since.marker \) -printf '%p\t%s\t%Ts\n' 2>/dev/null) >>/stage/work/recent.tsv || true
+        fi
+    done
+    if [[ ! -s /stage/work/recent.tsv ]]; then
+        cp -f /stage/prev-live-immutable-paths.txt.gz /stage/out/live-immutable-paths.txt.gz
+        cp -f /stage/catalog.tsv /stage/out/kept.tsv
+        wc -l </stage/catalog.tsv | tr -d '[:space:]' >/stage/out/imm-count.txt
+    else
+        awk -F'\t' -v OFS='\t' -v delta_out="/stage/work/delta.paths" -v new_only_out="/stage/work/new_only.paths" -v kept_out="/stage/out/kept.tsv" '
+            FILENAME == ARGV[1] { rec_size[$1]=$2; rec_mtime[$1]=$3; rec_present[$1]=1; next }
+            {
+                p=$1; sz=$2; mt=$3; pk=$4
+                if (p in rec_present) {
+                    if (rec_size[p]==sz && rec_mtime[p]==mt) {
+                        print p, sz, mt, pk > kept_out
+                    } else {
+                        print p > delta_out
+                        print p, rec_size[p], rec_mtime[p], "__NEW_PACK__" > kept_out
+                    }
+                    delete rec_present[p]
+                } else {
+                    print p, sz, mt, pk > kept_out
+                }
+            }
+            END {
+                for (p in rec_present) {
+                    print p > delta_out
+                    print p > new_only_out
+                    print p, rec_size[p], rec_mtime[p], "__NEW_PACK__" > kept_out
+                }
+            }
+        ' /stage/work/recent.tsv /stage/catalog.tsv
+        [[ -f /stage/work/delta.paths ]] || : >/stage/work/delta.paths
+        [[ -f /stage/work/new_only.paths ]] || : >/stage/work/new_only.paths
+        [[ -f /stage/out/kept.tsv ]] || : >/stage/out/kept.tsv
+        if [[ -s /stage/work/new_only.paths ]]; then
+            { cat /stage/prev-live-immutable-paths.txt.gz; gzip -1 </stage/work/new_only.paths; } >/stage/out/live-immutable-paths.txt.gz
+        else
+            cp -f /stage/prev-live-immutable-paths.txt.gz /stage/out/live-immutable-paths.txt.gz
+        fi
+        wc -l </stage/out/kept.tsv | tr -d '[:space:]' >/stage/out/imm-count.txt
+        if [[ -s /stage/work/delta.paths ]]; then
+            (cd /state && tar --ignore-failed-read --warning=no-file-changed --warning=no-file-removed -cf /stage/out/new-state-pack.tar --files-from /stage/work/delta.paths) || {
+                rc=$?; ((rc <= 1)) || exit "$rc"
+            }
+            printf '1\n' >/stage/out/has-new-pack.txt
+        fi
     fi
-done
-LC_ALL=C sort -t $'\t' -k1,1 /stage/work/live.tsv -o /stage/work/live.tsv
-cut -f1 /stage/work/live.tsv | gzip -1 >/stage/out/live-immutable-paths.txt.gz
-wc -l </stage/work/live.tsv | tr -d '[:space:]' >/stage/out/imm-count.txt
+    rm -f -- /stage/work/recent.tsv /stage/work/since.marker /stage/work/delta.paths /stage/work/new_only.paths
+else
+    : >/stage/work/live.tsv
+    for rel_root in "files/dailyfiles" "files/.dailyfile-journal/segments" "files/videos/retained-media/v1/events" "files/ocr/crops" "files/adjudication" "files/reports" "extensions/maps-storage"; do
+        if [[ -d "/state/$rel_root" ]]; then
+            (cd /state && find "$rel_root" -ignore_readdir_race -type f -printf '%p\t%s\t%Ts\n' 2>/dev/null) >>/stage/work/live.tsv || true
+        fi
+    done
+    cut -f1 /stage/work/live.tsv | gzip -1 >/stage/out/live-immutable-paths.txt.gz
+    wc -l </stage/work/live.tsv | tr -d '[:space:]' >/stage/out/imm-count.txt
 
-LC_ALL=C sort -t $'\t' -k1,1 /stage/catalog.tsv -o /stage/work/catalog.sorted
-awk -F'\t' -v OFS='\t' -v delta_out="/stage/work/delta.paths" -v kept_out="/stage/out/kept.tsv" '
-    FILENAME == ARGV[1] { cat_size[$1]=$2; cat_mtime[$1]=$3; cat_pack[$1]=$4; next }
-    {
-        p=$1; sz=$2; mt=$3
-        if ((p in cat_pack) && cat_size[p]==sz && cat_mtime[p]==mt) {
-            print p, sz, mt, cat_pack[p] > kept_out
-        } else {
-            print p > delta_out
-            print p, sz, mt, "__NEW_PACK__" > kept_out
+    awk -F'\t' -v OFS='\t' -v delta_out="/stage/work/delta.paths" -v kept_out="/stage/out/kept.tsv" '
+        FILENAME == ARGV[1] { cat_size[$1]=$2; cat_mtime[$1]=$3; cat_pack[$1]=$4; next }
+        {
+            p=$1; sz=$2; mt=$3
+            if ((p in cat_pack) && cat_size[p]==sz && cat_mtime[p]==mt) {
+                print p, sz, mt, cat_pack[p] > kept_out
+            } else {
+                print p > delta_out
+                print p, sz, mt, "__NEW_PACK__" > kept_out
+            }
         }
-    }
-' /stage/work/catalog.sorted /stage/work/live.tsv
-rm -f -- /stage/work/live.tsv /stage/work/catalog.sorted
-[[ -f /stage/work/delta.paths ]] || : >/stage/work/delta.paths
-[[ -f /stage/out/kept.tsv ]] || : >/stage/out/kept.tsv
-if [[ -s /stage/work/delta.paths ]]; then
-    (cd /state && tar --ignore-failed-read --warning=no-file-changed --warning=no-file-removed -cf /stage/out/new-state-pack.tar --files-from /stage/work/delta.paths) || {
-        rc=$?; ((rc <= 1)) || exit "$rc"
-    }
-    printf '1\n' >/stage/out/has-new-pack.txt
+    ' /stage/catalog.tsv /stage/work/live.tsv
+    rm -f -- /stage/work/live.tsv
+    [[ -f /stage/work/delta.paths ]] || : >/stage/work/delta.paths
+    [[ -f /stage/out/kept.tsv ]] || : >/stage/out/kept.tsv
+    if [[ -s /stage/work/delta.paths ]]; then
+        (cd /state && tar --ignore-failed-read --warning=no-file-changed --warning=no-file-removed -cf /stage/out/new-state-pack.tar --files-from /stage/work/delta.paths) || {
+            rc=$?; ((rc <= 1)) || exit "$rc"
+        }
+        printf '1\n' >/stage/out/has-new-pack.txt
+    fi
+    rm -f -- /stage/work/delta.paths
 fi
-rm -f -- /stage/work/delta.paths
 (
     cd /state
     tar --ignore-failed-read --warning=no-file-changed --warning=no-file-removed \
@@ -685,8 +856,12 @@ tar --format=ustar -C /stage/out -cf /stage/out/meta.tar "${meta_items[@]}"
             & docker volume rm -f $stateStageVol 2>$null | Out-Null
             $stateStageVol = $null
             [System.IO.File]::WriteAllText($catalogFile, $keptContent, $Utf8NoBom)
+            [System.IO.File]::WriteAllText($incScanMarkerFile, "$nowEpochSec`n", $Utf8NoBom)
+            if (-not $useFastIncrementalState) {
+                [System.IO.File]::WriteAllText($fullScanMarkerFile, "$nowEpochSec`n", $Utf8NoBom)
+            }
 
-            # Collect referenced state packs & garbage-collect unreferenced state packs
+            # Collect referenced state packs & garbage-collect unreferenced state packs on full sweeps
             $refSet = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
             foreach ($line in [System.IO.File]::ReadAllLines($catalogFile)) {
                 if ([string]::IsNullOrWhiteSpace($line)) { continue }
@@ -702,7 +877,7 @@ tar --format=ustar -C /stage/out -cf /stage/out/meta.tar "${meta_items[@]}"
                     }
                     $spSha = ([System.IO.File]::ReadAllText($shaFile).Split(' ')[0]).Trim()
                     $packIndexList.Add("$spSha  packs/state/$($sp.Name)")
-                } else {
+                } elseif (-not $useFastIncrementalState) {
                     Remove-Item -LiteralPath $sp.FullName -Force -ErrorAction SilentlyContinue
                     Remove-Item -LiteralPath "$($sp.FullName).sha256" -Force -ErrorAction SilentlyContinue
                 }
@@ -730,6 +905,8 @@ tar --format=ustar -C /stage/out -cf /stage/out/meta.tar "${meta_items[@]}"
   "backupMode": "$($cfg.mode)",
   "createdAt": "$tsIso",
   "postgresLsn": "$lsn",
+  "postgresPack": "$pgPackRel",
+  "stateScanMode": "$stateScanKind",
   "archivePackCount": $archPackCount,
   "statePackCount": $stPackCount,
   "immutableStateFileCount": $immCount
@@ -760,6 +937,13 @@ tar --format=ustar -C /stage/out -cf /stage/out/meta.tar "${meta_items[@]}"
 
             foreach ($oldDir in @(Get-ChildItem -LiteralPath $snapshotsDir -Directory | Where-Object { $_.Name -cne $snapId })) {
                 Remove-Item -LiteralPath $oldDir.FullName -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            if (Test-Path -LiteralPath $pgPacksDir -PathType Container) {
+                $activePgName = Split-Path -Leaf $pgPackRel
+                foreach ($oldPg in @(Get-ChildItem -LiteralPath $pgPacksDir -File -Filter 'pg-*.tar' -ErrorAction SilentlyContinue | Where-Object { $_.Name -cne $activePgName })) {
+                    Remove-Item -LiteralPath $oldPg.FullName -Force -ErrorAction SilentlyContinue
+                    Remove-Item -LiteralPath "$($oldPg.FullName).sha256" -Force -ErrorAction SilentlyContinue
+                }
             }
 
             Invoke-Verify @('-From', $targetRoot, '-BackupKey', $keyPath) | Out-Null
@@ -971,7 +1155,7 @@ function Invoke-Verify([string[]]$Tokens) {
         Remove-Item -LiteralPath $verifySecStage -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    $pgTar = Join-Path $snapDir 'postgres.tar'
+    $pgTar = Resolve-SnapshotPostgresTarPath $backupRoot $snapId
     $pgVerifyVol = "oscar_usb_pgverify_$([Guid]::NewGuid().ToString('N').Substring(0,8))"
     try {
         & docker volume create $pgVerifyVol | Out-Null
@@ -1153,7 +1337,7 @@ function Invoke-Restore([string[]]$Tokens) {
         }
 
         Write-Heading 'Step 4/5 - Restoring PostgreSQL cluster & promoting onto clean timeline'
-        $pgTar = Join-Path $snapDir 'postgres.tar'
+        $pgTar = Resolve-SnapshotPostgresTarPath $backupRoot $snapId
         & cmd.exe /c "type `"$pgTar`" | docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine -i --network none --read-only --security-opt no-new-privileges --user 0:0 -v oscar_postgres_data:/data --entrypoint sh oscar:$ver -eu -c `"find /data -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar -C /data --no-same-owner -xf - && chown -R 999:999 /data && chmod 0700 /data`""
         if ($LASTEXITCODE -ne 0) { Fail 'Failed extracting PostgreSQL base backup.' }
         & docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --cap-drop ALL --security-opt no-new-privileges `
