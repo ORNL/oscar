@@ -22,7 +22,7 @@ cd oscar-regression
 npm ci
 npm run install:browser
 
-# Validate TypeScript types and run the 246 offline unit tests
+# Validate TypeScript types and run the offline unit test suite
 npm run check
 npm test
 ```
@@ -144,3 +144,71 @@ Every invocation writes a self-contained evidence directory under `results/<UTC-
 - `storage-performance.csv` — Point-in-time PostgreSQL batch counters, `PARQUET_PRIMARY` generation/parity metrics, Daily File journal counters, and 5-JPEG retention ledger stats.
 - `errors.csv` & `run.json` — Browser/network/API exception log and immutable run metadata (`suiteGitCommit`, `oscarLaneConfigSha256`, workflow flags).
 - `evidence/` & `downloads/` — Full-HD failure/milestone PNG screenshots, reserved-RPM recovery snapshot JSON, generated PDF/XLSX reports, and exported QR packages.
+
+---
+
+## 5. Self-Contained 50-Lane Staging Node & Manual `workflow_dispatch` Certification
+
+Maintainers with **Write** (or higher) access on `ORNL/oscar` can trigger an automated `smoke` or `full` certification run directly from GitHub Actions against an isolated, self-contained 50-lane Ubuntu Server 24.04 staging node via [`.github/workflows/staging-50-lane-certification.yml`](https://github.com/ORNL/oscar/blob/main/.github/workflows/staging-50-lane-certification.yml).
+
+### 5.1 Security Boundary & Trigger Rules
+
+- **Strictly manual `workflow_dispatch` only:** Because `ORNL/oscar` is a public repository, `.github/workflows/staging-50-lane-certification.yml` intentionally forbids `pull_request`, `pull_request_target`, and `push` triggers so untrusted external forks can never execute code on the self-hosted `oscar-50-lane-staging` runner.
+- **Allowlisted wrapper invocation:** The workflow runs only the fixed host wrapper `/usr/local/bin/oscar-self-test` (`run-smoke` or `run-full`), validates `--scenario` against `^[a-z0-9,-]+$`, serializes executions via `concurrency: group: oscar-50-lane-staging`, and automatically redacts IPv4 literals, tailnet hostnames, and SSH usernames before writing `GITHUB_STEP_SUMMARY` or uploading the 14-day `oscar-50-lane-staging-report-<suite>-<run_number>` artifact bundle.
+
+### 5.2 Workflow Inputs & Triggering from GitHub UI or CLI
+
+| Input | Type / Default | Effect |
+| :--- | :--- | :--- |
+| `suite` | `smoke` *(default)* \| `full` | Maps to `/usr/local/bin/oscar-self-test run-smoke` (read-only) or `run-full` (all 28 scenarios including fault/alarm injection, OCR, Cargo UFF, Training Sandbox, WebRelay, EML, federation, and natural Parquet retirement). |
+| `scenario` | `string` *(empty = all)* | Optional comma-separated filter (for example `preflight` or `multi-node-federation`). Remember: targeted `--scenario` runs never substitute for an unfiltered `full` release sign-off. |
+| `with_fed_peer` | `boolean` *(`false`)* | Boots the ephemeral local federated peer stack (`:8445`) during `smoke` runs (`run-full` always boots it automatically for `multi-node-federation`). |
+| `rollback_after_test` | `boolean` *(`true`)* | Automatically rolls back and destroys the ephemeral `@pre-test` ZFS snapshot after the run finishes so injected faults, alarms, and test adjudications leave zero residue on the staging baseline. Set `false` only when diagnosing a failure interactively on the staging host. |
+
+Trigger via GitHub CLI (`gh`):
+
+```sh
+# Fast read-only smoke check on the 50-lane staging node
+gh workflow run staging-50-lane-certification.yml -R ORNL/oscar -f suite=smoke
+
+# Full unfiltered 50-lane release certification (includes ephemeral :8445 federation peer & @pre-test ZFS rollback)
+gh workflow run staging-50-lane-certification.yml -R ORNL/oscar \
+  -f suite=full \
+  -f rollback_after_test=true
+
+# Watch run progress and download redacted CSV/Markdown reports once complete
+gh run list -R ORNL/oscar --workflow staging-50-lane-certification.yml --limit 5
+gh run download <RUN_ID> -R ORNL/oscar -D /tmp/staging-report
+```
+
+### 5.3 Ephemeral `@pre-test` ZFS Rollback & Single-Box Co-Location Notes
+
+1. **Snapshot / rollback lifecycle:** Before `run-full` mutates the staging portal, `oscar-self-test` snapshots the staging storage dataset (`@pre-test`), boots the isolated ephemeral `:8445` federated peer when needed, executes `ORNL/oscar-regression`, archives the redacted results under `/srv/oscar-test/results/<timestamp>/`, and rolls back + destroys `@pre-test` in a `finally` cleanup trap (leaving `0` lingering snapshots and a clean `3/3` healthy baseline).
+2. **Interpreting co-located browser paint timings:** On a self-contained single-host staging box that runs the 50-lane OSCAR stack, 50 simulated RPMs, 50+ FFmpeg RTSP camera publishers, an ephemeral `:8445` peer, AND headless Playwright Chromium simultaneously on shared CPU cores, client-side Chromium React paint thresholds (`nextRenderMs`, `returnRenderMs`, `priority10xBackMs`) can occasionally exceed strict desktop workstation budgets by `~0.2–1.5 s` even when server-side API latency is fast and `obs5xx == 0` / `countCalls == 0`. Always inspect `functional-results.csv`, `storage-performance.csv`, and `performance.csv` to separate local Chromium CPU contention from genuine server, storage, or functional regressions.
+
+---
+
+## 6. Multi-Repo Developer Checklist: Adding a New Datastream or Config Field Safely
+
+Because OSCAR coordinates 9 repositories around strict 50-lane scale, `PARQUET_PRIMARY`, localization, and upgrade-preservation invariants, any PR that adds a **new datastream output** or **new Java `*Config` field** must verify every lockstep item below before opening the PR (see also [`AGENTS.md`](https://github.com/ORNL/oscar/blob/main/AGENTS.md) and [Radiation Detector Driver Integration Guide](RADIATION_DETECTOR_DRIVER_GUIDE.md)):
+
+1. **Register New High-Rate / Operational Outputs in the `PARQUET_PRIMARY` Allowlist (All 4 Lockstep Locations):**
+   - [`ORNL/osh-addons`](https://github.com/ORNL/osh-addons): Update `TieredArchiveConfig.DEFAULT_OUTPUT_NAMES`, preserve the prior list as a `PREVIOUS_*_DEFAULT_OUTPUT_NAMES` compatibility constant so existing upgraded sites auto-recognize prior defaults cleanly, and classify the stream into either **`RAW_EVENTS`** (searchable event/summary streams compacted daily/monthly) or write-once **`RAW_TELEMETRY`** (high-rate `1 Hz` / status streams written once and never rewritten).
+   - [`ORNL/oscar`](https://github.com/ORNL/oscar): Update `dist/config/standard/config.json` (`archive.outputNames`), `tools/validate-release-metadata.js` (`expectedArchiveOutputs`), and `tools/validate-packaged-release.js` (`expectedArchiveOutputs`).
+   - [`ORNL/oscar-regression`](https://github.com/ORNL/oscar-regression): Update expected allowlist checks in `src/storage-oracles.ts` and `scripts/oscar-storage-regression-probe.sh`.
+   - **Existing upgraded sites:** Remember that `oscar upgrade` intentionally preserves an existing host's `/var/lib/oscar/config.json`. Document any newly added output in [RELEASE_NOTES_AND_UPGRADE_GUIDE.md](RELEASE_NOTES_AND_UPGRADE_GUIDE.md) so administrators enabling a new sensor/feature on upgraded hosts know whether `archive.outputNames` should include the new output (preventing unbounded writes to `ONLY oscar.obs`).
+2. **Keep CQL Predicates, `oscar_archive_schema` Counters & Startup `< 60 s` in Lockstep:**
+   - Never add growing B-tree or GIN indexes over unbounded historical observations, and never use raw `?` JSONB operators inside JDBC `PreparedStatement` SQL (use `jsonb_typeof(col->'key')`).
+   - If `StatisticsOutput`, `ReportDataAggregator`, or Viewer tables query a new CQL predicate across high-rate streams, map it to an exact `JsonCqlEvaluator.SummaryCounterSpec` backed by `oscar_archive_schema` and `ArchiveCompactionManager.StreamStatsAccumulator` (verifying `COALESCE(s.<col>, COALESCE(s.row_count, 0))` for `upperBoundExpr`, `IS NOT NULL` for `exactReadyExpr`, and gating new `base_summary_mask` bits behind `JsonCqlEvaluator.BIT_MASK_V2`).
+   - Never execute unbounded full-table `UPDATE oscar_archive_schema` or multi-file DuckDB backfills synchronously inside `ArchiveCatalog.migrate()` (keep inline updates gated to `<= 64` generations and drain larger upgrades asynchronously via `oscar-base-summary-backfill` so module startup stays well under OpenSensorHub's `60 s` timeout).
+3. **Stream Closure, `1 Hz` Zero-Clone Drivers & EventBus Hygiene:**
+   - Always wrap `IObsStore.select*` / `ISystemDescStore.select*` streams in `try-with-resources` and pass `.withLimit(1)` on single-record `ObsFilter.Builder` lookups so DuckDB's 2-session pool never leaks.
+   - Pre-clone `liveDataStruct = dataStruct.copy()` once in `init()` on `>= 1 Hz` drivers rather than cloning SWE component trees per sample, and cancel every `EventBus` `Subscription` in `doStop()`.
+4. **Java `*Config` Serialization & `ConfigCloner` Rules:**
+   - Always initialize mutable collection fields in `*Config` classes with mutable standard collections (`new ArrayList<>()`, `new LinkedHashMap<>()`, `new LinkedHashSet<>()`) — never `List.of(...)` or `Collections.emptyList()` — so OpenSensorHub's `ConfigCloner` (`ModuleConfigBase.clone()`) and Vaadin Admin UI editors never throw `UnsupportedOperationException`.
+   - Give every new config field a safe backward-compatible default (opt-in `enabled = false` for optional capabilities) so existing persisted `config.json` files deserialize cleanly without breaking live portals.
+5. **4-Locale Admin UI, Viewer & Packaging Parity:**
+   - Add `@DisplayInfo` labels/descriptions and matching entries in `ConfigMessages{,_es,_fr,_el}.properties` and module `i18n/README{,_es,_fr,_el}.md` (`./gradlew --no-parallel :sensorhub-webui-oscar:test` verifies parity), and mirror any Viewer strings across `web/oscar-viewer/src/locales/{en,es,fr,el}.json` (`npm run validate:locales`).
+   - Any new standalone guide under `docs/*.md` must be added to **both** `into("osh-node-oscar/documentation")` and `into("documentation")` in `build.gradle`, `tools/validate-release-metadata.js`, and `tools/validate-packaged-release.js`.
+6. **Coordinate Cross-Repo CI with Identical Branch Names:**
+   - Use the **exact same branch name** across `ORNL/oscar`, `ORNL/osh-addons`, `ORNL/osh-oakridge-modules`, and `ORNL/oscar-viewer` (for example `feat/my-new-sensor`) so submodule CI workflows automatically build against the matching `ORNL/oscar` composite branch.

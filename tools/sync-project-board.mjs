@@ -71,6 +71,7 @@ const BOARD_ITEMS = [
     { repo: 'ORNL/oscar-viewer', kind: 'pr', number: 55, targetColumn: 'Done' },
     { repo: 'ORNL/osh-oakridge-modules', kind: 'pr', number: 65, targetColumn: 'Done' },
     { repo: 'ORNL/oscar-regression', kind: 'pr', number: 35, targetColumn: 'Done' },
+    { repo: 'ORNL/oscar-regression', kind: 'pr', number: 36, targetColumn: 'Done' },
 ];
 
 function ghGraphql(query, variables = {}) {

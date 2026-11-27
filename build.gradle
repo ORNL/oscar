@@ -99,6 +99,9 @@ distributions{
                     include 'EML_INTEGRATION.md'
                     include 'LIVE_VIDEO.md'
                     include 'OPERATIONAL_VIEWS.md'
+                    include 'CUSTOM_WIDGET_DASHBOARDS_GUIDE.md'
+                    include 'VEHICLE_OCR_GUIDE.md'
+                    include 'IDENTITY_AND_FEDERATION_GUIDE.md'
                     include 'STATUS_OF_HEALTH.md'
                     include 'TRANSLATION_SYSTEM.md'
                     include 'STORAGE_ARCHITECTURE.md'
@@ -122,7 +125,7 @@ distributions{
                                 .replace('https://github.com/ORNL/osh-oakridge-modules/blob/main/docs/', '')
                         }
                     }
-                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md', 'LIVE_VIDEO.md', 'UBUNTU_FIELD_SETUP_GUIDE.md', 'CONTINUAL_AND_USB_BACKUP_GUIDE.md', 'PLUGGABLE_EXTENSIONS_GUIDE.md', 'CARGO_UFF_INTEGRATION.md', 'RADIATION_DETECTOR_DRIVER_GUIDE.md', 'TRAINING_SANDBOX_GUIDE.md', 'LANE_WEBRELAY_GUIDE.md', 'RPM_EDGE_PROXY_GUIDE.md']) {
+                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md', 'LIVE_VIDEO.md', 'CUSTOM_WIDGET_DASHBOARDS_GUIDE.md', 'VEHICLE_OCR_GUIDE.md', 'IDENTITY_AND_FEDERATION_GUIDE.md', 'UBUNTU_FIELD_SETUP_GUIDE.md', 'CONTINUAL_AND_USB_BACKUP_GUIDE.md', 'PLUGGABLE_EXTENSIONS_GUIDE.md', 'CARGO_UFF_INTEGRATION.md', 'RADIATION_DETECTOR_DRIVER_GUIDE.md', 'TRAINING_SANDBOX_GUIDE.md', 'LANE_WEBRELAY_GUIDE.md', 'RPM_EDGE_PROXY_GUIDE.md']) {
                         filter { line ->
                             line.replace('../dist/release/ubuntu/', '../../ubuntu/')
                                 .replace('../dist/release/', '')
@@ -163,6 +166,9 @@ distributions{
                     include 'EML_INTEGRATION.md'
                     include 'LIVE_VIDEO.md'
                     include 'OPERATIONAL_VIEWS.md'
+                    include 'CUSTOM_WIDGET_DASHBOARDS_GUIDE.md'
+                    include 'VEHICLE_OCR_GUIDE.md'
+                    include 'IDENTITY_AND_FEDERATION_GUIDE.md'
                     include 'STATUS_OF_HEALTH.md'
                     include 'TRANSLATION_SYSTEM.md'
                     include 'STORAGE_ARCHITECTURE.md'
@@ -186,7 +192,7 @@ distributions{
                                 .replace('https://github.com/ORNL/osh-oakridge-modules/blob/main/docs/', '')
                         }
                     }
-                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md', 'LIVE_VIDEO.md', 'UBUNTU_FIELD_SETUP_GUIDE.md', 'CONTINUAL_AND_USB_BACKUP_GUIDE.md', 'PLUGGABLE_EXTENSIONS_GUIDE.md', 'CARGO_UFF_INTEGRATION.md', 'RADIATION_DETECTOR_DRIVER_GUIDE.md', 'TRAINING_SANDBOX_GUIDE.md', 'LANE_WEBRELAY_GUIDE.md', 'RPM_EDGE_PROXY_GUIDE.md']) {
+                    filesMatching(['RELEASE_NOTES_AND_UPGRADE_GUIDE.md', 'EML_INTEGRATION.md', 'LIVE_VIDEO.md', 'CUSTOM_WIDGET_DASHBOARDS_GUIDE.md', 'VEHICLE_OCR_GUIDE.md', 'IDENTITY_AND_FEDERATION_GUIDE.md', 'UBUNTU_FIELD_SETUP_GUIDE.md', 'CONTINUAL_AND_USB_BACKUP_GUIDE.md', 'PLUGGABLE_EXTENSIONS_GUIDE.md', 'CARGO_UFF_INTEGRATION.md', 'RADIATION_DETECTOR_DRIVER_GUIDE.md', 'TRAINING_SANDBOX_GUIDE.md', 'LANE_WEBRELAY_GUIDE.md', 'RPM_EDGE_PROXY_GUIDE.md']) {
                         filter { line ->
                             line.replace('../dist/release/ubuntu/', '../ubuntu/')
                                 .replace('../dist/release/', '')
