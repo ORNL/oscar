@@ -1,6 +1,6 @@
-# OSCAR 3.11.15 Side-by-Side CAS Rapiscan RPM Real-Time Edge Proxy Guide (`oscar-rpm-proxy`)
+# OSCAR 3.12.0 Side-by-Side CAS Rapiscan RPM Real-Time Edge Proxy Guide (`oscar-rpm-proxy`)
 
-This guide documents the optional **OSCAR Rapiscan RPM Real-Time Edge Proxy (`oscar-rpm-proxy`)** bundled in **OSCAR 3.11.15** for ports of entry and facilities where OSCAR is installed **side by side with an existing Central Alarm Station (CAS)** across **1 to 50+ Rapiscan Radiation Portal Monitors (RPMs)**.
+This guide documents the optional **OSCAR Rapiscan RPM Real-Time Edge Proxy (`oscar-rpm-proxy`)** bundled in **OSCAR 3.12.0** for ports of entry and facilities where OSCAR is installed **side by side with an existing Central Alarm Station (CAS)** across **1 to 50+ Rapiscan Radiation Portal Monitors (RPMs)**.
 
 ---
 
@@ -8,7 +8,7 @@ This guide documents the optional **OSCAR Rapiscan RPM Real-Time Edge Proxy (`os
 
 Rapiscan RPM controllers expose a single-client TCP data-stream listener (typically TCP port `1600`) that emits continuous `1 Hz` radiation count frames (`GA`, `GB`, `NB`, `NS`, `GX`), occupancy triggers, tamper alarms (`TT` / `TC`), and setup/daily reports (`SG1..SG3`, `SN1..SN2`). On standard controller firmware, **only one downstream TCP client can hold that socket at a time** — if OSCAR and an existing Central Alarm Station both connect directly to `:1600`, one system receives `Connection Refused` or causes connection flapping.
 
-`oscar-rpm-proxy` solves this cleanly as an opt-in, isolated edge container (`compose.rpm-proxy.yaml`) in the OSCAR 3.11.15 release stack:
+`oscar-rpm-proxy` solves this cleanly as an opt-in, isolated edge container (`compose.rpm-proxy.yaml`) in the OSCAR 3.12.0 release stack:
 
 ```mermaid
 flowchart LR
@@ -19,7 +19,7 @@ flowchart LR
 
     subgraph OscarHost["Ubuntu Server 24.04 LTS Host"]
         Proxy["oscar-rpm-proxy (Isolated Compose Project)\n• 1 upstream TCP socket per RPM\n• Line-framed (\\n) zero-interleave fan-out\n• SG1..SG3 / SN1..SN2 + active TT cache replay\n• <= 4.0 s upstream-gated disconnect propagation"]
-        OSCAR["OSCAR 3.11.15 Service\n(Loopback 127.0.0.1:11601..11650)"]
+        OSCAR["OSCAR 3.12.0 Service\n(Loopback 127.0.0.1:11601..11650)"]
     end
 
     CAS["Existing Central Alarm Station (CAS)\n(Port-Mapped :11601..11650 OR Virtual-IP :1600)"]

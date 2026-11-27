@@ -1447,8 +1447,14 @@ function Invoke-InstallAgent {
     $agentTaskName = 'OSCAR-UsbBackupAgent'
     if ($env:OSCAR_USB_BACKUP_SKIP_TASK -ne '1') {
         if (Get-ScheduledTask -TaskName $agentTaskName -ErrorAction SilentlyContinue) {
+            Stop-ScheduledTask -TaskName $agentTaskName -ErrorAction SilentlyContinue
             Unregister-ScheduledTask -TaskName $agentTaskName -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
         }
+        try {
+            Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" -ErrorAction SilentlyContinue |
+                Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -match 'oscar-usb-backup\.ps1' -and $_.CommandLine -match 'agent-watch' } |
+                ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        } catch {}
         $psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
         $selfScript = Join-Path $ScriptRoot 'oscar-usb-backup.ps1'
         $action = New-ScheduledTaskAction -Execute $psExe -Argument "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$selfScript`" agent-watch" -WorkingDirectory $ScriptRoot

@@ -1,7 +1,7 @@
-# OSCAR 3.11.15 storage operations
+# OSCAR 3.12.0 storage operations
 
 This is the administrator runbook for OSCAR's PostgreSQL hot store, primary Parquet cold tier,
-direct daily journal, retained media, and optional single coordinated snapshot. Commands assume the extracted 3.11.15
+direct daily journal, retained media, and optional single coordinated snapshot. Commands assume the extracted 3.12.0
 release directory is the current directory.
 
 For design rationale see [Storage architecture](STORAGE_ARCHITECTURE.md). For exact state
@@ -34,7 +34,7 @@ fallback.
    `%ProgramData%\OSCAR\StorageLocks` (Windows), so a
    clean-release upgrade cannot evade an older process's lock.
 
-## Standard 3.11.15 configuration
+## Standard 3.12.0 configuration
 
 New installations receive these defaults from `dist/config/standard/config.json`:
 
@@ -50,11 +50,11 @@ New installations receive these defaults from `dist/config/standard/config.json`
 | Sealed journal lifecycle queue | bounded durable batches | Avoids startup and periodic all-history directory scans while recovery and deletion backlogs converge |
 | Database `idProviderType` | `SEQUENTIAL` | Required for exact, race-free archive ownership |
 | Database batch | 10,000 rows / 1 s | Bounded insert transaction and commit period |
-| Primary stage window / delay / future skew | 30 min / 5 min / 5 min | The 22 allowlisted operational and evidentiary outputs (`gammaCounts`, `gammaThreshold`, `neutronCounts`, `setupGamma`, `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`, `status`, `emlContextual`, `emlScanContextual`, `emlAnalysis`, `dailyFile`, `connectionStatus`, `occupancyStatus`, `tamper`, `occupancy`, `adjudication`, `report`, `siteStatistics`, `nationalSummary`, `vehicleOcr`) commit to UTC-aligned LOGGED PostgreSQL children first; a closed child becomes Parquet-eligible after the delay, and farther-future detector clocks are rejected |
+| Primary stage window / delay / future skew | 30 min / 5 min / 5 min | The 26 allowlisted operational and evidentiary outputs (`gammaCounts`, `gammaThreshold`, `neutronCounts`, `setupGamma`, `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`, `status`, `emlContextual`, `emlScanContextual`, `emlAnalysis`, `dailyFile`, `connectionStatus`, `occupancyStatus`, `tamper`, `occupancy`, `adjudication`, `report`, `siteStatistics`, `nationalSummary`, `vehicleOcr`, `location`, `alarm`, `KromekDetectorRadiometricsV1Report`, `KromekSerialRadiometricStatusReport`) commit to UTC-aligned LOGGED PostgreSQL children first; a closed child becomes Parquet-eligible after the delay, and farther-future detector clocks are rejected |
 | Hourly mutable health & command cleanup | 1 h (`connectionStatus`, routine `Clear` `occupancyStatus` when `PARQUET_PRIMARY` is disabled) / 24 h (transient `cmd_commands`) | In `PARQUET_PRIMARY`, operational streams retire by dropping verified 30-minute `osg_*` partitions (`DatabasePurger` skips row-wise observation deletes so zero tombstones are created), while `PostgisCommandStoreImpl` prunes completed transient non-`adjudicationControl` commands > 24 h old |
 | Parquet-primary worker interval | 1 min | Background export, parity, and retirement cadence; the at-most-one-hour normal staging budget is an SLO, not a hard deadline during failure or backlog |
 | Archive work bounds | 2 generations / 2 verifications / 8 partition retirements / 15 min | Independently bounds each lifecycle phase and stops starting new generations at the duration bound; in-progress publication completes safely |
-| Maximum generation | 2,000,000 rows / lower of 2 GiB operator cap or 1/8 DuckDB memory (32 MiB standard) | Deterministic `(phenomenontime,id)` prefixes become same-window revisions; 500-row cleared DuckDB inserts bound native staging memory, and a single oversized row fails closed in the LOGGED child |
+| Maximum generation | 2,000,000 rows / lower of 2 GiB operator cap or 1/2 DuckDB memory for `RAW_TELEMETRY` (`128 MiB` standard) and 1/8 DuckDB memory for `RAW_EVENTS` (`32 MiB` standard) | Closed 30-minute windows split directly at export into write-once `RAW_TELEMETRY` (17 high-rate streams, 11 columns, `1.0x` write amplification) and Bloom-indexed `RAW_EVENTS` (9 searchable event/summary streams, 20 columns) via file-backed DuckDB + native `DuckDBAppender`; deterministic `(phenomenontime,id)` prefixes become same-window revisions, and a single oversized row fails closed in the LOGGED child |
 | DuckDB memory / threads | 256 MiB / 2 per connection | Bounds native memory and CPU for every export, verification, parity, delete, cold query, metadata scan, and count |
 | DuckDB session admission | 2 process-wide / 30 s wait | Fairly bounds the aggregate native-memory/CPU/spill multiplier; excess work fails busy and can be retried instead of opening an unbounded connection |
 | DuckDB spill | 4 GiB per operation in `/var/lib/oscar/duckdb-tmp` | Each connection gets a mode-0700 private child that is removed on close; scratch must be disjoint from the immutable archive and is excluded from backup |
@@ -111,7 +111,7 @@ the file shipped in the ZIP became active.
 
 ## New installation and storage paths
 
-For a new 3.11.15 production system, keep the live archive on durable monitored storage. Backup mode
+For a new 3.12.0 production system, keep the live archive on durable monitored storage. Backup mode
 is disabled until an administrator deliberately selects a safe absolute backup path that does not
 overlap the release or archive roots. A separate physical drive is recommended for failure
 isolation, but it is not required:
@@ -210,52 +210,53 @@ rename, force, ownership, and PostgreSQL semantics.
 
 ### Existing pre-3.11.0 deployments
 
-The complete 3.11.15 storage profile is not an automatic in-place conversion. `oscar upgrade` preserves
+The complete 3.12.0 storage profile is not an automatic in-place conversion. `oscar upgrade` preserves
 the existing application configuration and database volume, and PostgreSQL data checksums are an
 initial-cluster property.
 
 One narrow compatibility migration is automatic: supported `oscar upgrade` stops the application
 tier and runs the restartable daily-file lifecycle-index migration before startup. The tool reads
 the retained `/var/lib/oscar/config.json`, uses the configured Daily File Journal root/directory/zone,
-and skips safely when that module is absent. It upgrades an earlier 3.11.15 preview journal without
+and skips safely when that module is absent. It upgrades an earlier 3.12.0 preview journal without
 scanning its historical tree on a live module thread. It does not convert a pre-3.11.0 database or
 configuration into the complete tiered-storage profile. The same deployment-scoped lock excludes
 backup, restore, and archive administration until the new services pass health checks. On failure,
 final metadata stays uncommitted while restart-safe work markers may remain; the application stays
 stopped, so fix the reported condition and rerun `upgrade`.
 
-The 3.11.15 observation schema also installs a corrected natural-key unique index that treats null
+The 3.12.0 observation schema also installs a corrected natural-key unique index that treats null
 feature, phenomenon-time, and result-time fields as equal. This is important because a null result
 time is normal for OSCAR observations. If an older database already contains duplicates under that
 corrected key, PostgreSQL deliberately refuses to create the index instead of choosing a row or
 silently retaining ambiguity. Audit and resolve those duplicates under an approved migration before
-attempting an in-place database upgrade. A fresh 3.11.15 database has no such cleanup requirement.
+attempting an in-place database upgrade. A fresh 3.12.0 database has no such cleanup requirement.
 
-For the disposable test systems, initialize a clean 3.11.15 deployment and new database. For a
+For the disposable test systems, initialize a clean 3.12.0 deployment and new database. For a
 production pre-3.11.0 system whose history must remain available:
 
 1. freeze retention/deletion changes;
 2. take and verify the existing system's supported backup/export;
 3. retain the old deployment read-only for policy lookup;
-4. initialize 3.11.15 on clean state;
+4. initialize 3.12.0 on clean state;
 5. validate lane configuration and workflows;
 6. migrate only records required by an approved, tested migration procedure; and
 7. preserve the pre-3.11.0 system until retention and audit owners accept the transition.
 
-Do not erase an old production volume simply to make the 3.11.15 module start.
+Do not erase an old production volume simply to make the 3.12.0 module start.
 
 ## Production rollout
 
 ### Phase 1: validate the primary cold tier
 
-The shipping profile commits all 22 allowlisted operational and evidentiary outputs
+The shipping profile commits all 26 allowlisted operational and evidentiary outputs
 (`gammaCounts`, `gammaThreshold`, `neutronCounts`, `setupGamma`, `setupNeutron`, `speed`,
 `backgroundReport`, `foregroundReport`, `status`, `emlContextual`, `emlScanContextual`,
 `emlAnalysis`, `dailyFile`, `connectionStatus`, `occupancyStatus`, `tamper`, `occupancy`,
-`adjudication`, `report`, `siteStatistics`, `nationalSummary`, `vehicleOcr`) to LOGGED,
+`adjudication`, `report`, `siteStatistics`, `nationalSummary`, `vehicleOcr`, `location`, `alarm`,
+`KromekDetectorRadiometricsV1Report`, `KromekSerialRadiometricStatusReport`) to LOGGED,
 UTC-aligned 30-minute PostgreSQL staging children, then makes each closed child Parquet-eligible
 after five minutes and runs the worker every minute (while reconciling existing route entries and
-retroactively migrating any legacy unarchived parent-table rows for those 22 outputs to Parquet on
+retroactively migrating any legacy unarchived parent-table rows for those 26 outputs to Parquet on
 startup and compacting `ONLY oscar.obs`). After manifest-last activation, object re-hash,
 and exact row/UUID parity, it populates `oscar_obs_latest`, 22 per-generation summary counters on
 `oscar_archive_schema`, and `oscar_event_locator`, then transactionally detaches and drops the
@@ -882,7 +883,7 @@ Track at least:
 | Retained-media lane parent cannot be resolved | No new manifest; source and retry state remain | Verify the RPM/camera systems are members of the intended OSH lane and that the deployed PostgreSQL datastore supports `getParent`; do not relabel an existing manifest by hand |
 | Media publication fails | Partial set stays invisible; source preserved; retry ledger records failure | Check FFmpeg, source integrity, filesystem/rename/space; allow idempotent retry |
 | Pressure cleanup cannot reach target | Protected data stays; error is logged | Add capacity or perform approved cold/media retention; never remove journal/adjudication files ad hoc |
-| PostgreSQL reports archiver activity or an external WAL mount | Deployment drifted from the 3.11.15 profile | Stop rollout, preserve legacy data, restore `archive_mode=off`/no-WAL-bind configuration through the supported release, and requalify backup/restore |
+| PostgreSQL reports archiver activity or an external WAL mount | Deployment drifted from the 3.12.0 profile | Stop rollout, preserve legacy data, restore `archive_mode=off`/no-WAL-bind configuration through the supported release, and requalify backup/restore |
 | Backup fails | `.partial` or finalized-but-unverified directory remains; services are resumed where possible | Check `status`, preserve diagnostics, correct the cause, then re-verify or run a new backup |
 | Restore fails | Deployment may remain stopped/partial | Keep producers disconnected; preserve `pre-restore-*`; repair cause and repeat from the same verified backup or escalate |
 | PostgreSQL shutdown errors appear during OSCAR stop/restart | Qualification fails; OSCAR may not complete its database-backed module drain | Use the release `oscar` launcher, which stops gateway, OSCAR, and PostgreSQL sequentially; confirm the media-retention cancellation log completes, preserve logs, and do not substitute an unscoped multi-service Compose stop/restart |

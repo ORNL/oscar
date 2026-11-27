@@ -1,15 +1,17 @@
-# OSCAR 3.11.15 cold archive format
+# OSCAR 3.12.0 cold archive format
 
-OSCAR's cold observation tier is a portable set of ZSTD-compressed Parquet files, JSON manifests,
-gzip-compressed datastream schema snapshots, and a PostgreSQL catalog. OSCAR uses the catalog for
-safe online queries and lifecycle decisions; exported generations can be inspected independently
-with DuckDB or another Parquet-capable tool. This is the primary cold tier for the configured 12
-immutable high-volume detector, status, report, and EML output names (`gammaCounts`,
-`gammaThreshold`, `neutronCounts`, `setupGamma`, `setupNeutron`, `speed`, `backgroundReport`,
-`foregroundReport`, `status`, `emlContextual`, `emlScanContextual`, `emlAnalysis`), not a backup
-and not an export of every PostgreSQL table. A recoverable
-system snapshot must also include the matching catalog, overlays/tombstones, application state, and
-other coordinated payloads.
+OSCAR's cold observation tier is a portable set of ZSTD-compressed Apache Parquet files, JSON
+manifests, gzip-compressed datastream schema snapshots, and a PostgreSQL catalog. OSCAR uses the
+catalog for safe online queries and lifecycle decisions; exported generations can be inspected
+independently with DuckDB or another Parquet-capable tool. This is the primary cold tier for the
+configured 26 allowlisted operational and evidentiary output names (`gammaCounts`, `gammaThreshold`,
+`neutronCounts`, `setupGamma`, `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`,
+`status`, `emlContextual`, `emlScanContextual`, `emlAnalysis`, `dailyFile`, `connectionStatus`,
+`occupancyStatus`, `tamper`, `occupancy`, `adjudication`, `report`, `siteStatistics`,
+`nationalSummary`, `vehicleOcr`, `location`, `alarm`, `KromekDetectorRadiometricsV1Report`,
+`KromekSerialRadiometricStatusReport`), not a backup and not an export of every PostgreSQL table. A
+recoverable system snapshot must also include the matching catalog, overlays/tombstones, application
+state, and other coordinated payloads.
 
 See [Storage architecture](STORAGE_ARCHITECTURE.md) for the system context and
 [Storage operations](STORAGE_OPERATIONS.md) for the supported verification, export, and deletion
@@ -26,14 +28,67 @@ archive-root/
   datasets/
     observations/
       date=YYYY-MM-DD/
-        profile=RAW_GATED/
+        profile=RAW_EVENTS/
+          generation-<uuid>.parquet
+          generation-<uuid>.schemas.json.gz
+          generation-<uuid>.manifest.json
+        profile=RAW_TELEMETRY/
+          generation-<uuid>.parquet
+          generation-<uuid>.schemas.json.gz
+          generation-<uuid>.manifest.json
+        profile=DAILY_EVENTS/
+          generation-<uuid>.parquet
+          generation-<uuid>.schemas.json.gz
+          generation-<uuid>.manifest.json
+        profile=RAW_GATED/            # HOT_RETENTION mode and read-only pre-3.12 legacy archives
+          generation-<uuid>.parquet
+          generation-<uuid>.schemas.json.gz
+          generation-<uuid>.manifest.json
+      date=YYYY-MM-01/
+        profile=MONTHLY_EVENTS/
           generation-<uuid>.parquet
           generation-<uuid>.schemas.json.gz
           generation-<uuid>.manifest.json
 ```
 
 The `date=` and `profile=` directories are Hive-style partitions. The date is the UTC date of the
-generation window start. The standard profile name is `RAW_GATED`.
+generation window start (`YYYY-MM-01` for `MONTHLY_EVENTS`). In `PARQUET_PRIMARY` mode, closed
+30-minute stage windows split directly at export into two strictly complementary Parquet V2
+profiles:
+
+- **`RAW_EVENTS`** (`archive_version = 2`, 20 columns, `ROW_GROUP_SIZE = 8192`, Split-Block Bloom
+  filters at `0.01` FPR): the 9 searchable operational/evidentiary/summary streams (`occupancy`,
+  `alarm`, `adjudication`, `report`, `vehicleOcr`, `emlAnalysis`, `tamper`, `siteStatistics`,
+  `nationalSummary`).
+- **`RAW_TELEMETRY`** (`archive_version = 2`, 11 columns, `ROW_GROUP_SIZE = 65536`, ZSTD level 6,
+  `effectiveTelemetryExportUncompressedBytes = 128 MiB` at `256 MiB` DuckDB limit, `ocr_bloom = NULL`):
+  all remaining allowlisted high-rate streams (`gammaCounts`, `gammaThreshold`, `neutronCounts`,
+  `dailyFile`, `connectionStatus`, `occupancyStatus`, `emlScanContextual`, `emlContextual`,
+  `setupGamma`, `setupNeutron`, `speed`, `backgroundReport`, `foregroundReport`, `status`,
+  `location`, `KromekDetectorRadiometricsV1Report`, `KromekSerialRadiometricStatusReport`).
+  Written once (`1.0x` write amplification) and **never rewritten by compaction**.
+
+`ArchiveCompactionManager` compacts only the event tier:
+
+- **`DAILY_EVENTS`** (`archive_version = 2`, 20 columns, `ROW_GROUP_SIZE = 8192`, Split-Block Bloom
+  filters at `0.01` FPR): compacts settled prior UTC days of `RAW_EVENTS` (`window_end <= now - 2h`
+  and `activated_at <= now - 2h`), folds settled overlays (`>= 2h` old), and enforces rollover
+  ceilings of `1,000,000` rows or `192 MiB` uncompressed (`~16–32 MiB` ZSTD Parquet) across strictly
+  disjoint `[window_start, window_end)` parts.
+- **`MONTHLY_EVENTS`** (`archive_version = 2`, 20 columns, `ROW_GROUP_SIZE = 16384`, Split-Block
+  Bloom filters at `0.01` FPR): consolidates closed UTC months (`+15d` maturity with
+  `DAILY_EVENTS.activated_at <= now - 7d`), folds settled overlays (`>= 7d` old), enforces the same
+  `1,000,000`-row / `192 MiB` rollover ceilings, and independently defragments any single
+  `MONTHLY_EVENTS` part with `>= 64` settled overlays (`>= 7d` old).
+
+Legacy `RAW_GATED` (`archive_version = 1`) and any pre-split `DAILY_TELEMETRY` (`archive_version = 2`)
+files remain read-only compatible via `union_by_name = true` and are never rewritten on upgrade.
+To keep 10-year archives (`175,200+` `RAW_TELEMETRY` generations alongside `<= 198` event generations)
+fast and I/O-bounded, pure event-stream catalog queries prune directly on
+`oscar_archive_generation_time_idx` to `EVENT_QUERY_PROFILES` (`RAW_GATED`, `RAW_EVENTS`,
+`DAILY_EVENTS`, `MONTHLY_EVENTS`) after verifying no legacy telemetry generation holds that stream,
+summary queries always bind `s.generation_id = ANY (?::uuid[])` in `2,048`-UUID batches, and nightly
+`oscar_archive_schema` reindexing is bloat-gated once relation size reaches `256 MiB`.
 
 `.oscar-storage-root` is host-local administrator metadata, not an archive object. It is validated
 and authenticated before live archive commands, then recognized only at that exact root-level name
@@ -47,7 +102,7 @@ the configured root.
 
 ## Parquet schema
 
-Format version 1 uses these columns:
+### Base 11-column schema (`RAW_GATED` format v1 & `RAW_TELEMETRY` format v2)
 
 | Column | Type | Meaning |
 | --- | --- | --- |
@@ -57,21 +112,49 @@ Format version 1 uses these columns:
 | `datastream_id` | `BIGINT` | Stable datastream ID value |
 | `foi_scope` | nullable `INTEGER` | OSH scope for the feature-of-interest ID |
 | `foi_id` | nullable `BIGINT` | Feature-of-interest ID value |
-| `phenomenon_time` | `TIMESTAMP` | Observation phenomenon time |
-| `result_time` | `TIMESTAMP` | Observation result time |
+| `phenomenon_time` | `TIMESTAMP` | Observation phenomenon time (UTC) |
+| `result_time` | `TIMESTAMP` | Observation result time (UTC) |
 | `result_json` | `VARCHAR` | OSH result block serialized against its datastream schema |
-| `archive_version` | `INTEGER` | Row format version; currently `1` |
-| `profile` | `VARCHAR` | Archive selection profile; normally `RAW_GATED` |
+| `archive_version` | `INTEGER` | Row format version (`1` for `RAW_GATED`; `2` for `RAW_TELEMETRY`, `RAW_EVENTS`, `DAILY_EVENTS`, `MONTHLY_EVENTS`) |
+| `profile` | `VARCHAR` | Archive selection profile (`RAW_EVENTS`, `RAW_TELEMETRY`, `DAILY_EVENTS`, `MONTHLY_EVENTS`, or `RAW_GATED`) |
 
-Rows are written in this order:
+### Extended 20-column projected event schema (`RAW_EVENTS`, `DAILY_EVENTS`, `MONTHLY_EVENTS`, format v2)
+
+In addition to all 11 base columns above, Parquet V2 event profiles pre-extract 9 typed scalar
+columns in Java (`ProjectedEventColumns`) and write Split-Block Bloom filters
+(`BLOOM_FILTER_FALSE_POSITIVE_RATIO = 0.01`) so DuckDB pushes CQL filters down without parsing
+`result_json` during scans:
+
+| Column | Type | Source JSON Field(s) |
+| --- | --- | --- |
+| `ocr_norm` | nullable `VARCHAR` | `normalizedValue` (`vehicleOcr`) |
+| `occ_obs_id` | nullable `VARCHAR` | `occupancyObsId` (`vehicleOcr`, `adjudication`, `emlAnalysis`) |
+| `event_id` | nullable `VARCHAR` | `eventId` (`occupancy`, `alarm`, `report`) |
+| `adj_code` | nullable `INTEGER` | `adjudicationCode` |
+| `adj_count` | nullable `INTEGER` | `adjudicatedIdsCount` (or `len(adjudicatedIds)`) |
+| `gamma_alarm` | nullable `BOOLEAN` | `gammaAlarm` |
+| `neutron_alarm` | nullable `BOOLEAN` | `neutronAlarm` |
+| `max_gamma` | nullable `DOUBLE` | `maxGammaCount` / `maxGamma` |
+| `max_neutron` | nullable `DOUBLE` | `maxNeutronCount` / `maxNeutron` |
+
+Rows in every profile are written in deterministic sort order:
 
 ```text
 datastream_id, phenomenon_time, result_time, id_value
 ```
 
-DuckDB writes ZSTD-compressed Parquet with a row-group target of 122,880 rows. Sorting and the
-Hive-style date partition allow Parquet min/max metadata and path selection to avoid scanning
-unrelated time/datastream ranges.
+Profile writer parameters (all ZSTD level 6 by default):
+
+| Profile | Parquet Version | Columns | Row Group Size | Bloom Filters | Rollover Budget (`256 MiB` DuckDB) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `RAW_EVENTS` | Parquet V2 (`archive_version = 2`) | 20 (projected) | `8,192` | Yes (`0.01` FPR) | `32 MiB` uncompressed |
+| `RAW_TELEMETRY` | Parquet V2 (`archive_version = 2`) | 11 (base) | `65,536` | No | `128 MiB` uncompressed (`~8–10 MiB` ZSTD) |
+| `DAILY_EVENTS` | Parquet V2 (`archive_version = 2`) | 20 (projected) | `8,192` | Yes (`0.01` FPR) | `1,000,000` rows or `192 MiB` uncompressed (`2x` hard cap) |
+| `MONTHLY_EVENTS` | Parquet V2 (`archive_version = 2`) | 20 (projected) | `16,384` | Yes (`0.01` FPR) | `1,000,000` rows or `192 MiB` uncompressed (`2x` hard cap) |
+| `RAW_GATED` (legacy / `HOT_RETENTION`) | Parquet V1 (`archive_version = 1`) | 11 (base) | `122,880` | No | `32 MiB` uncompressed |
+
+Sorting, disjoint multi-part window assignment, Hive-style date partitions, and Parquet V2 page
+indexes/Bloom filters allow DuckDB min/max and Bloom metadata to skip unrelated row groups and files.
 
 A busy UTC-aligned staging window may be represented by several immutable generations with the same catalog window.
 Each generation contains the next deterministic `(phenomenon_time, id_value)` prefix that fits the
@@ -162,7 +245,7 @@ deployment running the matching release rather than starting older code on a new
 | `oscar_archive_generation` | Window, profile, object/manifest paths, Parquet hash, ID range, state, parity flag |
 | `oscar_archive_object` | Every generation object, kind, relative path, SHA-256, bytes, and lifecycle state |
 | `oscar_archive_id_block` | Generation ID range used to plan exact-ID lookups |
-| `oscar_archive_schema` | PostgreSQL copy of each generation's datastream schemas plus 22 per-generation, per-datastream summary counters (alarm/fault/adjudication counts, including whole-generation `TimeContainedSummarySpec` count pushdown) |
+| `oscar_archive_schema` | PostgreSQL copy of each generation's datastream schemas plus 26 per-generation, per-datastream summary counters (alarm, fault including `Fault - Neutron High`, RS-350 `alarmCategoryCode`, and adjudication-split counts, with whole-generation `TimeContainedSummarySpec` count pushdown and selective `ocr_bloom` on event streams) |
 | `oscar_obs_schema_catalog` | Content-addressed `DataRecord` JSON catalog (`schema_sha256 PRIMARY KEY`) referenced by `oscar_obs_overlay` and `oscar_obs_latest` so per-row `schema_json` stays `NULL` |
 | `oscar_obs_latest` | Latest observation per datastream (synchronized across Parquet activation and `oscar_obs_overlay` updates via `schema_sha256`) for `< 0.5 ms` `resultTime=latest` / `phenomenonTime=latest` queries |
 | `oscar_obs_storage_route` | Stable mutable-versus-immutable classification for each observed datastream |
@@ -252,8 +335,12 @@ shutdown between result rows in addition to cancelling the active JDBC statement
 Object publication and PostgreSQL activation cannot be one filesystem/database transaction. A file
 that exists without an `ACTIVE`/`DELETING` catalog object is intentionally invisible and is reported
 as an orphan by `archive status` and `archive verify`; a file whose catalog row is already `DELETED`
-is also an error. A `.partial` is reported while it is younger than the two-hour stale-job window
-and fails verification once stale. Reconciliation is report-only and never auto-deletes. A
+is also an error. A `.partial` file is reported while younger than the two-hour (`7200` s) stale-job
+window and fails verification once stale. During background `drainDeletingGenerations` (when no
+`EXPORTING` job is active), `ArchiveCompactionManager.sweepStaleUnregisteredPartials` automatically
+removes unregistered `.partial` artifacts older than two hours and prunes empty `profile=` / `date=`
+directories while failing closed on any UUID present in `oscar_archive_generation`. Online
+`archive verify` itself remains report-only and never auto-deletes. A
 cataloged object that is missing or has the wrong digest is an integrity incident; the reader fails
 rather than silently returning an incomplete result.
 

@@ -315,34 +315,54 @@ cmd_pack_sync() {
     yesterday_utc=$(date -u -d 'yesterday' +%Y-%m-%d 2>/dev/null || date -u +%Y-%m-%d)
 
     # 1. Incremental Parquet Archive Sync:
-    #    UTC dates strictly older than yesterday are immutable SEALED windows and
-    #    are packed once into packs/archive/archive-YYYY-MM-DD.tar.
+    #    UTC dates strictly older than yesterday are packed into
+    #    packs/archive/archive-YYYY-MM-DD.tar and invalidated automatically via
+    #    a fast directory-tree signature (.tree) whenever Day-1 compaction,
+    #    Monthly consolidation, defragmentation, or archive purge updates a date.
     : >"$work/pack-index.txt"
+    : >"$scratch/referenced_archive_packs"
     local -a recent_archive_items=()
     if [[ -d /archive/datasets/observations ]]; then
-        local date_dir base date_str pack_name pack_path sha
+        local date_dir base date_str pack_name pack_path sha tree_sig
         for date_dir in /archive/datasets/observations/date=*; do
             [[ -d $date_dir ]] || continue
             base=${date_dir##*/}
             date_str=${base#date=}
             if [[ $date_str =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ && $date_str < "$yesterday_utc" ]] &&
                [[ -z $(find "$date_dir" -name '*.partial*' -print -quit 2>/dev/null) ]]; then
+                tree_sig=$(find "$date_dir" -ignore_readdir_race -type f -printf '%P\t%s\n' 2>/dev/null | LC_ALL=C sort | sha256sum | awk '{print $1}')
                 pack_name="archive-${date_str}.tar"
                 pack_path="$archive_packs/$pack_name"
-                if [[ ! -f $pack_path || ! -f "$pack_path.sha256" ]]; then
-                    tar -C /archive -cf "$pack_path.tmp" "datasets/observations/$base"
+                if [[ ! -f $pack_path || ! -f "$pack_path.sha256" || ! -f "$pack_path.tree" || $(cat "$pack_path.tree" 2>/dev/null || true) != "$tree_sig" ]]; then
+                    tar -C /archive --ignore-failed-read --warning=no-file-changed --warning=no-file-removed \
+                        -cf "$pack_path.tmp" "datasets/observations/$base" || {
+                        local arc_rc=$?
+                        ((arc_rc <= 1)) || fail "Failed creating archive pack $pack_name (tar exit $arc_rc)."
+                    }
                     mv -f -- "$pack_path.tmp" "$pack_path"
                     sha=$(sha256_file "$pack_path")
                     printf '%s  %s\n' "$sha" "$pack_name" >"$pack_path.sha256"
+                    printf '%s\n' "$tree_sig" >"$pack_path.tree"
                 else
                     sha=$(awk '{print $1; exit}' "$pack_path.sha256")
                 fi
+                printf '%s\n' "$pack_name" >>"$scratch/referenced_archive_packs"
                 printf '%s  packs/archive/%s\n' "$sha" "$pack_name" >>"$work/pack-index.txt"
             else
                 recent_archive_items+=("datasets/observations/$base")
             fi
         done
     fi
+    LC_ALL=C sort -u "$scratch/referenced_archive_packs" -o "$scratch/referenced_archive_packs"
+    local ap ap_base
+    for ap in "$archive_packs"/archive-*.tar; do
+        [[ -f $ap ]] || continue
+        ap_base=${ap##*/}
+        if ! grep -Fxq -- "$ap_base" "$scratch/referenced_archive_packs"; then
+            rm -f -- "$ap" "$ap.sha256" "$ap.tree"
+        fi
+    done
+    rm -f -- "$scratch/referenced_archive_packs"
     # Include any non-observations top-level entries inside /archive (excluding .oscar-storage-root and datasets/observations)
     local top_entry top_base
     for top_entry in /archive/* /archive/.[!.]*; do

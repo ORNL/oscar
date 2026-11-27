@@ -118,6 +118,11 @@
       },
       {
         "objClass": "org.sensorhub.ui.CustomUIConfig",
+        "configClass": "com.botts.impl.system.lane.mobile.config.MobileDetectorConfig",
+        "uiClass": "com.botts.ui.oscar.forms.MobileDetectorConfigForm"
+      },
+      {
+        "objClass": "org.sensorhub.ui.CustomUIConfig",
         "configClass": "org.sensorhub.api.sensor.PositionConfig.LLALocation",
         "uiClass": "com.botts.ui.oscar.forms.SiteDiagramForm"
       },
@@ -132,7 +137,7 @@
         "uiClass": "com.botts.ui.oscar.forms.OSCARServiceForm"
       }
     ],
-    "deploymentName": "OSCAR 3.11.15",
+    "deploymentName": "OSCAR 3.12.0",
     "enableLandingPage": false,
     "id": "5cb05c9c-9123-4fa1-8731-ffaa51489678",
     "autoStart": true,
@@ -326,7 +331,11 @@
           "report",
           "siteStatistics",
           "nationalSummary",
-          "vehicleOcr"
+          "vehicleOcr",
+          "location",
+          "alarm",
+          "KromekDetectorRadiometricsV1Report",
+          "KromekSerialRadiometricStatusReport"
         ]
       },
       "id": "bfbd6d58-1a4a-40b4-999d-381a1489cbb5",

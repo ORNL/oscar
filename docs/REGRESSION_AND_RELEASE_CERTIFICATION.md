@@ -1,6 +1,6 @@
 # OSCAR End-to-End Regression Suite & Release Certification Guide
 
-[`ORNL/oscar-regression`](https://github.com/ORNL/oscar-regression) provides automated end-to-end functional, fault-injection, multi-pass vehicle OCR, `PARQUET_PRIMARY` storage-lifecycle, destructive backup/restore, and 24/7 UI endurance validation for OSCAR 3.11.15 test deployments.
+[`ORNL/oscar-regression`](https://github.com/ORNL/oscar-regression) provides automated end-to-end functional, fault-injection, multi-pass vehicle OCR, `PARQUET_PRIMARY` storage-lifecycle, destructive backup/restore, and 24/7 UI endurance validation for OSCAR 3.12.0 test deployments.
 
 For a captioned 1080p walkthrough, watch [Module 22 (`22-regression-suite-setup-and-certification.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/22-regression-suite-setup-and-certification.mp4) in [VIDEO_GUIDES.md](VIDEO_GUIDES.md).
 
@@ -58,31 +58,31 @@ chmod 600 .env
 | `SPECTROSCOPIC_WORKFLOW` | `auto` *(or `required` / `disabled`)* | Uploads local `.spe` / `.n42` files from `spectroscopic-files/`, verifying `N42 Report` and Sandia WebID |
 | `CARGO_UFF_WORKFLOW` | `auto` *(or `required` / `disabled`)* | Verifies zero UI clutter when Cargo UFF is disabled, exercises local `.uff` upload + 16-bit `uint16` TIFF/HEMD viewer controls, tests live SMBv2/v3 share connection (`CARGO_UFF_SMB_SHARE`), scanner/time-window browsing, Tier-1 UUID omnibox lookup, 1-char fuzzy OCR correlation, and zero-download adjudication staging, and restores `uff.enabled = false` in `finally` |
 | `EML_WORKFLOW` | `auto` *(or `required` / `disabled`)* | Uploads `OSCAR_EML_PLUGIN_PATH` (`.jar`) and verifies `Code 9999: EML Non-Threat` auto-adjudication |
-| `STORAGE_WORKFLOW` | `required` | Gates OSCAR 3.11.15 `PARQUET_PRIMARY`, 5-JPEG retention, atomic publisher, and schema checks |
+| `STORAGE_WORKFLOW` | `required` | Gates OSCAR 3.12.0 `PARQUET_PRIMARY`, 5-JPEG retention, atomic publisher, and schema checks |
 | `OSCAR_BACKUP_MODE` | `disabled` *(or `single`)* | Certifies fail-closed disabled backups or single-snapshot backup behavior (`STORAGE_BACKUP_WORKFLOW`) |
 | `OSCAR_SSH_TARGET` | `oscar@oscar-test.example.org` | SSH host used for the remote mutation lease, Docker resource sampling, and storage probes |
-| `OSCAR_RELEASE_DIR` | `/srv/oscar-test/oscar-3.11.15` | Canonical non-symlinked release path on `OSCAR_SSH_TARGET` |
+| `OSCAR_RELEASE_DIR` | `/srv/oscar-test/oscar-3.12.0` | Canonical non-symlinked release path on `OSCAR_SSH_TARGET` |
 | `OSCAR_STORAGE_TARGET_ACK` | `<host>\|<ssh>\|<dir>\|DISPOSABLE-STORAGE` | **Safety interlock #4:** Required before any storage probe executes |
 
 ### Rebinding After Deploying a New Release Directory
 
-Whenever you unpack and deploy a new OSCAR 3.11.15 build into a clean versioned folder, preview and apply the release rebind helper (which verifies the running container provenance over strict SSH without touching secrets):
+Whenever you unpack and deploy a new OSCAR 3.12.0 build into a clean versioned folder, preview and apply the release rebind helper (which verifies the running container provenance over strict SSH without touching secrets):
 
 ```sh
-./scripts/rebind-active-release.sh --build-label 3.11.15-rc1
-./scripts/rebind-active-release.sh --apply --build-label 3.11.15-rc1
+./scripts/rebind-active-release.sh --build-label 3.12.0-rc1
+./scripts/rebind-active-release.sh --apply --build-label 3.12.0-rc1
 ```
 
 ---
 
-## 3. Execution Profiles & All 26 Functional Scenarios
+## 3. Execution Profiles & All 28 Functional Scenarios
 
 ### Profile Reference
 
 | Profile | Command | When to Use |
 | --- | --- | --- |
 | **`smoke`** | `npm run test:smoke` *(or `./scripts/run-regression.sh smoke`)* | Fast, non-fault-injecting verification across all 14 read-only, reporting, QR camera-scan, `runtime-extensions`, and `storage-health` scenarios |
-| **`full`** | `npm run test:full` *(or `./scripts/run-regression.sh full`)* | **Mandatory pre-release / release sign-off gate:** Complete 26-scenario regression (`smoke` plus reserved-lane disconnect, detector/tamper faults, alarms, UUID, adjudication, `cargo-uff`, `training-sandbox`, EML, Vehicle OCR, `>= 150 s` extended occupancy, and natural `PARQUET_PRIMARY` partition retirement) |
+| **`full`** | `npm run test:full` *(or `./scripts/run-regression.sh full`)* | **Mandatory pre-release / release sign-off gate:** Complete 28-scenario regression (`smoke` plus reserved-lane disconnect, detector/tamper faults, alarms, UUID, adjudication, `cargo-uff`, `training-sandbox`, `lane-webrelay`, `multi-node-federation`, EML, Vehicle OCR, `>= 150 s` extended occupancy, and natural `PARQUET_PRIMARY` Option A partition retirement) |
 | **`3.11.0-release`** | `npm run test:3.11.0-release` | Strict unfiltered release certification gate (rejects `--scenario` filters, skipped required workflows, or mismatched `OSCAR_BUILD_LABEL`) |
 | **`restore-drill`** | `OSCAR_BACKUP_MODE=single STORAGE_WORKFLOW=required STORAGE_BACKUP_WORKFLOW=required npm run test:restore-drill` | Destructive isolated single-snapshot backup, database/state/archive canary mutation, streamed-WAL base-backup restore, and timeline-promotion proof (requires the 4 `OSCAR_RESTORE_*_ACK` interlocks) |
 | **`ui-endurance`** | `./scripts/run-ui-endurance.sh` | Continuous never-reloaded 24/7 Wallboard Watcher + PWA Service Worker notification + scoped/unscoped adjudication soak loop |
@@ -123,7 +123,9 @@ npm run test:full -- --scenario rpm-faults,vehicle-ocr,adjudication
 | Full | `event-uuid` | Public observation ID lookup, direct links, view-scoped isolation, and PDF/QR UUID fidelity |
 | Full | `adjudication` | Full operator adjudication, `.spe`/`.n42` upload (`N42 Report` + Sandia WebID), and audit trail |
 | Full | `cargo-uff` | Zero-clutter disabled check, local `.uff` upload, live SMBv2/v3 `UFF 2.0`/`3.0` picker, Tier-1 UUID omnibox lookup, `OCR ±1` correlation, 16-bit TIFF/HEMD viewer, zero-download `.uffref.json` adjudication staging, and `finally` reset |
-| Full | `training-sandbox` | Launches `oscar.sh sandbox start` (`:8444`), exercises Track 1/2/3 staging, loopback Rapiscan scenario injection, Training Coach auto-verification, watermarked exports + PDF Completion Record, runs `sandbox stop`, and proves `0` delta across operational PostgreSQL, `oscar_oscar_state`, and Parquet archive |
+| Full | `training-sandbox` | Launches `oscar.sh sandbox start` (`:8444`), exercises Track 1/2/3 staging, loopback Rapiscan + RS-350 mobile detector + custom widget dashboard labs, Training Coach auto-verification, watermarked exports + PDF Completion Record, runs `sandbox stop`, and proves `0` delta across operational PostgreSQL, `oscar_oscar_state`, and Parquet archive |
+| Full | `lane-webrelay` | Arms loopback ControlByWeb WebRelay-Quad `R1–R4`, verifies `AUTO` suppression on `Code 9999` / `Code 9998`, pulses `R3`/`R4` on actionable alarms, validates `MUTED`/`PASS_THROUGH`/`MANUAL` modal controls, and confirms fail-safe `0,0,0,0` release |
+| Full | `multi-node-federation` | Registers a federated peer node with a scoped `Bearer` service token, executes cross-node Vehicle ID search + `VEHICLE_INCIDENT` export + linked adjudication, and verifies clean peer removal |
 | Full | `eml-auto-adjudication` | EML VM-250 `.jar` upload, per-lane toggle, and `Code 9999: EML Non-Threat` auto-adjudication |
 | Full | `vehicle-ocr` | Live PP-OCRv3 ISO 6346 container read, auto-fill, `Compare Passes`, Linked Adjudication, and `VEHICLE_INCIDENT` PDF |
 | Full | `extended-occupancy` | `>= 150 s` occupancy fault (`Fault - Extended Occupancy`) and `Code 9998` gamma-only auto-adjudication |
