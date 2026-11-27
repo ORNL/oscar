@@ -7,6 +7,7 @@ on:
 
 env:
   RELEASE_VERSION: '3.12.1'
+  RELEASE_CODENAME: ''
   JAVA_VERSION: '21'
   NODE_VERSION: '22'
   OSCAR_DIR: 'web/oscar-viewer'
@@ -832,7 +833,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
-          name: Release ${{ github.ref_name }} (Amber)
+          name: ${{ env.RELEASE_CODENAME != '' && format('Release {0} ({1})', github.ref_name, env.RELEASE_CODENAME) || format('Release {0}', github.ref_name) }}
           prerelease: false
           make_latest: true
           body_path: ${{ runner.temp }}/release-notes.md
