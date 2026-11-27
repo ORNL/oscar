@@ -297,6 +297,9 @@ cmd_pack_sync() {
     local postgres_lsn=${5:?missing postgres_lsn}
     local epoch_id=${6:?missing epoch_id}
     local timestamp_iso=${7:?missing timestamp_iso}
+    local pg_pack_rel=${8:-}
+    local pg_pack_sha=${9:-}
+    local sync_mode=${10:-full}
 
     local backup_root=/backup/OSCAR-Backup
     local work="$backup_root/snapshots/$snapshot_id.partial"
@@ -307,8 +310,20 @@ cmd_pack_sync() {
     mkdir -p "$scratch"
 
     mkdir -p "$archive_packs" "$state_packs" "$work"
-    [[ -f "$work/postgres.tar" ]] ||
-        fail 'Online PostgreSQL base backup (postgres.tar) is missing from staging directory.'
+    if [[ -n $pg_pack_rel ]]; then
+        [[ $pg_pack_rel == packs/postgres/pg-*.tar && -f "$backup_root/$pg_pack_rel" ]] ||
+            fail "Referenced PostgreSQL base pack is missing: $pg_pack_rel"
+        if [[ -z $pg_pack_sha ]]; then
+            if [[ -f "$backup_root/$pg_pack_rel.sha256" ]]; then
+                pg_pack_sha=$(awk '{print $1; exit}' "$backup_root/$pg_pack_rel.sha256")
+            else
+                pg_pack_sha=$(sha256_file "$backup_root/$pg_pack_rel")
+            fi
+        fi
+    else
+        [[ -f "$work/postgres.tar" ]] ||
+            fail 'Online PostgreSQL base backup (postgres.tar) is missing from staging directory.'
+    fi
 
     local today_utc yesterday_utc
     today_utc=$(date -u +%Y-%m-%d)
@@ -320,6 +335,9 @@ cmd_pack_sync() {
     #    a fast directory-tree signature (.tree) whenever Day-1 compaction,
     #    Monthly consolidation, defragmentation, or archive purge updates a date.
     : >"$work/pack-index.txt"
+    if [[ -n $pg_pack_rel ]]; then
+        printf '%s  %s\n' "$pg_pack_sha" "$pg_pack_rel" >>"$work/pack-index.txt"
+    fi
     : >"$scratch/referenced_archive_packs"
     local -a recent_archive_items=()
     if [[ -d /archive/datasets/observations ]]; then
@@ -386,6 +404,11 @@ cmd_pack_sync() {
     fi
 
     # 2. Incremental State Immutable Media / DailyFiles / Crops / Reports / Offline Maps Sync:
+    #    Scheduled continual ticks run an O(delta) fast scan using -newer/-cnewer
+    #    against the previous scan watermark (backdated 120s for safety), avoiding
+    #    multi-million-file catalog sorts and full recompression on 15-min ticks.
+    #    Authoritative full sweeps run once every 24h (or on manual sync/eject/quiesce)
+    #    to prune deleted files, coalesce prior-day packs, and GC unreferenced packs.
     local -a imm_roots=(
         "files/dailyfiles"
         "files/.dailyfile-journal/segments"
@@ -395,70 +418,180 @@ cmd_pack_sync() {
         "files/reports"
         "extensions/maps-storage"
     )
-    : >"$scratch/live.tsv"
-    local rel_root
-    for rel_root in "${imm_roots[@]}"; do
-        if [[ -d "/state/$rel_root" ]]; then
-            (cd /state && find "$rel_root" -ignore_readdir_race -type f -printf '%p\t%s\t%Ts\n' 2>/dev/null) >>"$scratch/live.tsv" || true
+    local full_scan_interval=${OSCAR_USB_FULL_STATE_SCAN_INTERVAL_SECONDS:-86400}
+    local scan_start_epoch last_full_epoch=0 last_inc_epoch=0 prev_snap_id='' prev_live_gz=''
+    scan_start_epoch=$(date -u +%s)
+    [[ -f "$state_packs/.last-full-scan-epoch" ]] && last_full_epoch=$(tr -d '[:space:]' <"$state_packs/.last-full-scan-epoch" || echo 0)
+    [[ -f "$state_packs/.last-inc-scan-epoch" ]] && last_inc_epoch=$(tr -d '[:space:]' <"$state_packs/.last-inc-scan-epoch" || echo 0)
+    if [[ -f "$backup_root/LATEST" ]]; then
+        prev_snap_id=$(awk -F= '$1 == "snapshot_id" { print $2; exit }' "$backup_root/LATEST" | tr -d '\r[:space:]')
+        if [[ -n $prev_snap_id && -s "$backup_root/snapshots/$prev_snap_id/live-immutable-paths.txt.gz" ]]; then
+            prev_live_gz="$backup_root/snapshots/$prev_snap_id/live-immutable-paths.txt.gz"
         fi
-    done
-    LC_ALL=C sort -t $'\t' -k1,1 "$scratch/live.tsv" -o "$scratch/live.tsv"
-    local imm_file_count
-    imm_file_count=$(wc -l <"$scratch/live.tsv" | tr -d '[:space:]')
-    cut -f1 "$scratch/live.tsv" | gzip -1 >"$work/live-immutable-paths.txt.gz"
-
-    [[ -f $catalog_file ]] || : >"$catalog_file"
-    reconcile_coalesced_catalog_packs "$state_packs" "$catalog_file" "$scratch"
-    LC_ALL=C sort -t $'\t' -k1,1 "$catalog_file" -o "$scratch/catalog.sorted"
-
-    # Determine new or modified files (size or mtime_sec changed) while pruning deleted catalog rows
-    awk -F'\t' -v OFS='\t' -v delta_out="$scratch/delta.paths" -v kept_out="$scratch/kept.tsv" '
-        FILENAME == ARGV[1] {
-            cat_size[$1] = $2
-            cat_mtime[$1] = $3
-            cat_pack[$1] = $4
-            next
-        }
-        {
-            p = $1; sz = $2; mt = $3
-            if ((p in cat_pack) && cat_size[p] == sz && cat_mtime[p] == mt) {
-                print p, sz, mt, cat_pack[p] > kept_out
-            } else {
-                print p > delta_out
-                print p, sz, mt, "__NEW_PACK__" > kept_out
-            }
-        }
-    ' "$scratch/catalog.sorted" "$scratch/live.tsv"
-
-    [[ -f "$scratch/delta.paths" ]] || : >"$scratch/delta.paths"
-    [[ -f "$scratch/kept.tsv" ]] || : >"$scratch/kept.tsv"
-
-    if [[ -s "$scratch/delta.paths" ]]; then
-        local next_seq=1 existing_last
-        existing_last=$(find "$state_packs" -maxdepth 1 -type f -name "pack-${today_utc}-*.tar" -printf '%f\n' 2>/dev/null | sort | tail -n 1 || true)
-        if [[ -n $existing_last && $existing_last =~ ^pack-[0-9-]+-([0-9]{6})\.tar$ ]]; then
-            next_seq=$((10#${BASH_REMATCH[1]} + 1))
-        fi
-        local new_pack
-        new_pack=$(printf 'pack-%s-%06d.tar' "$today_utc" "$next_seq")
-        # Ignore transient vanish if VideoRetention prunes an old frame mid-scan
-        (cd /state && tar --ignore-failed-read --warning=no-file-changed --warning=no-file-removed \
-            -cf "$state_packs/$new_pack.tmp" --files-from "$scratch/delta.paths") || {
-            local rc=$?
-            ((rc <= 1)) || fail "Failed creating incremental state pack $new_pack (tar exit $rc)."
-        }
-        mv -f -- "$state_packs/$new_pack.tmp" "$state_packs/$new_pack"
-        printf '%s  %s\n' "$(sha256_file "$state_packs/$new_pack")" "$new_pack" >"$state_packs/$new_pack.sha256"
-        sed "s/__NEW_PACK__/$new_pack/g" "$scratch/kept.tsv" >"$catalog_file.tmp"
-    else
-        cp -f -- "$scratch/kept.tsv" "$catalog_file.tmp"
     fi
-    mv -f -- "$catalog_file.tmp" "$catalog_file"
-    rm -f -- "$scratch/live.tsv" "$scratch/catalog.sorted" "$scratch/kept.tsv" "$scratch/delta.paths"
 
-    coalesce_state_packs_if_needed "$state_packs" "$catalog_file" "$today_utc" "$scratch"
+    local use_fast_incremental=false
+    if [[ $sync_mode == incremental && -s $catalog_file && -n $prev_live_gz ]] &&
+       [[ $last_full_epoch =~ ^[0-9]+$ && $last_inc_epoch =~ ^[0-9]+$ && $full_scan_interval =~ ^[0-9]+$ ]] &&
+       ((last_full_epoch > 0 && last_inc_epoch > 0 && full_scan_interval > 0)) &&
+       ((scan_start_epoch >= last_full_epoch && scan_start_epoch - last_full_epoch < full_scan_interval)); then
+        use_fast_incremental=true
+    fi
 
-    # Record only state packs actively referenced by catalog.tsv, and garbage-collect unreferenced state packs
+    local imm_file_count=0 state_scan_kind=full rel_root
+    if [[ $use_fast_incremental == true ]]; then
+        state_scan_kind=incremental
+        local since_epoch=$((last_inc_epoch > 120 ? last_inc_epoch - 120 : 0))
+        touch -d "@$since_epoch" "$scratch/since.marker"
+        : >"$scratch/recent.tsv"
+        for rel_root in "${imm_roots[@]}"; do
+            if [[ -d "/state/$rel_root" ]]; then
+                (cd /state && find "$rel_root" -ignore_readdir_race -type f \
+                    \( -newer "$scratch/since.marker" -o -cnewer "$scratch/since.marker" \) \
+                    -printf '%p\t%s\t%Ts\n' 2>/dev/null) >>"$scratch/recent.tsv" || true
+            fi
+        done
+
+        if [[ ! -s "$scratch/recent.tsv" ]]; then
+            # Quiet tick: zero new/changed immutable files -> O(1) reuse!
+            cp -f -- "$prev_live_gz" "$work/live-immutable-paths.txt.gz"
+            imm_file_count=$(wc -l <"$catalog_file" | tr -d '[:space:]')
+        else
+            # Load only the small recent delta set in memory and stream catalog.tsv once
+            awk -F'\t' -v OFS='\t' \
+                -v delta_out="$scratch/delta.paths" \
+                -v new_only_out="$scratch/new_only.paths" \
+                -v kept_out="$scratch/kept.tsv" '
+                FILENAME == ARGV[1] {
+                    rec_size[$1] = $2
+                    rec_mtime[$1] = $3
+                    rec_present[$1] = 1
+                    next
+                }
+                {
+                    p = $1; sz = $2; mt = $3; pk = $4
+                    if (p in rec_present) {
+                        if (rec_size[p] == sz && rec_mtime[p] == mt) {
+                            print p, sz, mt, pk > kept_out
+                        } else {
+                            print p > delta_out
+                            print p, rec_size[p], rec_mtime[p], "__NEW_PACK__" > kept_out
+                        }
+                        delete rec_present[p]
+                    } else {
+                        print p, sz, mt, pk > kept_out
+                    }
+                }
+                END {
+                    for (p in rec_present) {
+                        print p > delta_out
+                        print p > new_only_out
+                        print p, rec_size[p], rec_mtime[p], "__NEW_PACK__" > kept_out
+                    }
+                }
+            ' "$scratch/recent.tsv" "$catalog_file"
+
+            [[ -f "$scratch/delta.paths" ]] || : >"$scratch/delta.paths"
+            [[ -f "$scratch/new_only.paths" ]] || : >"$scratch/new_only.paths"
+            [[ -f "$scratch/kept.tsv" ]] || : >"$scratch/kept.tsv"
+
+            if [[ -s "$scratch/delta.paths" ]]; then
+                local next_seq=1 existing_last
+                existing_last=$(find "$state_packs" -maxdepth 1 -type f -name "pack-${today_utc}-*.tar" -printf '%f\n' 2>/dev/null | sort | tail -n 1 || true)
+                if [[ -n $existing_last && $existing_last =~ ^pack-[0-9-]+-([0-9]{6})\.tar$ ]]; then
+                    next_seq=$((10#${BASH_REMATCH[1]} + 1))
+                fi
+                local new_pack
+                new_pack=$(printf 'pack-%s-%06d.tar' "$today_utc" "$next_seq")
+                (cd /state && tar --ignore-failed-read --warning=no-file-changed --warning=no-file-removed \
+                    -cf "$state_packs/$new_pack.tmp" --files-from "$scratch/delta.paths") || {
+                    local rc=$?
+                    ((rc <= 1)) || fail "Failed creating incremental state pack $new_pack (tar exit $rc)."
+                }
+                mv -f -- "$state_packs/$new_pack.tmp" "$state_packs/$new_pack"
+                printf '%s  %s\n' "$(sha256_file "$state_packs/$new_pack")" "$new_pack" >"$state_packs/$new_pack.sha256"
+                sed "s/__NEW_PACK__/$new_pack/g" "$scratch/kept.tsv" >"$catalog_file.tmp"
+                mv -f -- "$catalog_file.tmp" "$catalog_file"
+            fi
+            if [[ -s "$scratch/new_only.paths" ]]; then
+                # RFC 1952 multi-member gzip append: zero decompression of historical paths!
+                {
+                    cat "$prev_live_gz"
+                    gzip -1 <"$scratch/new_only.paths"
+                } >"$work/live-immutable-paths.txt.gz"
+            else
+                cp -f -- "$prev_live_gz" "$work/live-immutable-paths.txt.gz"
+            fi
+            imm_file_count=$(wc -l <"$catalog_file" | tr -d '[:space:]')
+            rm -f -- "$scratch/kept.tsv" "$scratch/delta.paths" "$scratch/new_only.paths"
+        fi
+        rm -f -- "$scratch/recent.tsv" "$scratch/since.marker"
+        printf '%s\n' "$scan_start_epoch" >"$state_packs/.last-inc-scan-epoch"
+    else
+        : >"$scratch/live.tsv"
+        for rel_root in "${imm_roots[@]}"; do
+            if [[ -d "/state/$rel_root" ]]; then
+                (cd /state && find "$rel_root" -ignore_readdir_race -type f -printf '%p\t%s\t%Ts\n' 2>/dev/null) >>"$scratch/live.tsv" || true
+            fi
+        done
+        imm_file_count=$(wc -l <"$scratch/live.tsv" | tr -d '[:space:]')
+        cut -f1 "$scratch/live.tsv" | gzip -1 >"$work/live-immutable-paths.txt.gz"
+
+        [[ -f $catalog_file ]] || : >"$catalog_file"
+        reconcile_coalesced_catalog_packs "$state_packs" "$catalog_file" "$scratch"
+
+        # Determine new or modified files (size or mtime_sec changed) while pruning deleted catalog rows
+        # (awk hashes catalog by $1 directly, avoiding O(N log N) sorts over multi-year catalogs)
+        awk -F'\t' -v OFS='\t' -v delta_out="$scratch/delta.paths" -v kept_out="$scratch/kept.tsv" '
+            FILENAME == ARGV[1] {
+                cat_size[$1] = $2
+                cat_mtime[$1] = $3
+                cat_pack[$1] = $4
+                next
+            }
+            {
+                p = $1; sz = $2; mt = $3
+                if ((p in cat_pack) && cat_size[p] == sz && cat_mtime[p] == mt) {
+                    print p, sz, mt, cat_pack[p] > kept_out
+                } else {
+                    print p > delta_out
+                    print p, sz, mt, "__NEW_PACK__" > kept_out
+                }
+            }
+        ' "$catalog_file" "$scratch/live.tsv"
+
+        [[ -f "$scratch/delta.paths" ]] || : >"$scratch/delta.paths"
+        [[ -f "$scratch/kept.tsv" ]] || : >"$scratch/kept.tsv"
+
+        if [[ -s "$scratch/delta.paths" ]]; then
+            local next_seq=1 existing_last
+            existing_last=$(find "$state_packs" -maxdepth 1 -type f -name "pack-${today_utc}-*.tar" -printf '%f\n' 2>/dev/null | sort | tail -n 1 || true)
+            if [[ -n $existing_last && $existing_last =~ ^pack-[0-9-]+-([0-9]{6})\.tar$ ]]; then
+                next_seq=$((10#${BASH_REMATCH[1]} + 1))
+            fi
+            local new_pack
+            new_pack=$(printf 'pack-%s-%06d.tar' "$today_utc" "$next_seq")
+            # Ignore transient vanish if VideoRetention prunes an old frame mid-scan
+            (cd /state && tar --ignore-failed-read --warning=no-file-changed --warning=no-file-removed \
+                -cf "$state_packs/$new_pack.tmp" --files-from "$scratch/delta.paths") || {
+                local rc=$?
+                ((rc <= 1)) || fail "Failed creating incremental state pack $new_pack (tar exit $rc)."
+            }
+            mv -f -- "$state_packs/$new_pack.tmp" "$state_packs/$new_pack"
+            printf '%s  %s\n' "$(sha256_file "$state_packs/$new_pack")" "$new_pack" >"$state_packs/$new_pack.sha256"
+            sed "s/__NEW_PACK__/$new_pack/g" "$scratch/kept.tsv" >"$catalog_file.tmp"
+        else
+            cp -f -- "$scratch/kept.tsv" "$catalog_file.tmp"
+        fi
+        mv -f -- "$catalog_file.tmp" "$catalog_file"
+        rm -f -- "$scratch/live.tsv" "$scratch/kept.tsv" "$scratch/delta.paths"
+
+        coalesce_state_packs_if_needed "$state_packs" "$catalog_file" "$today_utc" "$scratch"
+        printf '%s\n' "$scan_start_epoch" >"$state_packs/.last-full-scan-epoch"
+        printf '%s\n' "$scan_start_epoch" >"$state_packs/.last-inc-scan-epoch"
+    fi
+
+    # Record only state packs actively referenced by catalog.tsv, and garbage-collect unreferenced state packs on full sweeps
     cut -f4 "$catalog_file" | LC_ALL=C sort -u >"$scratch/referenced_state_packs"
     local sp sp_base sp_sha
     for sp in "$state_packs"/pack-*.tar; do
@@ -470,7 +603,7 @@ cmd_pack_sync() {
             fi
             sp_sha=$(awk '{print $1; exit}' "$sp.sha256")
             printf '%s  packs/state/%s\n' "$sp_sha" "$sp_base" >>"$work/pack-index.txt"
-        else
+        elif [[ $use_fast_incremental != true ]]; then
             rm -f -- "$sp" "$sp.sha256"
         fi
     done
@@ -546,6 +679,8 @@ cmd_pack_sync() {
   "backupMode": "$backup_mode",
   "createdAt": "$timestamp_iso",
   "postgresLsn": "$postgres_lsn",
+  "postgresPack": "${pg_pack_rel}",
+  "stateScanMode": "$state_scan_kind",
   "archivePackCount": $archive_pack_count,
   "statePackCount": $state_pack_count,
   "immutableStateFileCount": $imm_file_count
@@ -586,7 +721,7 @@ cmd_commit_latest() {
     mv -f -- "$pointer_tmp" "$backup_root/LATEST"
     sync
 
-    # Prune prior snapshots only AFTER LATEST atomically points to the new verified snapshot
+    # Prune prior snapshots and unreferenced PostgreSQL packs only AFTER LATEST atomically points to the new verified snapshot
     local old_dir old_base
     for old_dir in "$backup_root/snapshots"/*; do
         [[ -d $old_dir ]] || continue
@@ -594,6 +729,17 @@ cmd_commit_latest() {
         [[ $old_base == "$snapshot_id" ]] && continue
         rm -rf -- "$old_dir"
     done
+    if [[ -d "$backup_root/packs/postgres" ]]; then
+        local active_pg_pack
+        active_pg_pack=$(awk '$2 ~ /^packs\/postgres\/pg-.*\.tar$/ { print $2; exit }' "$snap_dir/pack-index.txt" 2>/dev/null || true)
+        local pg_p pg_p_rel
+        for pg_p in "$backup_root/packs/postgres"/pg-*.tar; do
+            [[ -f $pg_p ]] || continue
+            pg_p_rel="packs/postgres/${pg_p##*/}"
+            [[ $pg_p_rel == "$active_pg_pack" ]] && continue
+            rm -f -- "$pg_p" "$pg_p.sha256"
+        done
+    fi
     chmod -R a+rX "$backup_root" 2>/dev/null || true
     sync
 }
@@ -639,6 +785,12 @@ cmd_verify_snapshot() {
             [[ $recorded_sha == "$expected_sha" ]] || fail "Pack sidecar SHA-256 mismatch: $rel_pack"
         fi
     done <"$snap_dir/pack-index.txt"
+
+    # Ensure snapshot references either a legacy inline postgres.tar or a verified packs/postgres/pg-*.tar
+    if [[ ! -f "$snap_dir/postgres.tar" ]]; then
+        grep -Eq '^[0-9a-f]{64}  packs/postgres/pg-.*\.tar$' "$snap_dir/pack-index.txt" ||
+            fail "Snapshot $snap_id is missing both postgres.tar and a packs/postgres/pg-*.tar entry."
+    fi
 
     # Verify secret bundle decrypts cleanly and contains .env + secrets + tls
     mkdir -p "$scratch/secrets-check"

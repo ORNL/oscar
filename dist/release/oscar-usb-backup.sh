@@ -174,7 +174,7 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/env bash "$script_dir/oscar-usb-backup.sh" sync --if-attached
+ExecStart=/usr/bin/env bash "$script_dir/oscar-usb-backup.sh" sync --if-attached --scheduled
 Nice=19
 CPUSchedulingPolicy=batch
 CPUQuota=100%
@@ -536,14 +536,49 @@ cmd_mode() {
     esac
 }
 
+resolve_snapshot_pg_tar_rel() {
+    local backup_root=$1 snap_id=$2
+    local snap_dir="$backup_root/snapshots/$snap_id"
+    if [[ -f "$snap_dir/postgres.tar" ]]; then
+        printf 'snapshots/%s/postgres.tar\n' "$snap_id"
+        return 0
+    fi
+    if [[ -f "$snap_dir/pack-index.txt" ]]; then
+        local pg_pack
+        pg_pack=$(awk '$2 ~ /^packs\/postgres\/pg-.*\.tar$/ { print $2; exit }' "$snap_dir/pack-index.txt")
+        if [[ -n $pg_pack && -f "$backup_root/$pg_pack" ]]; then
+            printf '%s\n' "$pg_pack"
+            return 0
+        fi
+    fi
+    fail "Could not locate PostgreSQL base backup archive for snapshot $snap_id."
+}
+
+adaptive_pg_basebackup_interval_minutes() {
+    local db_bytes=${1:-0}
+    local override=${OSCAR_USB_PG_BASEBACKUP_INTERVAL_MINUTES:-}
+    if [[ -n $override && $override =~ ^[0-9]+$ ]]; then
+        printf '%s\n' "$override"
+        return 0
+    fi
+    if ((db_bytes >= 4294967296)); then
+        printf '180\n'
+    elif ((db_bytes >= 1073741824)); then
+        printf '60\n'
+    else
+        printf '15\n'
+    fi
+}
+
 cmd_sync() {
     require_root
     [[ -f $config_file ]] || fail 'No USB backup drive is configured yet. Run `sudo bash oscar.sh usb-backup prepare-drive ...` first.'
-    local quiesce=false if_attached=false
+    local quiesce=false if_attached=false scheduled=false
     while (($#)); do
         case $1 in
             --quiesce) quiesce=true; shift ;;
             --if-attached) if_attached=true; shift ;;
+            --scheduled) scheduled=true; shift ;;
             *) fail "Unknown sync option: $1" ;;
         esac
     done
@@ -628,8 +663,8 @@ cmd_sync() {
     pg_cid=$(compose ps --quiet postgres | tr -d '[:space:]')
     [[ -n $pg_cid ]] || fail 'Could not resolve running PostgreSQL container ID.'
 
-    # Query current LSN & UUID and stream online self-contained pg_basebackup (zero portal downtime!)
-    local meta_line
+    # Query current LSN, UUID, and live gis database size for adaptive pg_basebackup cadence
+    local meta_line pg_db_bytes=0
     meta_line=$(docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network "container:$pg_cid" --read-only --cap-drop ALL \
         --security-opt no-new-privileges --user 999:999 --entrypoint sh \
         --volume "$script_dir/secrets/postgres-bootstrap-password.txt:/run/secrets/pg_pass:ro" \
@@ -637,41 +672,80 @@ cmd_sync() {
         PGPASSWORD=$(cat /run/secrets/pg_pass)
         export PGPASSWORD
         psql "host=127.0.0.1 port=5432 user=oscar_bootstrap dbname=gis" --tuples-only --no-align \
-            --command "SELECT pg_current_wal_lsn()::text || '\''|'\'' || gen_random_uuid()::text;"
+            --command "SELECT pg_current_wal_lsn()::text || '\''|'\'' || gen_random_uuid()::text || '\''|'\'' || pg_database_size('\''gis'\'')::text;"
     ' | tr -d '[:space:]')
-    lsn=${meta_line%%|*}
-    epoch_id=${meta_line#*|}
+    IFS='|' read -r lsn epoch_id pg_db_bytes <<<"$meta_line"
+    [[ $pg_db_bytes =~ ^[0-9]+$ ]] || pg_db_bytes=0
 
-    local pg_stage_vol="oscar_usb_pgstage_${rand}"
-    docker volume create "$pg_stage_vol" >/dev/null
-    docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --user 0:0 --entrypoint sh \
-        --volume "${pg_stage_vol}:/pgbackup" "$pg_img" -eu -c 'rm -rf /pgbackup/* && chown 999:999 /pgbackup && chmod 0700 /pgbackup'
-    docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network "container:$pg_cid" --read-only --cap-drop ALL \
-        --cpus=1 --cpu-shares=128 \
-        --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,nodev \
-        --user 999:999 --entrypoint sh \
-        --volume "${pg_stage_vol}:/pgbackup" \
-        --volume "$script_dir/secrets/postgres-bootstrap-password.txt:/run/secrets/pg_pass:ro" \
-        "$pg_img" -eu -c '
-        PGPASSWORD=$(cat /run/secrets/pg_pass)
-        export PGPASSWORD
-        exec pg_basebackup --pgdata=/pgbackup --username=oscar_bootstrap \
-            --dbname="host=127.0.0.1 port=5432 dbname=gis" --format=plain \
-            --wal-method=stream --checkpoint=fast
-    '
-    # Verify PostgreSQL base backup integrity immediately while in volume staging
-    docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --cap-drop ALL --cap-add DAC_READ_SEARCH \
-        --cpus=1 --cpu-shares=128 \
-        --security-opt no-new-privileges --user 999:999 --entrypoint pg_verifybackup \
-        --volume "${pg_stage_vol}:/pgbackup:ro" \
-        "$pg_img" --quiet /pgbackup
-    docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --security-opt no-new-privileges \
-        --cpus=1 --cpu-shares=128 \
-        --user 0:0 --entrypoint sh \
-        --volume "${pg_stage_vol}:/pgbackup:ro" \
-        --volume "$mount_path:/backup" \
-        "$img" -eu -c "mkdir -p '/backup/OSCAR-Backup/snapshots/$snap_id.partial' && tar -C /pgbackup -cf '/backup/OSCAR-Backup/snapshots/$snap_id.partial/postgres.tar' . && chmod -R a+rX '/backup/OSCAR-Backup'"
-    docker volume rm -f "$pg_stage_vol" >/dev/null 2>&1 || true
+    # Adaptive PostgreSQL base-backup deduplication:
+    # Scheduled continual ticks reuse the latest verified packs/postgres/pg-*.tar
+    # within the DB-size-adaptive window (<1 GiB: 15m, 1-4 GiB: 60m, >=4 GiB: 180m)
+    # to eliminate 30x-75x unnecessary multi-year USB NVMe write wear, while manual
+    # sync, eject, attach, occasional mode, and --quiesce ALWAYS capture a fresh base backup.
+    local pg_pack_rel='' pg_pack_sha='' reused_pg_pack=false
+    local sync_mode=full
+    if [[ $scheduled == true && $quiesce == false && $mode == continual ]]; then
+        sync_mode=incremental
+        local pg_interval_min
+        pg_interval_min=$(adaptive_pg_basebackup_interval_minutes "$pg_db_bytes")
+        if ((pg_interval_min > 0)) && [[ -f "$mount_path/OSCAR-Backup/LATEST" ]]; then
+            local prev_snap prev_pg_rel prev_pg_file prev_pg_sha prev_mtime now_epoch
+            prev_snap=$(awk -F= '$1 == "snapshot_id" { print $2; exit }' "$mount_path/OSCAR-Backup/LATEST" | tr -d '\r[:space:]')
+            if [[ -n $prev_snap && -f "$mount_path/OSCAR-Backup/snapshots/$prev_snap/pack-index.txt" ]]; then
+                prev_pg_rel=$(awk '$2 ~ /^packs\/postgres\/pg-.*\.tar$/ { print $2; exit }' "$mount_path/OSCAR-Backup/snapshots/$prev_snap/pack-index.txt")
+                prev_pg_file="$mount_path/OSCAR-Backup/$prev_pg_rel"
+                if [[ -n $prev_pg_rel && -f $prev_pg_file && -f "$prev_pg_file.sha256" ]]; then
+                    prev_mtime=$(stat -c %Y "$prev_pg_file" 2>/dev/null || echo 0)
+                    now_epoch=$(date -u +%s)
+                    if [[ $prev_mtime =~ ^[0-9]+$ ]] && ((now_epoch >= prev_mtime && (now_epoch - prev_mtime) < pg_interval_min * 60)); then
+                        prev_pg_sha=$(awk '{print $1; exit}' "$prev_pg_file.sha256")
+                        if [[ $prev_pg_sha =~ ^[0-9a-f]{64}$ ]]; then
+                            pg_pack_rel=$prev_pg_rel
+                            pg_pack_sha=$prev_pg_sha
+                            reused_pg_pack=true
+                            printf 'Reusing verified PostgreSQL base pack %s (age=%ds < adaptive %dm interval)\n' \
+                                "$pg_pack_rel" "$((now_epoch - prev_mtime))" "$pg_interval_min"
+                        fi
+                    fi
+                fi
+            fi
+        fi
+    fi
+
+    if [[ $reused_pg_pack != true ]]; then
+        local pg_stage_vol="oscar_usb_pgstage_${rand}"
+        docker volume create "$pg_stage_vol" >/dev/null
+        docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --user 0:0 --entrypoint sh \
+            --volume "${pg_stage_vol}:/pgbackup" "$pg_img" -eu -c 'rm -rf /pgbackup/* && chown 999:999 /pgbackup && chmod 0700 /pgbackup'
+        docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network "container:$pg_cid" --read-only --cap-drop ALL \
+            --cpus=1 --cpu-shares=128 \
+            --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,nodev \
+            --user 999:999 --entrypoint sh \
+            --volume "${pg_stage_vol}:/pgbackup" \
+            --volume "$script_dir/secrets/postgres-bootstrap-password.txt:/run/secrets/pg_pass:ro" \
+            "$pg_img" -eu -c '
+            PGPASSWORD=$(cat /run/secrets/pg_pass)
+            export PGPASSWORD
+            exec pg_basebackup --pgdata=/pgbackup --username=oscar_bootstrap \
+                --dbname="host=127.0.0.1 port=5432 dbname=gis" --format=plain \
+                --wal-method=stream --checkpoint=fast
+        '
+        # Verify PostgreSQL base backup integrity immediately while in volume staging
+        docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --cap-drop ALL --cap-add DAC_READ_SEARCH \
+            --cpus=1 --cpu-shares=128 \
+            --security-opt no-new-privileges --user 999:999 --entrypoint pg_verifybackup \
+            --volume "${pg_stage_vol}:/pgbackup:ro" \
+            "$pg_img" --quiet /pgbackup
+        pg_pack_rel="packs/postgres/pg-${snap_id}.tar"
+        pg_pack_sha=$(docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --security-opt no-new-privileges \
+            --cpus=1 --cpu-shares=128 \
+            --user 0:0 --entrypoint sh \
+            --volume "${pg_stage_vol}:/pgbackup:ro" \
+            --volume "$mount_path:/backup" \
+            "$img" -eu -c "mkdir -p '/backup/OSCAR-Backup/packs/postgres' && tar -C /pgbackup -cf '/backup/OSCAR-Backup/${pg_pack_rel}.tmp' . && mv -f '/backup/OSCAR-Backup/${pg_pack_rel}.tmp' '/backup/OSCAR-Backup/${pg_pack_rel}' && sha=\$(sha256sum '/backup/OSCAR-Backup/${pg_pack_rel}' | awk '{print \$1}') && printf '%s  %s\n' \"\$sha\" 'pg-${snap_id}.tar' >'/backup/OSCAR-Backup/${pg_pack_rel}.sha256' && chmod -R a+rX '/backup/OSCAR-Backup/packs/postgres' && printf '%s\n' \"\$sha\"" | tr -d '[:space:]')
+        docker volume rm -f "$pg_stage_vol" >/dev/null 2>&1 || true
+        [[ $pg_pack_sha =~ ^[0-9a-f]{64}$ ]] || fail "Failed recording SHA-256 for PostgreSQL pack $pg_pack_rel."
+    fi
 
     local -a extra_vols=()
     local ra_dir="$(dirname "$archive_real")/remote-access"
@@ -687,6 +761,7 @@ cmd_sync() {
         --cpus=1 --cpu-shares=128 \
         --tmpfs /tmp:rw,noexec,nosuid,nodev,size=1024m \
         --env OSCAR_USB_ENGINE_SCRATCH=/scratch \
+        --env "OSCAR_USB_FULL_STATE_SCAN_INTERVAL_SECONDS=${OSCAR_USB_FULL_STATE_SCAN_INTERVAL_SECONDS:-86400}" \
         --user 0:0 --entrypoint bash \
         --volume "$engine_script:/engine.sh:ro" \
         --volume "$sync_scratch:/scratch" \
@@ -696,7 +771,7 @@ cmd_sync() {
         --volume "$key_path:/backup-key.txt:ro" \
         --volume "$mount_path:/backup" \
         "${extra_vols[@]}" \
-        "$img" /engine.sh pack-sync "$snap_id" "$dep_id" "$ver" "$mode" "$lsn" "$epoch_id" "$ts_iso" || {
+        "$img" /engine.sh pack-sync "$snap_id" "$dep_id" "$ver" "$mode" "$lsn" "$epoch_id" "$ts_iso" "$pg_pack_rel" "$pg_pack_sha" "$sync_mode" || {
         local sync_rc=$?
         rm -rf -- "$sync_scratch"
         exit "$sync_rc"
@@ -903,13 +978,16 @@ cmd_verify() {
         --volume "$(realpath -- "$from_path"):/backup:ro" \
         "$img" /engine.sh verify-snapshot "$deep" | tr -d '[:space:]')
 
+    local pg_tar_rel
+    pg_tar_rel=$(resolve_snapshot_pg_tar_rel "$(realpath -- "$from_path")/OSCAR-Backup" "$snap_id")
+
     local pg_verify_vol="oscar_usb_pgverify_${snap_id//[^a-zA-Z0-9]/}"
     docker volume create "$pg_verify_vol" >/dev/null
     docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --security-opt no-new-privileges \
         --user 0:0 --entrypoint sh \
         --volume "$(realpath -- "$from_path"):/backup:ro" \
         --volume "${pg_verify_vol}:/pgbackup" \
-        "$img" -eu -c "tar -C /pgbackup --no-same-owner -xf '/backup/OSCAR-Backup/snapshots/$snap_id/postgres.tar' && chown -R 999:999 /pgbackup"
+        "$img" -eu -c "tar -C /pgbackup --no-same-owner -xf '/backup/OSCAR-Backup/$pg_tar_rel' && chown -R 999:999 /pgbackup"
     docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --cap-drop ALL --cap-add DAC_READ_SEARCH \
         --security-opt no-new-privileges --user 999:999 --entrypoint pg_verifybackup \
         --volume "${pg_verify_vol}:/pgbackup:ro" \
@@ -1085,11 +1163,13 @@ EOF
     rm -rf -- "$restore_scratch"
 
     heading 'Step 4/5 — Restoring PostgreSQL cluster & promoting onto clean timeline'
+    local restore_pg_tar_rel
+    restore_pg_tar_rel=$(resolve_snapshot_pg_tar_rel "$from_path/OSCAR-Backup" "$snap_id")
     docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --security-opt no-new-privileges \
         --user 0:0 --entrypoint sh \
         --volume "$from_path:/backup:ro" \
         --volume "${postgres_volume}:/data" \
-        "oscar:$ver" -eu -c "find /data -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar -C /data --no-same-owner -xf '/backup/OSCAR-Backup/snapshots/$snap_id/postgres.tar' && chown -R 999:999 /data && chmod 0700 /data"
+        "oscar:$ver" -eu -c "find /data -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar -C /data --no-same-owner -xf '/backup/OSCAR-Backup/$restore_pg_tar_rel' && chown -R 999:999 /data && chmod 0700 /data"
     local src_tl
     src_tl=$(docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
         --user 999:999 --entrypoint /usr/local/bin/oscar-prepare-restore \

@@ -4824,4 +4824,65 @@ OSCAR_SANDBOX_CONTROL_DIR="$sb_ctrl" \
     exit 1
 }
 
+# Verify ten-year scale hardening: gateway TLS expiry host-check thresholds, compose public-cert-only mount,
+# and adaptive USB backup PostgreSQL interval / backward-compatible snapshot resolver.
+tls_test_dir="$test_root/tls-check"
+mkdir -p "$tls_test_dir/etc/systemd/system" "$tls_test_dir/etc/ssh/sshd_config.d" "$tls_test_dir/etc/chrony/conf.d"
+openssl req -x509 -newkey rsa:2048 -nodes -days 180 -subj "/CN=oscar-ok.local" \
+    -keyout "$tls_test_dir/ok.key" -out "$tls_test_dir/ok.crt" >/dev/null 2>&1
+openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=oscar-warn.local" \
+    -keyout "$tls_test_dir/warn.key" -out "$tls_test_dir/warn.crt" >/dev/null 2>&1
+openssl req -x509 -newkey rsa:2048 -nodes -days 5 -subj "/CN=oscar-crit.local" \
+    -keyout "$tls_test_dir/crit.key" -out "$tls_test_dir/crit.crt" >/dev/null 2>&1
+
+tls_ok_json=$(OSCAR_UBUNTU_HOST_TEST_ROOT="$tls_test_dir" OSCAR_GATEWAY_TLS_CERT_FILE="$tls_test_dir/ok.crt" \
+    bash "$repo_root/dist/release/configure-ubuntu-host.sh" host-check --json --allow-dhcp || true)
+grep -Fq '"id": "gateway-tls-cert", "status": "PASS"' <<<"$tls_ok_json" || {
+    printf 'Expected PASS for 180-day gateway TLS certificate:\n%s\n' "$tls_ok_json" >&2
+    exit 1
+}
+tls_warn_json=$(OSCAR_UBUNTU_HOST_TEST_ROOT="$tls_test_dir" OSCAR_GATEWAY_TLS_CERT_FILE="$tls_test_dir/warn.crt" \
+    bash "$repo_root/dist/release/configure-ubuntu-host.sh" host-check --json --allow-dhcp || true)
+grep -Fq '"id": "gateway-tls-cert", "status": "WARN"' <<<"$tls_warn_json" || {
+    printf 'Expected WARN for 30-day gateway TLS certificate:\n%s\n' "$tls_warn_json" >&2
+    exit 1
+}
+tls_crit_json=$(OSCAR_UBUNTU_HOST_TEST_ROOT="$tls_test_dir" OSCAR_GATEWAY_TLS_CERT_FILE="$tls_test_dir/crit.crt" \
+    bash "$repo_root/dist/release/configure-ubuntu-host.sh" host-check --json --allow-dhcp || true)
+grep -Fq '"id": "gateway-tls-cert", "status": "FAIL"' <<<"$tls_crit_json" || {
+    printf 'Expected FAIL for 5-day gateway TLS certificate:\n%s\n' "$tls_crit_json" >&2
+    exit 1
+}
+
+# Verify compose.yaml mounts ONLY the public tls_certificate secret (never tls_private_key) into the oscar service.
+python3 - "$repo_root/dist/release/compose.yaml" <<'PY'
+import sys, pathlib, re
+txt = pathlib.Path(sys.argv[1]).read_text()
+m = re.search(r'^  oscar:\n(.*?)(?=^  postgres:\n)', txt, flags=re.S | re.M)
+assert m, "Could not locate oscar service block in compose.yaml"
+oscar_block = m.group(1)
+assert "source: tls_certificate" in oscar_block and "target: tls_certificate.pem" in oscar_block, \
+    "oscar service must mount public tls_certificate secret for expiry monitoring"
+assert "tls_private_key" not in oscar_block, \
+    "oscar service MUST NEVER mount tls_private_key"
+PY
+
+# Verify adaptive PostgreSQL base-backup cadence and backward-compatible snapshot resolver in oscar-usb-backup.sh.
+bash -eu -c '
+    eval "$(awk "/^resolve_snapshot_pg_tar_rel\\(\\)/,/^}/" "$1")"
+    eval "$(awk "/^adaptive_pg_basebackup_interval_minutes\\(\\)/,/^}/" "$1")"
+    fail() { echo "$*" >&2; exit 1; }
+    [[ $(adaptive_pg_basebackup_interval_minutes 500000000) == 15 ]]
+    [[ $(adaptive_pg_basebackup_interval_minutes 2147483648) == 60 ]]
+    [[ $(adaptive_pg_basebackup_interval_minutes 5368709120) == 180 ]]
+    [[ $(OSCAR_USB_PG_BASEBACKUP_INTERVAL_MINUTES=45 adaptive_pg_basebackup_interval_minutes 500000000) == 45 ]]
+    [[ $(OSCAR_USB_PG_BASEBACKUP_INTERVAL_MINUTES=0 adaptive_pg_basebackup_interval_minutes 5368709120) == 0 ]]
+    mkdir -p "$2/snapshots/s1" "$2/snapshots/s2" "$2/packs/postgres"
+    : >"$2/snapshots/s1/postgres.tar"
+    : >"$2/packs/postgres/pg-s2.tar"
+    printf "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef  packs/postgres/pg-s2.tar\n" >"$2/snapshots/s2/pack-index.txt"
+    [[ $(resolve_snapshot_pg_tar_rel "$2" s1) == "snapshots/s1/postgres.tar" ]]
+    [[ $(resolve_snapshot_pg_tar_rel "$2" s2) == "packs/postgres/pg-s2.tar" ]]
+' _ "$repo_root/dist/release/oscar-usb-backup.sh" "$test_root/usb-pg-resolver"
+
 printf 'OSCAR storage script safety tests passed.\n'

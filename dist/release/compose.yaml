@@ -62,6 +62,10 @@ services:
         target: oscar_admin_password
       - source: oscar_db_password
         target: oscar_db_password
+      # Public X.509 certificate only (never private key material) for proactive
+      # gateway TLS expiration monitoring in Status of Health and support bundles.
+      - source: tls_certificate
+        target: tls_certificate.pem
     environment:
       TZ: "${OSCAR_TIMEZONE:-UTC}"
       OSCAR_WEBAUTHN_RP_ID: "${OSCAR_WEBAUTHN_RP_ID:-}"

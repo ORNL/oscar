@@ -438,6 +438,58 @@ EOF
         record_check "sudo-password-policy" "PASS" "Sudo requires explicit authentication (no 90-* NOPASSWD:ALL drop-in)."
     fi
 
+    # 14. Gateway HTTPS TLS certificate expiration headroom
+    local tls_cert_path=${OSCAR_GATEWAY_TLS_CERT_FILE:-"$script_dir/tls/server.crt"}
+    if [[ -f $tls_cert_path ]]; then
+        if command -v openssl >/dev/null 2>&1; then
+            local end_str end_epoch now_epoch days_left
+            end_str=$(openssl x509 -enddate -noout -in "$tls_cert_path" 2>/dev/null | sed 's/^notAfter=//')
+            end_epoch=$(date -u -d "$end_str" +%s 2>/dev/null || echo '')
+            now_epoch=$(date -u +%s)
+            if [[ $end_epoch =~ ^[0-9]+$ ]]; then
+                days_left=$(( (end_epoch - now_epoch) / 86400 ))
+                if ((end_epoch <= now_epoch)); then
+                    record_check "gateway-tls-cert" "FAIL" "Gateway TLS certificate ($tls_cert_path) EXPIRED on $end_str! Run 'sudo bash oscar.sh refresh-tls' immediately."
+                elif ((days_left < 14)); then
+                    record_check "gateway-tls-cert" "FAIL" "Gateway TLS certificate expires in ${days_left} day(s) ($end_str). Run 'sudo bash oscar.sh refresh-tls' immediately."
+                elif ((days_left < 60)); then
+                    record_check "gateway-tls-cert" "WARN" "Gateway TLS certificate expires in ${days_left} day(s) ($end_str). Schedule renewal with 'sudo bash oscar.sh refresh-tls'."
+                else
+                    record_check "gateway-tls-cert" "PASS" "Gateway TLS certificate valid for ${days_left} day(s) (expires $end_str)."
+                fi
+            else
+                record_check "gateway-tls-cert" "WARN" "Could not parse expiration date from gateway TLS certificate ($tls_cert_path)."
+            fi
+        else
+            record_check "gateway-tls-cert" "WARN" "openssl is not installed; cannot inspect gateway TLS certificate expiry."
+        fi
+    else
+        record_check "gateway-tls-cert" "PASS" "Gateway TLS certificate not initialized yet (generated during 'sudo bash oscar.sh init')."
+    fi
+
+    # 15. PostgreSQL XID wraparound headroom (when local OSCAR stack is running)
+    if [[ -z $host_root ]] && command -v docker >/dev/null 2>&1 && [[ -f "$script_dir/compose.yaml" && -f "$script_dir/.env" ]]; then
+        local pg_cid
+        pg_cid=$(docker compose --project-name oscar --project-directory "$script_dir" --env-file "$script_dir/.env" --file "$script_dir/compose.yaml" ps --status running --quiet postgres 2>/dev/null | tr -d '[:space:]' || true)
+        if [[ -n $pg_cid ]]; then
+            local xid_line xid_age db_size_pretty
+            xid_line=$(docker exec "$pg_cid" sh -c 'PGPASSWORD=$(cat /run/secrets/postgres_bootstrap_password 2>/dev/null || true) psql -U oscar_bootstrap -d gis -tA -c "SELECT age(datfrozenxid)::text || '\''|'\'' || pg_size_pretty(pg_database_size('\''gis'\'')) FROM pg_database WHERE datname = '\''gis'\'';"' 2>/dev/null | tr -d '\r\n' || true)
+            if [[ $xid_line == *'|'* ]]; then
+                xid_age=${xid_line%%|*}
+                db_size_pretty=${xid_line#*|}
+                if [[ $xid_age =~ ^[0-9]+$ ]]; then
+                    if ((xid_age >= 1200000000)); then
+                        record_check "postgres-xid-headroom" "FAIL" "PostgreSQL age(datfrozenxid)=${xid_age} (gis=${db_size_pretty}) is approaching wraparound! Run manual VACUUM FREEZE immediately."
+                    elif ((xid_age >= 800000000)); then
+                        record_check "postgres-xid-headroom" "WARN" "PostgreSQL age(datfrozenxid)=${xid_age} (gis=${db_size_pretty}) is elevated; verify autovacuum is running."
+                    else
+                        record_check "postgres-xid-headroom" "PASS" "PostgreSQL XID headroom healthy (age(datfrozenxid)=${xid_age}, gis=${db_size_pretty})."
+                    fi
+                fi
+            fi
+        fi
+    fi
+
     local pass_count=0 warn_count=0 fail_count=0 i
     for i in "${!check_ids[@]}"; do
         case "${check_statuses[$i]}" in

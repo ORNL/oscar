@@ -1441,6 +1441,56 @@ function Get-WindowsHostReadinessReport {
         & $addCheck 'docker-runtime' 'WARN' "Docker Engine not currently reachable ($autoSummary)"
     }
 
+    $tlsCertPath = if (-not [string]::IsNullOrWhiteSpace($env:OSCAR_GATEWAY_TLS_CERT_FILE)) {
+        $env:OSCAR_GATEWAY_TLS_CERT_FILE
+    } else {
+        Join-Path $PSScriptRoot 'tls\server.crt'
+    }
+    if (Test-Path -LiteralPath $tlsCertPath -PathType Leaf) {
+        try {
+            $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($tlsCertPath)
+            $notAfterUtc = $cert.NotAfter.ToUniversalTime()
+            $daysLeft = [int][Math]::Floor(($notAfterUtc - [DateTime]::UtcNow).TotalDays)
+            $expiryLabel = $notAfterUtc.ToString('yyyy-MM-ddTHH:mm:ssZ')
+            if ($notAfterUtc -le [DateTime]::UtcNow) {
+                & $addCheck 'gateway-tls-cert' 'FAIL' "Gateway TLS certificate ($tlsCertPath) EXPIRED on $expiryLabel! Run '.\oscar.bat refresh-tls' immediately."
+            } elseif ($daysLeft -lt 14) {
+                & $addCheck 'gateway-tls-cert' 'FAIL' "Gateway TLS certificate expires in $daysLeft day(s) ($expiryLabel). Run '.\oscar.bat refresh-tls' immediately."
+            } elseif ($daysLeft -lt 60) {
+                & $addCheck 'gateway-tls-cert' 'WARN' "Gateway TLS certificate expires in $daysLeft day(s) ($expiryLabel). Schedule renewal with '.\oscar.bat refresh-tls'."
+            } else {
+                & $addCheck 'gateway-tls-cert' 'PASS' "Gateway TLS certificate valid for $daysLeft day(s) (expires $expiryLabel)"
+            }
+        } catch {
+            & $addCheck 'gateway-tls-cert' 'WARN' "Could not parse gateway TLS certificate ($tlsCertPath): $($_.Exception.Message)"
+        }
+    } else {
+        & $addCheck 'gateway-tls-cert' 'PASS' "Gateway TLS certificate not initialized yet (generated during '.\oscar.bat init')"
+    }
+
+    if ($dockerEngineOk -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'compose.yaml')) -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.env'))) {
+        try {
+            $pgCid = ([string](& docker compose --project-name oscar --project-directory $PSScriptRoot --env-file (Join-Path $PSScriptRoot '.env') --file (Join-Path $PSScriptRoot 'compose.yaml') ps --status running --quiet postgres 2>$null)).Trim()
+            if (-not [string]::IsNullOrWhiteSpace($pgCid)) {
+                $xidSqlCmd = @'
+PGPASSWORD=$(cat /run/secrets/postgres_bootstrap_password 2>/dev/null || true) psql -U oscar_bootstrap -d gis -tA -c "SELECT age(datfrozenxid)::text, pg_size_pretty(pg_database_size('gis')) FROM pg_database WHERE datname = 'gis';"
+'@
+                $xidLine = ([string](& docker exec $pgCid sh -c $xidSqlCmd 2>$null)).Trim()
+                if ($xidLine -match '^([0-9]+)\|(.+)$') {
+                    $xidAge = [long]$Matches[1]
+                    $dbSizePretty = $Matches[2].Trim()
+                    if ($xidAge -ge 1200000000L) {
+                        & $addCheck 'postgres-xid-headroom' 'FAIL' "PostgreSQL age(datfrozenxid)=$xidAge (gis=$dbSizePretty) is approaching wraparound! Run manual VACUUM FREEZE immediately."
+                    } elseif ($xidAge -ge 800000000L) {
+                        & $addCheck 'postgres-xid-headroom' 'WARN' "PostgreSQL age(datfrozenxid)=$xidAge (gis=$dbSizePretty) is elevated; verify autovacuum is running."
+                    } else {
+                        & $addCheck 'postgres-xid-headroom' 'PASS' "PostgreSQL XID headroom healthy (age(datfrozenxid)=$xidAge, gis=$dbSizePretty)"
+                    }
+                }
+            }
+        } catch {}
+    }
+
     $failCount = @($checks | Where-Object { $_.Status -eq 'FAIL' }).Count
     $warnCount = @($checks | Where-Object { $_.Status -eq 'WARN' }).Count
     $overall = if ($failCount -gt 0) { 'FAIL' } elseif ($warnCount -gt 0) { 'WARN' } else { 'PASS' }

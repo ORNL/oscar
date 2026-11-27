@@ -1771,6 +1771,29 @@ public static class OscarLongPathTestHelper {
         Assert-True ($pdfLatin1.Contains($expectedPdfToken)) "Generated Windows One-Sheet PDF is missing expected token: $expectedPdfToken"
     }
 
+    # Verify ten-year scale hardening in compose.yaml and Windows USB backup / host-check scripts.
+    $composeText = [IO.File]::ReadAllText($composeFile)
+    $oscarSvcMatch = [regex]::Match($composeText, '(?ms)^  oscar:\r?\n(.*?)(?=^  postgres:\r?\n)')
+    Assert-True $oscarSvcMatch.Success 'Could not locate oscar service block in compose.yaml.'
+    $oscarSvcBlock = $oscarSvcMatch.Groups[1].Value
+    Assert-True ($oscarSvcBlock.Contains('source: tls_certificate') -and $oscarSvcBlock.Contains('target: tls_certificate.pem')) 'compose.yaml oscar service must mount public tls_certificate secret.'
+    Assert-True (-not $oscarSvcBlock.Contains('tls_private_key')) 'compose.yaml oscar service must NEVER mount tls_private_key.'
+
+    $usbPsText = [IO.File]::ReadAllText($usbBackupScript)
+    foreach ($expectedToken in @(
+        'sync -IfAttached -Scheduled',
+        'Resolve-SnapshotPostgresTarPath',
+        'Get-AdaptivePgBaseBackupIntervalMinutes',
+        'packs/postgres/pg-',
+        '.last-full-scan-epoch',
+        '"stateScanMode":')) {
+        Assert-True ($usbPsText.Contains($expectedToken)) "oscar-usb-backup.ps1 is missing expected ten-year hardening token: $expectedToken"
+    }
+
+    $hostPrepText = [IO.File]::ReadAllText($hostPrepScript)
+    Assert-True ($hostPrepText.Contains('gateway-tls-cert')) 'configure-windows-host.ps1 is missing gateway-tls-cert readiness check.'
+    Assert-True ($hostPrepText.Contains('postgres-xid-headroom')) 'configure-windows-host.ps1 is missing postgres-xid-headroom advisory check.'
+
     Write-Host 'OSCAR Windows PowerShell 5.1 storage safety tests passed.' -ForegroundColor Green
 } finally {
     Remove-Item Env:OSCAR_STORAGE_TEST_MODE -ErrorAction SilentlyContinue
