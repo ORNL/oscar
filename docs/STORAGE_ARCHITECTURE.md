@@ -1,6 +1,6 @@
-# OSCAR 3.12.0 storage architecture
+# OSCAR 3.12.1 storage architecture
 
-OSCAR 3.12.0 separates live operational data, durable RPM source records, retained media, and
+OSCAR 3.12.1 separates live operational data, durable RPM source records, retained media, and
 long-term observation history. PostgreSQL remains the authoritative hot store and metadata catalog;
 immutable Apache Parquet V2 files carry the high-volume history using a **Split-at-Export +
 Event-Only Multi-Tier Compaction** design. This keeps normal Open Sensor Hub (OSH) reads and
@@ -528,7 +528,7 @@ policy to hot, cold, exported, and backup copies.
 
 ## 3.12.0 compatibility boundary
 
-OSCAR 3.12.0 is a substantial storage-profile update. A new installation uses:
+OSCAR 3.12.1 is a substantial storage-profile update. A new installation uses:
 
 - `OscarTieredObsSystemDatabaseConfig` with explicit `PARQUET_PRIMARY`, sequential IDs, and batched
   commit-durable PostgreSQL staging for the allowlisted immutable outputs;

@@ -1,6 +1,6 @@
-# OSCAR 3.12.0 Guided Walkthrough Refresher (`:443`) & Ephemeral Hands-On Training Sandbox (`oscar-sandbox` `:8444`)
+# OSCAR 3.12.1 Guided Walkthrough Refresher (`:443`) & Ephemeral Hands-On Training Sandbox (`oscar-sandbox` `:8444`)
 
-OSCAR 3.12.0 provides two complementary, built-in training and refresher experiences for gatehouse operators, shift supervisors, and system administrators:
+OSCAR 3.12.1 provides two complementary, built-in training and refresher experiences for gatehouse operators, shift supervisors, and system administrators:
 
 1. **Anytime Live Console Guided Walkthrough (`:443` — Read-Only Refresher Mode):** Click **Guided Walkthrough** (*graduation-cap icon* in the top navigation bar, or inside **Help (`?`)** — *circled question-mark icon* — `-> Manual & Video Guides`) at any time during a live shift to open the side-by-side coach (`READ-ONLY REFRESHER` badge). Users can browse all **15 role-based labs**, watch offline `1080p` 4-language (`en`, `es`, `fr`, `el`) captioned videos, view annotated `1920×1080` reference screenshots, read inline visual symbol introductions for every navigation icon, navigate to pages, and click **Highlight [Page / Tool] Icon** (for example, **Highlight Status of Health Icon** on the *heart-pulse monitor icon* or **Highlight Help (`?`)** on the *circled question-mark icon*) with **zero** simulated alarm injections, **zero** `/stage-track` server mutations, and **zero** background polling when closed.
 2. **Isolated Ephemeral Hands-On Practice Sandbox (`oscar-sandbox` on `:8444`):** Launch a completely isolated disposable practice stack (`1-click` from inside **Guided Walkthrough** or **Help (`?`)** when `enable-ui-bridge` is active on Ubuntu, or via `oscar.sh` / `oscar.bat sandbox start`) to inject simulated radiation alarms and detector faults, upload practice `.n42` / `.uff` / `.csv` / `.pmtiles` files, and practice **Split-Pane SensorHub Admin** edits with 100% zero impact on live PostgreSQL, Parquet archives, `config.json`, or physical RPM relays.
@@ -17,7 +17,7 @@ A core requirement of radiation portal operations is that training data, practic
   - Inside **Guided Walkthrough** on `:443` (`READ-ONLY REFRESHER`), reading steps, playing videos, and highlighting controls is 100% read-only; however, clicking actual operational controls on the underlying `:443` page acts on the live site.
   - Inside `:8444` (`TRAINING SANDBOX`), every lane (`DemoLane01` / `DemoLane02`), Rapiscan stream, camera feed, database table, and configuration file is disposable — you can freely inject alarms, test faults, and edit lanes without affecting the live portal.
 - **Automatic 2-Hour Shutdown & Complete Data Wipe (`120 min` Default TTL):**
-  - Once launched, `:8444` **automatically shuts down 120 minutes (2 hours) later** (configurable via `--ttl-minutes` / `-TtlMinutes` on CLI) so practice containers can never consume server memory overnight.
+  - Once launched, `:8444` **automatically shuts down 120 minutes (2 hours) later** (configurable via `--ttl-minutes` / `-TtlMinutes` on CLI) so practice containers can never consume server memory overnight. Expiration is enforced by two independent layers: the primary OS timer (`oscar-sandbox-expiry.timer` on Ubuntu Server 24.04; `OSCAR-SandboxExpiry` Scheduled Task with battery and missed-run resilience on Windows 11) plus a deterministic TTL backstop check inside the host bridge poller (`oscar-sandbox-agent` every `30 s` on Ubuntu; `OSCAR-SandboxAgent` every `20 s` on Windows).
   - Both the `:443` launcher card and the `:8444` top bar / Coach banner display a **live countdown and local shutdown clock time** (for example, `Auto-shutdown in 1h 58m (at 10:59 PM)`).
   - When the timer reaches `0` (or an Administrator clicks **Stop & Flush** / **Reset**), `docker compose down -v --remove-orphans` **permanently erases all `:8444` practice alarms, uploads, users, and lane edits in `< 2 s`** (`archive.enabled = false`, `0` `.parquet` files written). **Download your 1-page PDF Training Completion Record before the timer expires** if you want a completion record.
 - **Sign-In Credentials, Remote Zero-Trust Subdomain (`<site>-sandbox.<hub>`) + Let's Encrypt & Shared Passkeys, and Export Watermarks:**
@@ -31,7 +31,7 @@ A core requirement of radiation portal operations is that training data, practic
 | Dimension | Operational OSCAR (`compose.yaml`, `:443`) | Ephemeral Training Sandbox (`compose.sandbox.yaml`, `:8444`) |
 | :--- | :--- | :--- |
 | **Docker Compose Project** | `oscar` | `oscar-sandbox` |
-| **Container Images** | `oscar:3.12.0`, `oscar-postgis:3.12.0`, `nginx-unprivileged:1.30.7-alpine` | Reuses the exact already-installed `3.12.0` images (`0 B` extra image download) |
+| **Container Images** | `oscar:3.12.1`, `oscar-postgis:3.12.1`, `nginx-unprivileged:1.30.7-alpine` | Reuses the exact already-installed `3.12.1` images (`0 B` extra image download) |
 | **PostgreSQL Volume** | `oscar_postgres_data` (persistent, checksummed) | `oscar_sandbox_pg` (disposable, wiped on `stop`/`reset`/TTL) |
 | **Application State Volume** | `oscar_oscar_state` (persistent `config.json`, Passkeys, journals) | `oscar_sandbox_state` (disposable, wiped on `stop`/`reset`/TTL) |
 | **Parquet Cold Archive** | Host bind-mount `OSCAR_ARCHIVE_DIR` (`archive.enabled = true`) | **Zero host bind-mounts**; `tmpfs` `/var/lib/oscar/archive` + `archive.enabled = false` (`0` `.parquet` files written) |
@@ -46,7 +46,7 @@ A core requirement of radiation portal operations is that training data, practic
 
 ### 2.1 Ubuntu Server 24.04 LTS CLI
 
-From the extracted OSCAR 3.12.0 release directory:
+From the extracted OSCAR 3.12.1 release directory:
 
 ```bash
 # Launch the isolated sandbox on HTTPS port 8444 (default 120-minute auto-expiry TTL)
@@ -67,7 +67,7 @@ sudo bash oscar.sh sandbox stop
 
 ### 2.2 Windows 11 + Docker Desktop (WSL 2) CLI
 
-From an Administrator PowerShell or Command Prompt in the OSCAR 3.12.0 release directory:
+From an Administrator PowerShell or Command Prompt in the OSCAR 3.12.1 release directory:
 
 ```powershell
 # Launch the isolated sandbox on HTTPS port 8444

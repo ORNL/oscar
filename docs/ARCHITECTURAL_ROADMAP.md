@@ -1,6 +1,6 @@
 # OSCAR Architectural Roadmap, Governance & Feature Blueprints
 
-This document provides the engineering roadmap, multi-repository collaboration rules, incorporated release ledger (`v3.10.0`–`v3.12.0`), and forward infrastructure roadmap for **OSCAR** across all 9 `ORNL/*` repositories. It is written for **both human developers and AI coding agents** (`Antigravity` / `Gemini`, `Codex`, `Claude Code`, `Cursor`, `GitHub Copilot`); pair it with [`../AGENTS.md`](../AGENTS.md), [`STORAGE_ARCHITECTURE.md`](STORAGE_ARCHITECTURE.md), and [`REGRESSION_AND_RELEASE_CERTIFICATION.md`](REGRESSION_AND_RELEASE_CERTIFICATION.md).
+This document provides the engineering roadmap, multi-repository collaboration rules, incorporated release ledger (`v3.10.0`–`v3.12.1`), and forward infrastructure roadmap for **OSCAR** across all 9 `ORNL/*` repositories. It is written for **both human developers and AI coding agents** (`Antigravity` / `Gemini`, `Codex`, `Claude Code`, `Cursor`, `GitHub Copilot`); pair it with [`../AGENTS.md`](../AGENTS.md), [`STORAGE_ARCHITECTURE.md`](STORAGE_ARCHITECTURE.md), and [`REGRESSION_AND_RELEASE_CERTIFICATION.md`](REGRESSION_AND_RELEASE_CERTIFICATION.md).
 
 ---
 
@@ -156,6 +156,15 @@ The `v3.12.0` release cycle delivers all four tracks below, certified against 50
 
 ---
 
-## 4. Self-Contained 50-Lane Test Node & CI Infrastructure ([Milestone `#6`](https://github.com/ORNL/oscar/milestone/6)) — **Provisioned in `v3.12.0`**
+## 4. Self-Contained 50-Lane Test Node & CI Infrastructure ([Milestone `#6`](https://github.com/ORNL/oscar/milestone/6)) — **Provisioned in `v3.12.0`, Automated in `v3.12.1`**
 
 - [`ORNL/oscar#87`](https://github.com/ORNL/oscar/issues/87) — **Self-Contained Bare-Metal 50-Lane Staging & Certification Runner:** Provisioned and verified in `v3.12.0` (`ORNL/oscar#88`, `ORNL/oscar-regression#34`) as a standalone bare-metal Ubuntu Server 24.04 LTS 50-lane staging host with co-located `NSDDSiteSim`, `Camera-emulator`, and `oscar-nii-smb-share` containers, `DOCKER-USER` LAN egress isolation, ZFS-snapshotted `PARQUET_PRIMARY` storage, and local `oscar-self-test` execution (Tailscale-ready) so maintainers can certify `-dev` and `-rc` pre-releases while keeping `main` and production `v*` tags `Admin`-gated.
+- [`ORNL/oscar#89`](https://github.com/ORNL/oscar/pull/89) & [`ORNL/oscar-regression#35`](https://github.com/ORNL/oscar-regression/pull/35) — **Manual `workflow_dispatch`-Only 50-Lane Staging Certification Workflow (`v3.12.1`):** Added [`.github/workflows/staging-50-lane-certification.yml`](../.github/workflows/staging-50-lane-certification.yml) targeting the dedicated `oscar-50-lane-staging` runner strictly via manual `workflow_dispatch` (never public `pull_request` events), uploading redacted certification reports and fixing camelCase `dataStream` federated adjudication (`ORNL/oscar-regression#35`).
+
+---
+
+## 5. Incorporated `v3.12.1` Field-Readiness & Lifecycle Patch Ledger
+
+- [`ORNL/oscar#90`](https://github.com/ORNL/oscar/pull/90) — **Training Sandbox 2-Hour Auto-Shutdown TTL Hardening (`oscar-sandbox.sh` & `oscar-sandbox.ps1`):** Eliminated `systemd` self-`SIGTERM` cancellation when `oscar-sandbox-expiry.service` runs `oscar-sandbox.sh stop`, added deterministic TTL enforcement backstops in both Ubuntu (`30 s`) and Windows (`20 s`) host bridge pollers, and hardened the Windows one-shot expiry Scheduled Task for battery and missed-run execution.
+- [`ORNL/oscar#91`](https://github.com/ORNL/oscar/pull/91) — **Printable 1-Page Technician Handover One-Sheet PDF (`create-autoinstall-usb.sh` & `create-autoinstall-usb.ps1`):** Added a zero-dependency US Letter PDF 1.4 writer across Linux (Python 3 stdlib via private `fd 3` pipe, `0600`) and Windows 11 PowerShell 5.1 (native C#/`.NET`, restricted user/SYSTEM/Administrators NTFS ACL) saved strictly locally on the workstation (never written to USB, with `*OneSheet*` skip protection in `user-data.yaml`).
+- [`ORNL/oscar-viewer#55`](https://github.com/ORNL/oscar-viewer/pull/55), [`ORNL/osh-oakridge-modules#65`](https://github.com/ORNL/osh-oakridge-modules/pull/65), [`ORNL/oscar#92`](https://github.com/ORNL/oscar/pull/92) — **Release Metadata & 4-Locale Manual Synchronization (`3.12.1`):** Synchronized OSCAR Viewer fallback strings/changelog, 4-language (`en`/`es`/`fr`/`el`) Operator & Administrator Manuals, and `ORNL` Project `#10`.

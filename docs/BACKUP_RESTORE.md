@@ -1,6 +1,6 @@
-# OSCAR 3.12.0 backup, restore, and recovery
+# OSCAR 3.12.1 backup, restore, and recovery
 
-OSCAR 3.12.0 can create one coordinated recovery snapshot of the PostgreSQL cluster, application
+OSCAR 3.12.1 can create one coordinated recovery snapshot of the PostgreSQL cluster, application
 state, primary Parquet cold tier, release configuration, and encrypted deployment credentials.
 Fresh installations default to `OSCAR_BACKUP_MODE=disabled`; backup creation, verification, restore,
 and the retired prune command remain unavailable until an administrator explicitly changes the
@@ -127,7 +127,7 @@ scale. The automated restore returns PostgreSQL to the consistent endpoint inclu
 
 Compose enables PostgreSQL data checksums for **new** clusters and WAL compression, but explicitly
 runs PostgreSQL with `archive_mode=off`. It sets no external archive command or timeout and mounts no
-host WAL directory. OSCAR 3.12.0 supports restore only to the consistency endpoint carried by the
+host WAL directory. OSCAR 3.12.1 supports restore only to the consistency endpoint carried by the
 selected base backup; it does not provide point-in-time recovery to an arbitrary timestamp or LSN.
 The restore promotes the recovered cluster onto a fresh timeline without consulting an external WAL
 archive.
@@ -409,7 +409,7 @@ that payload because streamed `postgres/pg_wal` is sufficient. Before
 stopping or replacing anything,
 the command requires the same valid backup ID twice, authenticates/verifies the backup, validates the
 release-configuration archive, and proves that the current `.env`, backup epoch, and backed-up
-`.env.example` all identify exactly OSCAR 3.12.0. It also requires every exact image resolved by the
+`.env.example` all identify exactly OSCAR 3.12.1. It also requires every exact image resolved by the
 current Compose configuration to exist locally; restore never substitutes or pulls a different tag.
 
 A restore attempt does not change the recovery point's lifecycle state. An accepted recovery point
@@ -603,7 +603,7 @@ and approver.
 
 ## Recovery boundary: no PITR
 
-OSCAR 3.12.0 does not continuously archive PostgreSQL WAL and does not support point-in-time recovery.
+OSCAR 3.12.1 does not continuously archive PostgreSQL WAL and does not support point-in-time recovery.
 The supported target is the consistency endpoint inside one verified coordinated snapshot. Do not
 present a preserved legacy WAL root, a schema-v1 compatibility payload, or the Parquet cold tier as
 a current PITR chain.
