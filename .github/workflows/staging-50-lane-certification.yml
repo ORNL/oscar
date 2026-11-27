@@ -1,0 +1,116 @@
+name: Staging 50-Lane Certification (Manual)
+
+# Security boundary:
+# Strictly manual workflow_dispatch (available only to repository Write+ collaborators).
+# NEVER add pull_request, pull_request_target, or push triggers to a self-hosted runner
+# workflow on a public repository.
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 'Regression profile to execute on the self-contained 50-lane staging node'
+        required: true
+        type: choice
+        default: 'smoke'
+        options:
+          - smoke
+          - full
+      scenario:
+        description: 'Optional comma-separated scenario filter (e.g. preflight or multi-node-federation); leave empty for full profile'
+        required: false
+        type: string
+        default: ''
+      with_fed_peer:
+        description: 'Boot ephemeral local federated peer stack during smoke runs (always enabled for full)'
+        required: false
+        type: boolean
+        default: false
+      rollback_after_test:
+        description: 'Roll back and destroy ephemeral @pre-test ZFS snapshot after the run'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oscar-50-lane-staging
+  cancel-in-progress: false
+
+jobs:
+  certify-50-lane-staging:
+    name: Self-Contained 50-Lane Staging Certification
+    runs-on: [self-hosted, linux, x64, oscar-50-lane-staging]
+    timeout-minutes: 150
+    steps:
+      - name: Run allowlisted oscar-self-test certification and redact report
+        id: run_cert
+        env:
+          INPUT_SUITE: ${{ inputs.suite }}
+          INPUT_SCENARIO: ${{ inputs.scenario }}
+          INPUT_WITH_FED_PEER: ${{ inputs.with_fed_peer }}
+          INPUT_ROLLBACK: ${{ inputs.rollback_after_test }}
+        run: |
+          set -euo pipefail
+
+          case "$INPUT_SUITE" in
+            smoke) subcmd="run-smoke" ;;
+            full)  subcmd="run-full" ;;
+            *)     echo "::error::Invalid suite input: $INPUT_SUITE"; exit 2 ;;
+          esac
+
+          args=()
+          if [ "$INPUT_ROLLBACK" = "false" ]; then
+            args+=("--no-rollback")
+          fi
+          if [ "$INPUT_SUITE" = "smoke" ] && [ "$INPUT_WITH_FED_PEER" = "true" ]; then
+            args+=("--with-fed-peer")
+          fi
+          if [ -n "$INPUT_SCENARIO" ]; then
+            if ! printf '%s' "$INPUT_SCENARIO" | grep -Eq '^[a-z0-9,-]+$'; then
+              echo "::error::Invalid scenario filter characters."
+              exit 2
+            fi
+            args+=("--scenario" "$INPUT_SCENARIO")
+          fi
+
+          before_latest=$(ls -1dt /srv/oscar-test/results/* 2>/dev/null | head -n 1 || true)
+          set +e
+          /usr/local/bin/oscar-self-test "$subcmd" "${args[@]}" 2>&1 \
+            | sed -E \
+              -e 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/<STAGING_NODE>/g' \
+              -e 's/[A-Za-z0-9._-]+\.ts\.net/<TAILNET_HOST>/g'
+          run_rc=${PIPESTATUS[0]}
+          set -e
+
+          after_latest=$(ls -1dt /srv/oscar-test/results/* 2>/dev/null | head -n 1 || true)
+          out_dir="${RUNNER_TEMP}/staging-report"
+          rm -rf "$out_dir"
+          mkdir -p "$out_dir"
+
+          if [ -n "$after_latest" ] && [ "$after_latest" != "$before_latest" ] && [ -d "$after_latest" ]; then
+            for fname in summary.md summary.csv functional-results.csv storage-performance.csv performance.csv errors.csv; do
+              if [ -f "${after_latest}/${fname}" ]; then
+                sed -E \
+                  -e 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/<STAGING_NODE>/g' \
+                  -e 's/[A-Za-z0-9._-]+\.ts\.net/<TAILNET_HOST>/g' \
+                  -e 's/oscaradmin@[^[:space:],"]+/oscaradmin@<STAGING_NODE>/g' \
+                  "${after_latest}/${fname}" > "${out_dir}/${fname}"
+              fi
+            done
+            if [ -f "${out_dir}/summary.md" ]; then
+              cat "${out_dir}/summary.md" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+
+          exit "$run_rc"
+
+      - name: Upload redacted certification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oscar-50-lane-staging-report-${{ inputs.suite }}-${{ github.run_number }}
+          path: ${{ runner.temp }}/staging-report
+          retention-days: 14
+          if-no-files-found: ignore
