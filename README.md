@@ -95,6 +95,12 @@ The [translation system guide](docs/TRANSLATION_SYSTEM.md) documents language se
 
 The [operational views guide](docs/OPERATIONAL_VIEWS.md) explains how to assign lanes to workstation views, use view-specific URLs, and import or export assignments in lane spreadsheets.
 
+The [custom widget dashboards guide](docs/CUSTOM_WIDGET_DASHBOARDS_GUIDE.md) covers both operator/supervisor usage of the opt-in `/dashboards` workspace (all 17 widgets, starter templates, `(username, view)` layout scoping, `schemaVersion = 4` JSON import/export, and 50-lane guardrails) and the step-by-step developer & AI-agent checklist for authoring, validating, localizing, and testing new custom widgets.
+
+The [vehicle OCR guide](docs/VEHICLE_OCR_GUIDE.md) covers field camera aiming and optical geometry (`1080p @ 15 fps`, `1 s` closed GOP, `<= 1/500 s` shutter), `OcrConfig` tuning (`Alarms Only` vs. continual mode), `OcrResourceGovernor` CPU/heap thresholds, `PARQUET_PRIMARY` / `OcrCropRetention` lifecycle, Ubuntu 24.04 vs. Windows 11 WSL 2 sizing, and offline `OcrCli` benchmarking.
+
+The [identity, offline Passkeys, SSO & multi-node federation guide](docs/IDENTITY_AND_FEDERATION_GUIDE.md) covers `/users` role management, bulk CSV/paste enrollment with 1-tap QR startup invites, local/LAN Passkeys (`<= 825`-day leaf TLS trust), Corporate/Authentik OIDC + PKCE, verified Octelium tunnel SSO, revocable `oscar_fed_*` Federation Service Tokens for `/servers` cross-node search/adjudication, and zero-downtime `reset-admin-password` break-glass recovery.
+
 The [Status of Health guide](docs/STATUS_OF_HEALTH.md) documents lane-level RPM and camera connectivity, detector and tamper faults, extended occupancy (`Fault - Extended Occupancy` and automated `Code 9998: Extended Occupancy Gamma Alarm` adjudication for gamma-only extended occupancy alarms), operational-view scoping, and the acceptance checklist.
 
 The [live-video guide](docs/LIVE_VIDEO.md) documents keyframe requirements, the Viewer's preparing and recovery states, emulator expectations, troubleshooting, and end-to-end playback acceptance tests.
@@ -109,7 +115,7 @@ The [storage architecture](docs/STORAGE_ARCHITECTURE.md) explains the 3.12.0 Pos
 
 The [diagnostic flight recorder & support bundle guide](docs/DIAGNOSTICS_AND_FLIGHT_RECORDER.md) documents the built-in 400-event browser flight recorder, rolling server diagnostics, 1-click **Help (`?`) -> Export Support Bundle** action, offline client fallback, host CLI `oscar.sh` / `oscar.bat support-bundle` crash-loop collector, and automatic edge secret redaction.
 
-The [end-to-end regression & release certification guide](docs/REGRESSION_AND_RELEASE_CERTIFICATION.md) documents installing, configuring, safety-locking, and running all 5 profiles (`smoke`, `full`, `3.11.0-release`, `restore-drill`, `ui-endurance`) and all 27 functional scenarios in [`ORNL/oscar-regression`](https://github.com/ORNL/oscar-regression).
+The [end-to-end regression & release certification guide](docs/REGRESSION_AND_RELEASE_CERTIFICATION.md) documents installing, configuring, safety-locking, and running all 5 profiles (`smoke`, `full`, `3.11.0-release`, `restore-drill`, `ui-endurance`) and all 28 functional scenarios in [`ORNL/oscar-regression`](https://github.com/ORNL/oscar-regression), triggering manual `workflow_dispatch` 50-lane staging certifications (`.github/workflows/staging-50-lane-certification.yml`), and following the multi-repo checklist for adding new datastreams or config fields safely.
 
 The [Ubuntu 24.04 field setup, hotel-room staging & air-gapped bare-metal guide](docs/UBUNTU_FIELD_SETUP_GUIDE.md) walks step-by-step through bootable USB creation, bare-metal Ubuntu 24.04 installation (interactive or declarative `autoinstall`), hotel-room DHCP/Wi-Fi staging (`stage-site-network`) with 1-command static-IP on-site cutover (`apply-site-network`), completely offline `ubuntu-x86_64-offline-full` installation (`tools/offline/build-ubuntu-offline-bundle.sh`), and discovering unknown RPM/camera IP addresses (`discover-devices`).
 

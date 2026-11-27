@@ -8,6 +8,11 @@ Workspace skills for AI agents are also checked into [`.agents/skills/`](.agents
 - [`.agents/skills/oscar-contributor-scale-guardrails/SKILL.md`](.agents/skills/oscar-contributor-scale-guardrails/SKILL.md) — 50-lane PostgreSQL/Parquet/DuckDB, 1 Hz driver, HLS, security, and localization verification runbook.
 - [`.agents/skills/oscar-v312-feature-blueprints/SKILL.md`](.agents/skills/oscar-v312-feature-blueprints/SKILL.md) — File-by-file implementation blueprints for `v3.12.0` (`MobileDetectorSystem` and Opt-In Custom Widget Dashboards).
 
+Companion developer playbooks in `docs/`:
+- [`docs/CUSTOM_WIDGET_DASHBOARDS_GUIDE.md`](docs/CUSTOM_WIDGET_DASHBOARDS_GUIDE.md) — Full 17-widget operator catalog plus the 10-step developer & AI-agent checklist for authoring, validating, localizing, and testing new custom dashboard widgets.
+- [`docs/REGRESSION_AND_RELEASE_CERTIFICATION.md`](docs/REGRESSION_AND_RELEASE_CERTIFICATION.md) — Local & manual `workflow_dispatch` 50-lane staging certification runbook (Section 5) and the multi-repo checklist for adding new datastreams or Java `*Config` fields safely (Section 6).
+- [`docs/RADIATION_DETECTOR_DRIVER_GUIDE.md`](docs/RADIATION_DETECTOR_DRIVER_GUIDE.md) — End-to-end guide for adding new radiation portal or mobile detector drivers.
+
 ---
 
 ## 1. Repository Topology & Submodule Map
@@ -23,7 +28,7 @@ Workspace skills for AI agents are also checked into [`.agents/skills/`](.agents
 | [`ORNL/oscar-viewer`](https://github.com/ORNL/oscar-viewer) | `web/oscar-viewer` | `main` | Next.js / React / TypeScript operator console (`/` Dashboard, `/event-log`, `/lane-view`, `/map`, `/health`, `/report-view`, `/servers`, `/users`) | [`web/oscar-viewer/AGENTS.md`](https://github.com/ORNL/oscar-viewer/blob/main/AGENTS.md) |
 | [`ORNL/osh-js`](https://github.com/ORNL/osh-js) | *(npm dependency in `web/oscar-viewer`)* | `add-consys` | Connected Systems REST / MQTT / WebSocket client SDK | — |
 | [`ORNL/oscar-video-guides`](https://github.com/ORNL/oscar-video-guides) | *(bundled at build time into `/video-guides/`)* | `main` | `33` localized (`en`, `es`, `fr`, `el`) `< 2 min` MP4 workflow guides + WebVTT/SRT captions | — |
-| [`ORNL/oscar-regression`](https://github.com/ORNL/oscar-regression) | *(standalone Playwright + TypeScript E2E suite)* | `main` | `27` end-to-end functional, storage-lifecycle, fault/alarm injection, OCR, UFF, sandbox, and multi-node federation scenarios | — |
+| [`ORNL/oscar-regression`](https://github.com/ORNL/oscar-regression) | *(standalone Playwright + TypeScript E2E suite)* | `main` | `28` end-to-end functional, storage-lifecycle, fault/alarm injection, OCR, UFF, sandbox, and multi-node federation scenarios | — |
 | [`ORNL/oscar-federation-hub`](https://github.com/ORNL/oscar-federation-hub) | *(standalone hub deployment)* | `main` | Multi-site Zero-Trust federation & tunnel gateway | — |
 
 ---
