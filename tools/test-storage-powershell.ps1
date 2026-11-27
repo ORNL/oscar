@@ -1793,6 +1793,7 @@ public static class OscarLongPathTestHelper {
     $hostPrepText = [IO.File]::ReadAllText($hostPrepScript)
     Assert-True ($hostPrepText.Contains('gateway-tls-cert')) 'configure-windows-host.ps1 is missing gateway-tls-cert readiness check.'
     Assert-True ($hostPrepText.Contains('postgres-xid-headroom')) 'configure-windows-host.ps1 is missing postgres-xid-headroom advisory check.'
+    Assert-True ($hostPrepText.Contains('$xidSql | & docker exec -i $pgCid sh -c')) 'configure-windows-host.ps1 must pipe XID SQL via stdin so PowerShell 5.1 native argument quoting cannot strip embedded quotes.'
 
     Write-Host 'OSCAR Windows PowerShell 5.1 storage safety tests passed.' -ForegroundColor Green
 } finally {
