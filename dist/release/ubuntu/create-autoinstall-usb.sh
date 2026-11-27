@@ -45,6 +45,7 @@ Usage:
       [--auto-init-oscar] \
       [--seed-dir /path/to/seed-folder] \
       [--seed-file /path/to/config.json]... \
+      [--one-sheet-pdf /path/to/OSCAR-Install-OneSheet.pdf | --no-one-sheet-pdf] \
       --confirm ERASE-USB
 
 Safety guarantees:
@@ -53,6 +54,10 @@ Safety guarantees:
   - Preserves Canonical/Microsoft UEFI Secure Boot signatures on the Ubuntu ISO.
   - Bakes USB-to-NVMe Bulk-Only Transport + No-LPM quirks into the installed OS
     from first boot and installs the interactive OSCAR First-Boot Provisioning Wizard.
+  - Generates a printable 1-page Technician Handover One-Sheet PDF strictly on
+    this local workstation (0600 permissions, NEVER written to the USB stick)
+    containing usernames, passwords, passphrases, SHA-256 checksums, staged
+    seed/network details, and post-autoinstall checklist steps.
 EOF
 }
 
@@ -265,6 +270,581 @@ pathlib.Path(out_path).write_text(text, encoding="utf-8", newline="\n")
 PY
 }
 
+resolve_default_one_sheet_pdf_path() {
+    local host_slug ts target_home base_dir
+    host_slug=$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_')
+    ts=$(date '+%Y%m%d-%H%M%S')
+    if [[ -n ${SUDO_USER:-} && ${SUDO_USER} != root ]]; then
+        target_home=$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6 || true)
+    else
+        target_home=${HOME:-}
+    fi
+    if [[ -n $target_home && -d "$target_home/Desktop" ]]; then
+        base_dir="$target_home/Desktop"
+    elif [[ -n $target_home && -d "$target_home" ]]; then
+        base_dir="$target_home"
+    else
+        base_dir="$PWD"
+    fi
+    printf '%s/OSCAR-Install-OneSheet-%s-%s.pdf' "$base_dir" "$host_slug" "$ts"
+}
+
+generate_technician_one_sheet_pdf() {
+    local pdf_path=$1
+    local parent_dir
+    parent_dir=$(dirname -- "$pdf_path")
+    mkdir -p "$parent_dir"
+
+    # Pass all credentials strictly over fd 3 pipe JSON (never on process argv or env) and write with 0600 permissions.
+    (
+        umask 077
+        python3 - "$pdf_path" 3<&0 <<'PY'
+import json
+import os
+import pathlib
+import re
+import sys
+
+pdf_out = pathlib.Path(sys.argv[1])
+with os.fdopen(3, "r", encoding="utf-8") as _in_fh:
+    payload = json.loads(_in_fh.read())
+
+
+def to_ascii(val):
+    if val is None:
+        return ""
+    s = str(val)
+    replacements = {
+        "\u2014": "--",
+        "\u2013": "-",
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\u2022": "*",
+        "\u00a0": " ",
+    }
+    for k, v in replacements.items():
+        s = s.replace(k, v)
+    return "".join(ch if 32 <= ord(ch) <= 126 else "?" for ch in s)
+
+
+def pdf_escape(s):
+    s = to_ascii(s)
+    return s.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def wrap_line(text, max_chars, max_lines=3):
+    text = to_ascii(text).strip()
+    if not text:
+        return ["-"]
+    if len(text) <= max_chars:
+        return [text]
+    lines = []
+    remaining = text
+    while remaining and len(lines) < max_lines:
+        if len(remaining) <= max_chars:
+            lines.append(remaining)
+            remaining = ""
+            break
+        split_at = remaining.rfind(" ", 0, max_chars + 1)
+        if split_at < max_chars // 3:
+            split_at = max_chars
+        lines.append(remaining[:split_at].rstrip())
+        remaining = remaining[split_at:].lstrip()
+    if remaining:
+        if max_lines > 0:
+            last = lines[-1]
+            lines[-1] = (last[: max(1, max_chars - 3)].rstrip() + "...")
+    return lines
+
+
+def parse_env_summary(path_str):
+    if not path_str or not os.path.isfile(path_str):
+        return ""
+    kv = {}
+    try:
+        for raw in pathlib.Path(path_str).read_text(encoding="utf-8", errors="replace").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            kv[k.strip()] = v.strip().strip('"').strip("'")
+    except OSError:
+        return ""
+    parts = []
+    if kv.get("PRIMARY_IP_CIDR"):
+        p = f"Primary {kv.get('PRIMARY_NIC', 'NIC1')}: {kv['PRIMARY_IP_CIDR']}"
+        if kv.get("PRIMARY_GATEWAY"):
+            p += f" (GW {kv['PRIMARY_GATEWAY']})"
+        if kv.get("PRIMARY_DNS"):
+            p += f" DNS {kv['PRIMARY_DNS']}"
+        parts.append(p)
+    if kv.get("SENSOR_IP_CIDR"):
+        parts.append(f"Sensor {kv.get('SENSOR_NIC', 'NIC2')}: {kv['SENSOR_IP_CIDR']}")
+    if kv.get("OSCAR_SITE_HOSTNAME"):
+        parts.append(f"Site Host: {kv['OSCAR_SITE_HOSTNAME']}")
+    return " | ".join(parts)
+
+
+def read_backup_key_summary(path_str):
+    if not path_str or not os.path.isfile(path_str):
+        return ""
+    name = os.path.basename(path_str)
+    try:
+        raw_lines = [ln.strip() for ln in pathlib.Path(path_str).read_text(encoding="utf-8", errors="replace").splitlines() if ln.strip() and not ln.strip().startswith("#")]
+    except OSError:
+        return f"Staged at /srv/oscar/seed/{name}"
+    if len(raw_lines) == 1 and len(raw_lines[0]) <= 128 and all(32 <= ord(c) <= 126 for c in raw_lines[0]):
+        return f"{raw_lines[0]}  (file: /srv/oscar/seed/{name})"
+    return f"Key file staged at /srv/oscar/seed/{name} ({len(raw_lines)} line(s))"
+
+
+def fmt_size(path_str):
+    if not path_str or not os.path.isfile(path_str):
+        return ""
+    sz = os.path.getsize(path_str)
+    if sz >= 1024 ** 3:
+        return f"{sz / (1024 ** 3):.2f} GiB"
+    if sz >= 1024 ** 2:
+        return f"{sz / (1024 ** 2):.1f} MiB"
+    if sz >= 1024:
+        return f"{sz / 1024:.1f} KiB"
+    return f"{sz} B"
+
+
+hostname = payload.get("hostname") or "oscar-host"
+username = payload.get("username") or "oscaradmin"
+linux_pw_plain = payload.get("linuxPasswordPlain") or ""
+linux_pw_hashed_only = bool(payload.get("linuxPasswordHashedOnly"))
+req_sudo_pw = bool(payload.get("requireSudoPassword"))
+luks_pass = payload.get("luksPassphrase") or ""
+ssh_keys_only = bool(payload.get("sshKeysOnly"))
+ssh_keys = payload.get("sshKeys") or []
+oscar_web_pw_plain = payload.get("oscarWebPasswordPlain") or ""
+oscar_web_pw_hashed_only = bool(payload.get("oscarWebPasswordHashedOnly"))
+auto_init = bool(payload.get("autoInitOscar"))
+iso_path = payload.get("isoPath") or ""
+bundle_path = payload.get("bundlePath") or ""
+bundle_sha256 = payload.get("bundleSha256") or ""
+lanes_file = payload.get("lanesFile") or ""
+seed_dir = payload.get("seedDir") or ""
+seed_files = payload.get("seedFiles") or []
+target_desc = payload.get("targetDesc") or "Removable USB Drive"
+generated_utc = payload.get("generatedUtc") or ""
+generated_local = payload.get("generatedLocal") or ""
+bundled_manuals = payload.get("bundledManuals") or []
+
+# Discover staged seed files, site-network.env, and backup-key.txt
+staged_seed_names = []
+site_net_path = ""
+backup_key_path = ""
+
+def consider_seed_file(full_path, rel_name):
+    global site_net_path, backup_key_path
+    if rel_name not in staged_seed_names:
+        staged_seed_names.append(rel_name)
+    lower = os.path.basename(rel_name).lower()
+    if lower == "site-network.env" and not site_net_path:
+        site_net_path = full_path
+    if "backup" in lower and "key" in lower and lower.endswith(".txt") and not backup_key_path:
+        backup_key_path = full_path
+
+if seed_dir and os.path.isdir(seed_dir):
+    for root, _dirs, files in os.walk(seed_dir):
+        for fn in sorted(files):
+            fp = os.path.join(root, fn)
+            rel = os.path.relpath(fp, seed_dir).replace("\\", "/")
+            consider_seed_file(fp, rel)
+for sf in seed_files:
+    if sf and os.path.isfile(sf):
+        consider_seed_file(sf, os.path.basename(sf))
+if lanes_file and os.path.isfile(lanes_file):
+    consider_seed_file(lanes_file, os.path.basename(lanes_file))
+if oscar_web_pw_plain or oscar_web_pw_hashed_only:
+    if "oscar-admin-password.txt" not in staged_seed_names:
+        staged_seed_names.append("oscar-admin-password.txt (PBKDF2 hash)")
+if auto_init:
+    if "auto-provision.env" not in staged_seed_names:
+        staged_seed_names.append("auto-provision.env")
+
+site_net_summary = parse_env_summary(site_net_path)
+backup_key_summary = read_backup_key_summary(backup_key_path)
+
+oscar_version = "OS-Only USB"
+if bundle_path:
+    m = re.search(r"oscar-([0-9]+\.[0-9]+\.[0-9]+[^\s/\\]*?)-ubuntu", os.path.basename(bundle_path), re.I)
+    oscar_version = f"v{m.group(1)}" if m else os.path.basename(bundle_path)
+
+if linux_pw_plain:
+    linux_pw_display = linux_pw_plain
+    linux_pw_mono = True
+elif linux_pw_hashed_only:
+    linux_pw_display = "[Pre-hashed SHA-512 supplied; plaintext unavailable]"
+    linux_pw_mono = False
+else:
+    linux_pw_display = f"OscarChangeMe!24  (TEMPLATE DEFAULT -- run: passwd {username})"
+    linux_pw_mono = True
+
+if oscar_web_pw_plain:
+    oscar_web_display = f"User: admin   |   Pass: {oscar_web_pw_plain}"
+    oscar_web_mono = True
+elif oscar_web_pw_hashed_only:
+    oscar_web_display = "User: admin   |   Pass: [Pre-encoded PBKDF2 hash supplied]"
+    oscar_web_mono = False
+else:
+    oscar_web_display = "User: admin   |   Pass: [Set 14+ char password during first-boot wizard]"
+    oscar_web_mono = False
+
+if luks_pass:
+    luks_display = f"ENABLED -- Passphrase: {luks_pass}"
+    luks_mono = True
+else:
+    luks_display = "Disabled (unencrypted 100% internal NVMe/SSD LVM)"
+    luks_mono = False
+
+ssh_labels = []
+for k in ssh_keys[:4]:
+    parts = k.strip().split()
+    if len(parts) >= 3:
+        ssh_labels.append(f"{parts[0]} ({parts[2]})")
+    elif len(parts) >= 1:
+        ssh_labels.append(f"{parts[0]} (...{parts[-1][-12:]})")
+if len(ssh_keys) > 4:
+    ssh_labels.append(f"+{len(ssh_keys) - 4} more")
+ssh_policy = "SSH keys ONLY (password login disabled)" if ssh_keys_only else "Password + SSH key login allowed"
+if ssh_keys:
+    ssh_display = f"{ssh_policy} | {len(ssh_keys)} key(s): {', '.join(ssh_labels)}"
+else:
+    ssh_display = f"{ssh_policy} | No SSH public keys staged"
+
+iso_display = f"{os.path.basename(iso_path)} ({fmt_size(iso_path)})" if iso_path else "Not specified"
+if bundle_path:
+    bundle_display = f"{os.path.basename(bundle_path)} ({fmt_size(bundle_path)}) -> /srv/oscar/"
+else:
+    bundle_display = "None (OS-only Ubuntu 24.04 autoinstall USB)"
+sha_display = bundle_sha256 if bundle_sha256 else ("Verified during USB write" if bundle_path else "N/A (no offline bundle)")
+lanes_display = f"{os.path.basename(lanes_file)} -> /srv/oscar/seed/{os.path.basename(lanes_file)}" if lanes_file else "None pre-staged (configure in OSCAR UI or wizard)"
+seeds_display = ", ".join(staged_seed_names) if staged_seed_names else "None"
+manuals_display = ", ".join(bundled_manuals) if bundled_manuals else "Included inside offline bundle (/srv/oscar/)"
+mode_display = (
+    "Turnkey Unattended Auto-Init (oscar-autoprovision.service)"
+    if auto_init
+    else "Interactive First-Boot Wizard (auto-opens on login, or: sudo oscar-wizard)"
+)
+
+# PDF 1.4 Drawing Engine (US Letter: 612 x 792 pt, 36 pt margins => content x=36..576, w=540)
+cmds = []
+PAGE_W = 612.0
+PAGE_H = 792.0
+MARGIN_L = 36.0
+CONTENT_W = 540.0
+
+
+def set_fill(r, g, b):
+    cmds.append(f"{r:.3f} {g:.3f} {b:.3f} rg")
+
+
+def set_stroke(r, g, b):
+    cmds.append(f"{r:.3f} {g:.3f} {b:.3f} RG")
+
+
+def rect(x, y, w, h, fill=None, stroke=None, lw=0.6):
+    cmds.append("q")
+    if stroke:
+        cmds.append(f"{lw:.2f} w")
+        set_stroke(*stroke)
+    if fill:
+        set_fill(*fill)
+    op = "B" if (fill and stroke) else ("f" if fill else "S")
+    cmds.append(f"{x:.2f} {y:.2f} {w:.2f} {h:.2f} re {op}")
+    cmds.append("Q")
+
+
+def line(x1, y1, x2, y2, stroke=(0.80, 0.84, 0.88), lw=0.5):
+    cmds.append("q")
+    cmds.append(f"{lw:.2f} w")
+    set_stroke(*stroke)
+    cmds.append(f"{x1:.2f} {y1:.2f} m {x2:.2f} {y2:.2f} l S")
+    cmds.append("Q")
+
+
+def draw_text(x, y, text, font="F1", size=9.0, color=(0.10, 0.14, 0.20)):
+    cmds.append("q")
+    set_fill(*color)
+    cmds.append(f"BT /{font} {size:.1f} Tf 1 0 0 1 {x:.2f} {y:.2f} Tm ({pdf_escape(text)}) Tj ET")
+    cmds.append("Q")
+
+
+# Colors
+NAVY = (0.059, 0.153, 0.267)
+SLATE = (0.118, 0.227, 0.373)
+TEAL = (0.051, 0.580, 0.533)
+BADGE_DARK = (0.200, 0.255, 0.333)
+AMBER_BG = (0.996, 0.953, 0.780)
+AMBER_BORDER = (0.851, 0.467, 0.024)
+AMBER_TEXT = (0.573, 0.251, 0.055)
+ROW_ALT = (0.969, 0.980, 0.988)
+WHITE = (1.0, 1.0, 1.0)
+BORDER = (0.796, 0.835, 0.882)
+TEXT_DARK = (0.086, 0.125, 0.184)
+TEXT_MUTED = (0.278, 0.333, 0.412)
+CODE_BG = (0.945, 0.961, 0.976)
+
+# Top Header Banner
+cur_y = 758.0
+header_h = 48.0
+rect(MARGIN_L, cur_y - header_h, CONTENT_W, header_h, fill=NAVY)
+draw_text(MARGIN_L + 12, cur_y - 19, "OSCAR BARE-METAL DEPLOYMENT -- TECHNICIAN ONE-SHEET", font="F2", size=12.5, color=WHITE)
+sub_line = f"Target Host: {hostname}   |   OSCAR: {oscar_version}   |   Generated: {generated_utc or generated_local}"
+draw_text(MARGIN_L + 12, cur_y - 36, sub_line[:95], font="F1", size=8.5, color=(0.82, 0.87, 0.93))
+
+badge_txt = "TURNKEY AUTO-INIT" if auto_init else "INTERACTIVE WIZARD"
+badge_w = 100.0 if auto_init else 106.0
+badge_x = MARGIN_L + CONTENT_W - badge_w - 10
+rect(badge_x, cur_y - 33, badge_w, 19, fill=(TEAL if auto_init else BADGE_DARK))
+draw_text(badge_x + (11.0 if auto_init else 9.0), cur_y - 26.5, badge_txt, font="F2", size=7.8, color=WHITE)
+cur_y -= (header_h + 6)
+
+# Security Notice Callout Strip
+warn_h = 24.0
+rect(MARGIN_L, cur_y - warn_h, CONTENT_W, warn_h, fill=AMBER_BG, stroke=AMBER_BORDER, lw=0.9)
+draw_text(MARGIN_L + 8, cur_y - 10.5, "SENSITIVE CREDENTIALS -- PRINT FOR SITE SECURITY BINDER & HANDOVER (LOCAL WORKSTATION COPY ONLY)", font="F2", size=7.6, color=AMBER_TEXT)
+draw_text(MARGIN_L + 8, cur_y - 20.0, "This one-sheet is NEVER written to the USB drive. Print now for field setup, then securely delete this PDF after site handover.", font="F1", size=7.4, color=AMBER_TEXT)
+cur_y -= (warn_h + 7)
+
+
+def draw_section_header(title):
+    global cur_y
+    h = 16.5
+    rect(MARGIN_L, cur_y - h, CONTENT_W, h, fill=SLATE)
+    draw_text(MARGIN_L + 8, cur_y - 11.5, title, font="F2", size=8.6, color=WHITE)
+    cur_y -= h
+
+
+def draw_kv_table(rows):
+    global cur_y
+    label_w = 142.0
+    val_x = MARGIN_L + label_w + 6.0
+    top_y = cur_y
+    for idx, row in enumerate(rows):
+        label, value, is_mono, max_lines = row
+        font_name = "F4" if is_mono else "F1"
+        font_size = 8.1 if is_mono else 8.2
+        max_chars = 66 if is_mono else 80
+        wrapped = wrap_line(value, max_chars=max_chars, max_lines=max_lines)
+        row_h = max(14.5, 4.5 + len(wrapped) * 10.2)
+        bg = ROW_ALT if (idx % 2 == 1) else WHITE
+        rect(MARGIN_L, cur_y - row_h, CONTENT_W, row_h, fill=bg)
+        line(MARGIN_L, cur_y - row_h, MARGIN_L + CONTENT_W, cur_y - row_h, stroke=BORDER, lw=0.45)
+        draw_text(MARGIN_L + 7, cur_y - 10.5, label, font="F2", size=8.0, color=TEXT_MUTED)
+        ly = cur_y - 10.5
+        for wl in wrapped:
+            draw_text(val_x, ly, wl, font=font_name, size=font_size, color=TEXT_DARK)
+            ly -= 10.2
+        cur_y -= row_h
+    line(MARGIN_L + label_w, top_y, MARGIN_L + label_w, cur_y, stroke=BORDER, lw=0.5)
+    rect(MARGIN_L, cur_y, CONTENT_W, top_y - cur_y, fill=None, stroke=BORDER, lw=0.6)
+    cur_y -= 7
+
+
+# Section 1: Credentials & System Identity
+draw_section_header("1. SYSTEM IDENTITY, PASSWORDS & PASSPHRASES")
+sec1_rows = [
+    ("Target Hostname / URLs", f"{hostname}  |  https://{hostname}/  |  /sensorhub/admin", True, 2),
+    ("Linux Admin Username", f"{username}   (SSH: ssh {username}@{hostname})", True, 1),
+    ("Linux Admin Password", linux_pw_display, linux_pw_mono, 2),
+    ("Sudo Privilege Policy", "Password required for sudo" if req_sudo_pw else "Passwordless sudo (NOPASSWD enabled)", False, 1),
+    ("LUKS2 Disk Encryption", luks_display, luks_mono, 2),
+    ("SSH Access & Keys", ssh_display, False, 2),
+    ("OSCAR Web Admin Login", oscar_web_display, oscar_web_mono, 2),
+    ("Backup Encryption Key", backup_key_summary if backup_key_summary else "Not pre-staged (configure during USB backup setup)", bool(backup_key_summary), 2),
+    ("Staged Site Network", site_net_summary if site_net_summary else "Non-blocking DHCP (configure static IP in First-Boot Wizard)", bool(site_net_summary), 2),
+]
+draw_kv_table(sec1_rows)
+
+# Section 2: Installation Media, Checksums & Pre-Staged Files
+draw_section_header("2. INSTALLATION MEDIA, VERIFIED CHECKSUMS & PRE-STAGED FILES")
+sec2_rows = [
+    ("Target USB / Image", target_desc, False, 1),
+    ("Ubuntu 24.04 Live ISO", iso_display, False, 1),
+    ("OSCAR Offline Bundle", bundle_display, False, 2),
+    ("Verified Bundle SHA-256", sha_display, True, 2),
+    ("Pre-Staged Lanes/Config", lanes_display, False, 2),
+    ("Staged Seed Files", seeds_display, False, 2),
+    ("Bundled Manuals / Docs", manuals_display, False, 2),
+    ("First-Boot Mode", mode_display, False, 1),
+]
+draw_kv_table(sec2_rows)
+
+# Section 3: Post-Autoinstall Field Setup Checklist
+draw_section_header("3. POST-AUTOINSTALL FIELD SETUP & ACCESS CHECKLIST")
+if auto_init:
+    step4 = (
+        f"4. Verify Turnkey OSCAR: Run 'sudo bash /srv/oscar/oscar-*/oscar.sh status' "
+        f"(log: /var/log/oscar-autoprovision.log). Open https://{hostname}/ as 'admin', register site users/Passkeys, "
+        f"and upload .pmtiles or site diagram if not pre-staged."
+    )
+else:
+    step4 = (
+        f"4. Run First-Boot Wizard: The OSCAR Provisioning Wizard auto-launches on first login "
+        f"(or run 'sudo oscar-wizard') to optimize host offline, apply static IP, restore a backup, or initialize OSCAR."
+    )
+
+checklist_steps = [
+    "1. Boot Target Server: Insert this USB into the target x86-64 machine (no internet needed) and select USB in UEFI Boot Menu.",
+    "2. Complete Unattended Install: Ubuntu 24.04 installs onto the internal NVMe/SSD (100% LVM; USB drives protected) and unpacks OSCAR into /srv/oscar/. Remove USB when prompted and press Enter.",
+    f"3. Unlock & Sign In: {'Enter the LUKS2 Boot Passphrase above when prompted. ' if luks_pass else ''}Log in on console or SSH as '{username}'.",
+    step4,
+    "5. Hardware & Ops Check: Verify SensorHub Admin (/sensorhub/admin), time sync, and lanes. Power 1-4 TB M.2 NVMe USB backup drives via a mains-powered USB 3.2 Gen 2 hub or 15W USB-C port (USB-NVMe quirks pre-installed).",
+    "6. Handover & Cleanup: Record the assigned site IP below, file this printed one-sheet in the site binder, and securely delete the local PDF copy from the staging workstation.",
+]
+
+# Measure checklist height dynamically so it always fits comfortably above the footer
+panel_top = cur_y
+wrapped_steps = [wrap_line(st, max_chars=124, max_lines=3) for st in checklist_steps]
+total_step_lines = sum(len(ws) for ws in wrapped_steps)
+quick_cmd_h = 26.0
+panel_h = 8.0 + total_step_lines * 9.5 + len(wrapped_steps) * 2.5 + quick_cmd_h + 6.0
+min_panel_bottom = 94.0
+if panel_top - panel_h < min_panel_bottom:
+    line_step = 8.6
+    step_gap = 1.6
+    panel_h = 6.0 + total_step_lines * line_step + len(wrapped_steps) * step_gap + quick_cmd_h + 5.0
+else:
+    line_step = 9.5
+    step_gap = 2.5
+
+rect(MARGIN_L, panel_top - panel_h, CONTENT_W, panel_h, fill=WHITE, stroke=BORDER, lw=0.6)
+cy = panel_top - 11.5
+for ws in wrapped_steps:
+    rect(MARGIN_L + 8, cy - 1.0, 6.5, 6.5, fill=WHITE, stroke=SLATE, lw=0.6)
+    for sl in ws:
+        draw_text(MARGIN_L + 19, cy, sl, font="F1", size=7.8, color=TEXT_DARK)
+        cy -= line_step
+    cy -= step_gap
+
+cmd_box_y = panel_top - panel_h + 4.5
+rect(MARGIN_L + 6, cmd_box_y, CONTENT_W - 12, quick_cmd_h, fill=CODE_BG, stroke=BORDER, lw=0.5)
+draw_text(MARGIN_L + 12, cmd_box_y + 15.5, "Commands:  sudo bash /srv/oscar/oscar-*/oscar.sh status   |   sudo oscar-wizard   |   oscar.sh reset-admin-password", font="F3", size=7.3, color=NAVY)
+draw_text(MARGIN_L + 12, cmd_box_y + 5.5, "Paths:     Release: /srv/oscar/   |   Seeds: /srv/oscar/seed/   |   Auto-Init Log: /var/log/oscar-autoprovision.log", font="F3", size=7.3, color=NAVY)
+
+# Section 4: Technician Sign-Off Box (pinned cleanly near bottom margin)
+sign_top = min(panel_top - panel_h - 6.0, 86.0)
+sign_h = 44.0
+sign_y = max(38.0, sign_top - sign_h)
+rect(MARGIN_L, sign_y, CONTENT_W, sign_h, fill=ROW_ALT, stroke=BORDER, lw=0.6)
+draw_text(MARGIN_L + 8, sign_y + 33.5, "FIELD DEPLOYMENT SIGN-OFF", font="F2", size=7.8, color=SLATE)
+draw_text(MARGIN_L + 8, sign_y + 20.5, "Site / Facility: _____________________________________   Assigned IP: _________________________   Date: __________________", font="F1", size=8.0, color=TEXT_DARK)
+draw_text(MARGIN_L + 8, sign_y + 7.5, "Technician: __________________________________________   Signature: ___________________________   Binder Ref: ____________", font="F1", size=8.0, color=TEXT_DARK)
+
+# Bottom Micro-Footer
+draw_text(MARGIN_L, 24.0, f"OSCAR Bare-Metal Autoinstall USB Creator   |   Host: {hostname}   |   Page 1 of 1   |   Local workstation copy only (NOT stored on USB)", font="F1", size=7.0, color=TEXT_MUTED)
+
+stream_bytes = ("\n".join(cmds) + "\n").encode("latin-1")
+
+# Assemble valid PDF 1.4 with exact xref offsets
+objects = [
+    b"<< /Type /Catalog /Pages 2 0 R >>",
+    b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {PAGE_W:.0f} {PAGE_H:.0f}] /Resources << /Font << /F1 4 0 R /F2 5 0 R /F3 6 0 R /F4 7 0 R >> >> /Contents 8 0 R >>".encode("ascii"),
+    b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+    b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
+    b"<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>",
+    b"<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold /Encoding /WinAnsiEncoding >>",
+    f"<< /Length {len(stream_bytes)} >>\nstream\n".encode("ascii") + stream_bytes + b"endstream",
+]
+
+out = bytearray()
+out.extend(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+offsets = [0]
+for idx, obj in enumerate(objects, start=1):
+    offsets.append(len(out))
+    out.extend(f"{idx} 0 obj\n".encode("ascii"))
+    out.extend(obj)
+    out.extend(b"\nendobj\n")
+
+xref_pos = len(out)
+out.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
+out.extend(b"0000000000 65535 f \n")
+for off in offsets[1:]:
+    out.extend(f"{off:010d} 00000 n \n".encode("ascii"))
+out.extend(f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_pos}\n%%EOF\n".encode("ascii"))
+
+pdf_out.write_bytes(bytes(out))
+os.chmod(pdf_out, 0o600)
+PY
+    )
+
+    if [[ -n ${SUDO_USER:-} && ${SUDO_USER} != root ]]; then
+        local sudo_group
+        sudo_group=$(id -gn "$SUDO_USER" 2>/dev/null || printf '%s' "$SUDO_USER")
+        chown "${SUDO_USER}:${sudo_group}" "$pdf_path" 2>/dev/null || true
+    fi
+    chmod 0600 "$pdf_path" 2>/dev/null || true
+}
+
+emit_one_sheet_pdf_from_state() {
+    local pdf_path=$1
+    local target_desc_val=$2
+    local bundle_sha_val=$3
+    shift 3
+    local -a manuals_list=("$@")
+    local gen_utc gen_local
+    gen_utc=$(date -u '+%Y-%m-%d %H:%M UTC')
+    gen_local=$(date '+%Y-%m-%d %H:%M %Z')
+
+    local -a kv_stream=(
+        "hostname" "$hostname_val"
+        "username" "$username_val"
+        "linuxPasswordPlain" "$linux_pw_for_sheet"
+        "linuxPasswordHashedOnly" "$([[ -n $password_hash && -z $linux_pw_for_sheet ]] && echo true || echo false)"
+        "requireSudoPassword" "$($require_sudo_password && echo true || echo false)"
+        "luksPassphrase" "$luks_passphrase"
+        "sshKeysOnly" "$($ssh_keys_only && echo true || echo false)"
+        "oscarWebPasswordPlain" "$oscar_web_pw_for_sheet"
+        "oscarWebPasswordHashedOnly" "$([[ -n $oscar_admin_pw_hash && -z $oscar_web_pw_for_sheet ]] && echo true || echo false)"
+        "autoInitOscar" "$($auto_init_oscar && echo true || echo false)"
+        "isoPath" "$iso_path"
+        "bundlePath" "$offline_bundle"
+        "bundleSha256" "$bundle_sha_val"
+        "lanesFile" "$lanes_file"
+        "seedDir" "$seed_dir"
+        "targetDesc" "$target_desc_val"
+        "generatedUtc" "$gen_utc"
+        "generatedLocal" "$gen_local"
+    )
+    local item
+    for item in "${ssh_keys[@]+"${ssh_keys[@]}"}"; do
+        kv_stream+=("sshKeys[]" "$item")
+    done
+    for item in "${seed_files[@]+"${seed_files[@]}"}"; do
+        kv_stream+=("seedFiles[]" "$item")
+    done
+    for item in "${manuals_list[@]+"${manuals_list[@]}"}"; do
+        kv_stream+=("bundledManuals[]" "$item")
+    done
+
+    printf '%s\0' "${kv_stream[@]}" | python3 -c '
+import json, sys
+raw = sys.stdin.buffer.read().split(b"\x00")
+if raw and raw[-1] == b"":
+    raw.pop()
+obj = {"sshKeys": [], "seedFiles": [], "bundledManuals": []}
+bool_keys = {"linuxPasswordHashedOnly", "requireSudoPassword", "sshKeysOnly", "oscarWebPasswordHashedOnly", "autoInitOscar"}
+for i in range(0, len(raw) - 1, 2):
+    k = raw[i].decode("utf-8", "replace")
+    v = raw[i + 1].decode("utf-8", "replace")
+    if k.endswith("[]"):
+        obj.setdefault(k[:-2], []).append(v)
+    elif k in bool_keys:
+        obj[k] = (v == "true")
+    else:
+        obj[k] = v
+sys.stdout.write(json.dumps(obj))
+' | generate_technician_one_sheet_pdf "$pdf_path"
+}
+
 want_gui=false
 want_tui=false
 list_only=false
@@ -279,6 +859,7 @@ username_val='oscaradmin'
 username_explicit=false
 password_hash=''
 password_file=''
+linux_pw_for_sheet=''
 luks_passphrase_file=''
 luks_passphrase=''
 require_sudo_password=false
@@ -286,10 +867,14 @@ sudo_explicit=false
 ssh_keys_only=false
 ssh_keys_only_explicit=false
 render_user_data_only=''
+render_one_sheet_pdf_only=''
+one_sheet_pdf_path=''
+no_one_sheet_pdf=false
 confirm_token=''
 oscar_admin_pw_plain=''
 oscar_admin_pw_file=''
 oscar_admin_pw_hash=''
+oscar_web_pw_for_sheet=''
 lanes_file=''
 auto_init_oscar=false
 auto_init_explicit=false
@@ -320,6 +905,9 @@ while (($# > 0)); do
         --lanes-file) lanes_file=${2:?missing --lanes-file}; shift 2 ;;
         --auto-init-oscar) auto_init_oscar=true; auto_init_explicit=true; shift ;;
         --render-user-data-only) render_user_data_only=${2:?missing --render-user-data-only}; shift 2 ;;
+        --render-one-sheet-pdf-only) render_one_sheet_pdf_only=${2:?missing --render-one-sheet-pdf-only}; shift 2 ;;
+        --one-sheet-pdf) one_sheet_pdf_path=${2:?missing --one-sheet-pdf}; shift 2 ;;
+        --no-one-sheet-pdf) no_one_sheet_pdf=true; shift ;;
         --ssh-key-file) ssh_key_files+=("${2:?missing --ssh-key-file}"); shift 2 ;;
         --seed-dir) seed_dir=${2:?missing --seed-dir}; shift 2 ;;
         --seed-file) seed_files+=("${2:?missing --seed-file}"); shift 2 ;;
@@ -342,6 +930,9 @@ if [[ -n $password_file ]]; then
     pw_from_file=${pw_from_file%$'\r'}
     [[ -n $pw_from_file ]] || fail "Password file is empty: $password_file"
     password_hash=$(hash_linux_password "$pw_from_file")
+    if ! $no_one_sheet_pdf; then
+        linux_pw_for_sheet=$pw_from_file
+    fi
     unset pw_from_file
 fi
 
@@ -356,10 +947,16 @@ if [[ -n $oscar_admin_pw_file ]]; then
         oscar_admin_pw_hash="# PBKDF2_PREENCODED:$opw_from_file"
     else
         oscar_admin_pw_hash=$(hash_oscar_pbkdf2_password "$opw_from_file")
+        if ! $no_one_sheet_pdf; then
+            oscar_web_pw_for_sheet=$opw_from_file
+        fi
     fi
     unset opw_from_file
 elif [[ -n $oscar_admin_pw_plain ]]; then
     oscar_admin_pw_hash=$(hash_oscar_pbkdf2_password "$oscar_admin_pw_plain")
+    if ! $no_one_sheet_pdf; then
+        oscar_web_pw_for_sheet=$oscar_admin_pw_plain
+    fi
     unset oscar_admin_pw_plain
 elif [[ -n $oscar_admin_pw_hash && $oscar_admin_pw_hash != '# PBKDF2_PREENCODED:'* ]]; then
     [[ $oscar_admin_pw_hash == PBKDF2WithHmacSHA1:* ]] || fail "--oscar-admin-password-hash must start with PBKDF2WithHmacSHA1: or '# PBKDF2_PREENCODED:'."
@@ -372,6 +969,26 @@ if [[ -n $lanes_file ]]; then
         *.csv|*.json) ;;
         *) fail "--lanes-file must be a .csv lane spreadsheet or .json SensorHub/OSCAR configuration: $lanes_file" ;;
     esac
+fi
+
+if [[ -n $render_one_sheet_pdf_only ]]; then
+    [[ $hostname_val =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$ ]] || fail "Invalid --hostname: $hostname_val"
+    [[ $username_val =~ ^[a-z_][a-z0-9_-]{0,30}$ ]] || fail "Invalid Linux --username: $username_val"
+    declare -a ssh_keys=()
+    for kf in "${ssh_key_files[@]}"; do
+        [[ -f $kf ]] || fail "SSH public key file not found: $kf"
+        while IFS= read -r line; do
+            line=${line%$'\r'}
+            [[ -n $line && $line != \#* ]] && ssh_keys+=("$line")
+        done <"$kf"
+    done
+    preview_sha=""
+    if [[ -n $offline_bundle && -f $offline_bundle ]]; then
+        preview_sha=$(sha256sum --binary "$offline_bundle" | awk '{print $1}')
+    fi
+    emit_one_sheet_pdf_from_state "$render_one_sheet_pdf_only" "${target_device:-${output_image:-Preview / Dry-Run}}" "$preview_sha"
+    unset linux_pw_for_sheet oscar_web_pw_for_sheet luks_passphrase
+    exit 0
 fi
 
 if [[ -n $render_user_data_only ]]; then
@@ -507,6 +1124,9 @@ if $has_zenity && $interactive_wizard; then
     if [[ -n $g_pw1 || -n $g_pw2 ]]; then
         [[ $g_pw1 == "$g_pw2" ]] || { zenity --error --text="Linux admin passwords did not match." || true; exit 1; }
         password_hash=$(hash_linux_password "$g_pw1")
+        if ! $no_one_sheet_pdf; then
+            linux_pw_for_sheet=$g_pw1
+        fi
         unset g_pw1 g_pw2
         if zenity --question --title="Sudo Password Policy" --text="Require password re-entry for sudo on '$hostname_val'? (Recommended)"; then
             require_sudo_password=true
@@ -540,6 +1160,9 @@ if $has_zenity && $interactive_wizard; then
                     ((${#go1} >= 14)) || { zenity --error --text="OSCAR web administrator password must contain at least 14 characters." || true; exit 1; }
                     [[ $go1 == "$go2" ]] || { zenity --error --text="OSCAR web administrator passwords did not match." || true; exit 1; }
                     oscar_admin_pw_hash=$(hash_oscar_pbkdf2_password "$go1")
+                    if ! $no_one_sheet_pdf; then
+                        oscar_web_pw_for_sheet=$go1
+                    fi
                 fi
                 unset go1 go2 oscar_pw_reply
             fi
@@ -662,6 +1285,9 @@ if ! $has_zenity && [[ -z $password_hash ]] && $interactive_wizard && [[ -t 0 &&
             pw2=$(whiptail --title "Confirm Password" --passwordbox "Re-enter password for '$username_val':" 10 74 3>&1 1>&2 2>&3) || exit 1
             [[ $pw1 == "$pw2" ]] || fail "Passwords did not match."
             password_hash=$(hash_linux_password "$pw1")
+            if ! $no_one_sheet_pdf; then
+                linux_pw_for_sheet=$pw1
+            fi
             unset pw1 pw2
             if ! $sudo_explicit && whiptail --title "Sudo Password Policy" --yesno "Require password re-entry for sudo on '$hostname_val'? (Recommended)" 9 72; then
                 require_sudo_password=true
@@ -675,6 +1301,9 @@ if ! $has_zenity && [[ -z $password_hash ]] && $interactive_wizard && [[ -t 0 &&
             IFS= read -rs pw2; printf '\n'
             [[ $pw1 == "$pw2" ]] || fail "Passwords did not match."
             password_hash=$(hash_linux_password "$pw1")
+            if ! $no_one_sheet_pdf; then
+                linux_pw_for_sheet=$pw1
+            fi
             unset pw1 pw2
             if ! $sudo_explicit; then
                 printf 'Require password for sudo? [Y/n]: '
@@ -758,6 +1387,9 @@ if ! $has_zenity && [[ -n $offline_bundle ]] && $interactive_wizard && [[ -t 0 &
                     --passwordbox "Re-enter initial OSCAR web 'admin' password:" 10 74 3>&1 1>&2 2>&3) || exit 1
                 [[ $opw1 == "$opw2" ]] || fail "OSCAR web administrator passwords did not match."
                 oscar_admin_pw_hash=$(hash_oscar_pbkdf2_password "$opw1")
+                if ! $no_one_sheet_pdf; then
+                    oscar_web_pw_for_sheet=$opw1
+                fi
                 unset opw1 opw2
             fi
         else
@@ -769,6 +1401,9 @@ if ! $has_zenity && [[ -n $offline_bundle ]] && $interactive_wizard && [[ -t 0 &
                 IFS= read -rs opw2; printf '\n'
                 [[ $opw1 == "$opw2" ]] || fail "OSCAR web administrator passwords did not match."
                 oscar_admin_pw_hash=$(hash_oscar_pbkdf2_password "$opw1")
+                if ! $no_one_sheet_pdf; then
+                    oscar_web_pw_for_sheet=$opw1
+                fi
                 unset opw1 opw2
             fi
         fi
@@ -934,6 +1569,8 @@ fi
 mount "$p_media" "$media_mnt"
 mkdir -p "$media_mnt/seed"
 
+verified_bundle_sha=''
+declare -a bundled_manuals_copied=()
 if [[ -n $offline_bundle ]]; then
     bundle_base=$(basename -- "$offline_bundle")
     info "Copying $bundle_base to OSCAR_MEDIA and verifying SHA-256 on USB..."
@@ -944,12 +1581,17 @@ if [[ -n $offline_bundle ]]; then
         (cd "$media_mnt" && sha256sum --binary "$bundle_base" > "${bundle_base}.sha256")
     fi
     (cd "$media_mnt" && sha256sum --check --strict "${bundle_base}.sha256")
+    verified_bundle_sha=$(awk '{print $1; exit}' "$media_mnt/${bundle_base}.sha256" | tr -d '\r')
     bundle_dir=$(dirname -- "$offline_bundle")
     for extra_doc in \
         "$bundle_dir"/OSCAR-*-Administrator-Operator-Manual-*.pdf \
         "$bundle_dir"/OSCAR-*-SHA256SUMS.txt \
         "$release_dir/documentation/operator-manual"/OSCAR-*-Administrator-Operator-Manual-*.pdf; do
-        [[ -f $extra_doc ]] && cp -f -- "$extra_doc" "$media_mnt/$(basename -- "$extra_doc")"
+        if [[ -f $extra_doc ]]; then
+            doc_base=$(basename -- "$extra_doc")
+            cp -f -- "$extra_doc" "$media_mnt/$doc_base"
+            bundled_manuals_copied+=("$doc_base")
+        fi
     done
 fi
 
@@ -1020,9 +1662,34 @@ elif [[ -n ${real_dev:-} && -b $real_dev ]]; then
 fi
 sync
 
+saved_one_sheet_pdf=''
+if ! $no_one_sheet_pdf; then
+    saved_one_sheet_pdf=${one_sheet_pdf_path:-$(resolve_default_one_sheet_pdf_path "$hostname_val")}
+    target_sheet_desc="${output_image:-${real_dev:-$write_target}${dev_desc:+ ($dev_desc)}}"
+    info "Generating printable Technician Handover One-Sheet PDF on local workstation (0600, never stored on USB)..."
+    emit_one_sheet_pdf_from_state "$saved_one_sheet_pdf" "$target_sheet_desc" "$verified_bundle_sha" "${bundled_manuals_copied[@]+"${bundled_manuals_copied[@]}"}"
+fi
+unset linux_pw_for_sheet oscar_web_pw_for_sheet luks_passphrase
+
 if $has_zenity; then
-    zenity --info --width=500 --title="OSCAR Autoinstall USB Ready" \
-        --text="OSCAR Bare-Metal Autoinstall USB is ready on ${output_image:-$write_target}!\n\nSafe to eject and boot on the target x86-64 machine." || true
+    if [[ -n $saved_one_sheet_pdf && -f $saved_one_sheet_pdf ]]; then
+        if zenity --question --width=560 --title="OSCAR Autoinstall USB Ready" \
+            --ok-label="Open One-Sheet PDF to Print" --cancel-label="Close" \
+            --text="OSCAR Bare-Metal Autoinstall USB is ready on ${output_image:-$write_target}!\n\nPrintable Technician Handover One-Sheet PDF saved locally (NEVER written to USB):\n$saved_one_sheet_pdf\n\nOpen the PDF now to print for site handover?"; then
+            if [[ -n ${SUDO_USER:-} && ${SUDO_USER} != root ]] && command -v xdg-open >/dev/null 2>&1; then
+                sudo -u "$SUDO_USER" DISPLAY="${DISPLAY:-}" WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" xdg-open "$saved_one_sheet_pdf" >/dev/null 2>&1 &
+            elif command -v xdg-open >/dev/null 2>&1; then
+                xdg-open "$saved_one_sheet_pdf" >/dev/null 2>&1 &
+            fi
+        fi
+    else
+        zenity --info --width=500 --title="OSCAR Autoinstall USB Ready" \
+            --text="OSCAR Bare-Metal Autoinstall USB is ready on ${output_image:-$write_target}!\n\nSafe to eject and boot on the target x86-64 machine." || true
+    fi
 fi
 
 info "SUCCESS: OSCAR Bare-Metal Autoinstall USB ready on ${output_image:-$write_target}."
+if [[ -n $saved_one_sheet_pdf && -f $saved_one_sheet_pdf ]]; then
+    info "TECHNICIAN ONE-SHEET PDF (local only, chmod 0600, NEVER stored on USB): $saved_one_sheet_pdf"
+    info "Print this one-sheet for site handover and securely delete the digital copy afterwards."
+fi

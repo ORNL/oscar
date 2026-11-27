@@ -1709,6 +1709,68 @@ public static class OscarLongPathTestHelper {
             "oscar-sandbox.ps1 is missing required TTL auto-shutdown safeguard: $requiredSandboxToken"
     }
 
+    # Verify Autoinstall USB Creator printable Technician Handover One-Sheet PDF under PS 5.1
+    $pdfTestDir = Join-Path $temporaryRoot 'onesheet-pdf-test'
+    $pdfSeedDir = Join-Path $pdfTestDir 'seed'
+    New-Item -ItemType Directory -Path $pdfSeedDir -Force | Out-Null
+    $pdfLinuxPwFile = Join-Path $pdfTestDir 'linux-pw.txt'
+    $pdfLuksFile = Join-Path $pdfTestDir 'luks.txt'
+    $pdfWebPwFile = Join-Path $pdfTestDir 'web-pw.txt'
+    $pdfSshKeyFile = Join-Path $pdfTestDir 'id_ed25519.pub'
+    $pdfLanesFile = Join-Path $pdfTestDir 'lanes.csv'
+    $pdfIsoFile = Join-Path $pdfTestDir 'ubuntu-24.04.5-live-server-amd64.iso'
+    $pdfBundleFile = Join-Path $pdfTestDir 'oscar-3.12.0-ubuntu-x86_64-offline-full.zip'
+    $pdfOutFile = Join-Path $pdfTestDir 'handover-onesheet.pdf'
+    [IO.File]::WriteAllText($pdfLinuxPwFile, "P@ss(word)\#2026!Lin`n", $Utf8NoBom)
+    [IO.File]::WriteAllText($pdfLuksFile, "Luks(Disk)\Passphrase!2026`n", $Utf8NoBom)
+    [IO.File]::WriteAllText($pdfWebPwFile, "OscarWeb(Admin)\#2026!`n", $Utf8NoBom)
+    [IO.File]::WriteAllText($pdfSshKeyFile, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestWinOneSheet tech@portal`n", $Utf8NoBom)
+    [IO.File]::WriteAllText($pdfLanesFile, "Name,UniqueID,AutoStart`nLane 01,lane-01,true`n", $Utf8NoBom)
+    [IO.File]::WriteAllText((Join-Path $pdfSeedDir 'backup-key.txt'), "BackupVault(Key)\2026!Sec`n", $Utf8NoBom)
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'dist\release\ubuntu\site-network.example.env') -Destination (Join-Path $pdfSeedDir 'site-network.env') -Force
+    [IO.File]::WriteAllText($pdfIsoFile, "mock-iso`n", $Utf8NoBom)
+    [IO.File]::WriteAllText($pdfBundleFile, "mock-bundle`n", $Utf8NoBom)
+    $expectedWinSha = (Get-FileHash -LiteralPath $pdfBundleFile -Algorithm SHA256).Hash.ToLowerInvariant()
+
+    & (Join-Path $PSHOME 'powershell.exe') -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+        -File $autoinstallUsbScript `
+        -IsoPath $pdfIsoFile `
+        -OfflineBundlePath $pdfBundleFile `
+        -Hostname 'portal-gate-01' `
+        -Username 'siteadmin' `
+        -PasswordFile $pdfLinuxPwFile `
+        -LuksPassphraseFile $pdfLuksFile `
+        -RequireSudoPassword `
+        -SshKeyFile $pdfSshKeyFile `
+        -SshKeysOnly `
+        -OscarAdminPasswordFile $pdfWebPwFile `
+        -LanesFile $pdfLanesFile `
+        -AutoInitOscar `
+        -SeedDirectory $pdfSeedDir `
+        -RenderOneSheetPdfOnly $pdfOutFile | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) "create-autoinstall-usb.ps1 -RenderOneSheetPdfOnly failed with exit code $LASTEXITCODE."
+    Assert-True (Test-Path -LiteralPath $pdfOutFile -PathType Leaf) 'Technician Handover One-Sheet PDF was not created.'
+    $pdfBytes = [IO.File]::ReadAllBytes($pdfOutFile)
+    $pdfLatin1 = [Text.Encoding]::GetEncoding(28591).GetString($pdfBytes)
+    Assert-True ($pdfLatin1.StartsWith("%PDF-1.4`n")) 'Generated Windows One-Sheet PDF is missing %PDF-1.4 header.'
+    Assert-True ($pdfLatin1.Contains("xref`n") -and $pdfLatin1.Contains("startxref`n") -and $pdfLatin1.EndsWith("%%EOF`n")) 'Generated Windows One-Sheet PDF is missing xref/EOF structure.'
+    foreach ($expectedPdfToken in @(
+        'TECHNICIAN ONE-SHEET',
+        'portal-gate-01',
+        'siteadmin',
+        'P@ss\(word\)\\#2026!Lin',
+        'Luks\(Disk\)\\Passphrase!2026',
+        'OscarWeb\(Admin\)\\#2026!',
+        'BackupVault\(Key\)\\2026!Sec',
+        '198.51.100.10/24',
+        '203.0.113.10/24',
+        $expectedWinSha,
+        'lanes.csv',
+        'NEVER written to the USB drive',
+        'FIELD DEPLOYMENT SIGN-OFF')) {
+        Assert-True ($pdfLatin1.Contains($expectedPdfToken)) "Generated Windows One-Sheet PDF is missing expected token: $expectedPdfToken"
+    }
+
     Write-Host 'OSCAR Windows PowerShell 5.1 storage safety tests passed.' -ForegroundColor Green
 } finally {
     Remove-Item Env:OSCAR_STORAGE_TEST_MODE -ErrorAction SilentlyContinue
