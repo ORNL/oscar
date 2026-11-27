@@ -1695,6 +1695,20 @@ public static class OscarLongPathTestHelper {
     $verifyKdf.Dispose()
     Assert-True ($pbkdf2Parts[4] -ceq $expectedDk) 'PowerShell 5.1 PBKDF2 derived key did not match expected RFC2898 SHA1 key.'
 
+    # Verify Training Sandbox TTL auto-shutdown hardening in oscar-sandbox.ps1
+    $sandboxSource = [IO.File]::ReadAllText($sandboxScript)
+    foreach ($requiredSandboxToken in @(
+        'function Get-SandboxExpiryEpoch',
+        'function Invoke-EnforceSandboxExpiry',
+        'Invoke-EnforceSandboxExpiry',
+        '-AllowStartIfOnBatteries',
+        '-DontStopIfGoingOnBatteries',
+        '-StartWhenAvailable',
+        '-RunLevel Highest')) {
+        Assert-True ($sandboxSource.Contains($requiredSandboxToken)) `
+            "oscar-sandbox.ps1 is missing required TTL auto-shutdown safeguard: $requiredSandboxToken"
+    }
+
     Write-Host 'OSCAR Windows PowerShell 5.1 storage safety tests passed.' -ForegroundColor Green
 } finally {
     Remove-Item Env:OSCAR_STORAGE_TEST_MODE -ErrorAction SilentlyContinue
