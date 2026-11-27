@@ -206,6 +206,18 @@ try {
     Assert-True (([Text.RegularExpressions.Regex]::Matches($compose, [Text.RegularExpressions.Regex]::Escape($nativeTmpfs))).Count -eq 1) 'The executable native tmpfs must be scoped to OSCAR only.'
     Assert-True ($oscarService.Contains('test -f /tmp/oscar-ready && curl --silent --show-error')) `
         'Compose health does not require application readiness before HTTP availability.'
+    foreach ($g1Flag in @(
+        '-XX:G1PeriodicGCInterval=300000',
+        '-XX:+G1PeriodicGCInvokesConcurrent',
+        '-XX:MinHeapFreeRatio=15',
+        '-XX:MaxHeapFreeRatio=35')) {
+        Assert-True ($oscarService.Contains($g1Flag)) "Compose oscar service is missing G1GC idle-heap uncommit flag: $g1Flag"
+    }
+    $postgresService = [Text.RegularExpressions.Regex]::Match(
+        $compose, '^  postgres:\r?\n.*?(?=^volumes:)',
+        [Text.RegularExpressions.RegexOptions]::Multiline -bor [Text.RegularExpressions.RegexOptions]::Singleline).Value
+    Assert-True ($postgresService.Contains('    shm_size: 256m')) `
+        'Compose postgres service must configure shm_size: 256m so PostgreSQL 16 parallel maintenance cannot exhaust default 64 MiB /dev/shm.'
 
     $dockerfile = [IO.File]::ReadAllText($oscarDockerfile)
     Assert-True ($dockerfile.Contains('/var/lib/oscar /run/oscar-native')) 'The OSCAR image is missing its private native-tmpfs mount point.'

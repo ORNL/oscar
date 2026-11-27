@@ -71,7 +71,7 @@ services:
       OSCAR_WEBAUTHN_RP_ID: "${OSCAR_WEBAUTHN_RP_ID:-}"
       INITIAL_ADMIN_PASSWORD_FILE: /run/secrets/oscar_admin_password
       OSCAR_DB_PASSWORD_FILE: /run/secrets/oscar_db_password
-      JAVA_OPTS: "${OSCAR_JAVA_OPTS:--Xms1g -Xmx6g -Xss256k -XX:ReservedCodeCacheSize=512m -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError}"
+      JAVA_OPTS: "${OSCAR_JAVA_OPTS:--Xms1g -Xmx6g -Xss256k -XX:ReservedCodeCacheSize=512m -XX:+UseG1GC -XX:G1PeriodicGCInterval=300000 -XX:+G1PeriodicGCInvokesConcurrent -XX:MinHeapFreeRatio=15 -XX:MaxHeapFreeRatio=35 -XX:+HeapDumpOnOutOfMemoryError}"
     volumes:
       - oscar_state:/var/lib/oscar
       - type: bind
@@ -111,6 +111,10 @@ services:
     image: "oscar-postgis:${OSCAR_VERSION:-local}"
     restart: unless-stopped
     user: postgres
+    # PostgreSQL 16 parallel VACUUM / REINDEX allocates >64 MiB of dynamic
+    # shared memory when maintenance_work_mem=64MB, exhausting Docker's
+    # default 64 MiB /dev/shm mount.
+    shm_size: 256m
     networks:
       - database
     secrets:
