@@ -465,7 +465,7 @@ function Invoke-Sync([string[]]$Tokens) {
             if ([string]::IsNullOrWhiteSpace($pgCid)) { Fail 'PostgreSQL container must be running to capture an online backup.' }
 
             $pgPassFile = Join-Path $ScriptRoot 'secrets\postgres-bootstrap-password.txt'
-            $metaLine = ([string](& cmd.exe /c "type `"$pgPassFile`" | docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine -i --network `"container:$pgCid`" --read-only --cap-drop ALL --security-opt no-new-privileges --user 999:999 --entrypoint sh $pgImg -eu -c `"PGPASSWORD=`$(cat) psql -h 127.0.0.1 -p 5432 -U oscar_bootstrap -d gis -tA -c 'SELECT pg_current_wal_lsn()::text, gen_random_uuid()::text, pg_database_size('\''gis'\'')::text;'`"")).Trim()
+            $metaLine = ([string](& cmd.exe /c "type `"$pgPassFile`" | docker run --rm --label com.docker.compose.project=oscar-usb-backup --label com.docker.compose.service=usb-backup-engine -i --network `"container:$pgCid`" --read-only --cap-drop ALL --security-opt no-new-privileges --user 999:999 --entrypoint sh $pgImg -eu -c `"PGPASSWORD=`$(cat) psql -h 127.0.0.1 -p 5432 -U oscar_bootstrap -d gis -tA -c 'SELECT pg_current_wal_lsn()::text, gen_random_uuid()::text, pg_database_size(current_database())::text;'`"")).Trim()
             if ($LASTEXITCODE -ne 0 -or -not $metaLine.Contains('|')) { Fail 'Failed querying PostgreSQL LSN.' }
             $parts = $metaLine.Split('|')
             $lsn = $parts[0]; $epochId = $parts[1]

@@ -1472,7 +1472,10 @@ function Get-WindowsHostReadinessReport {
         try {
             $pgCid = ([string](& docker compose --project-name oscar --project-directory $PSScriptRoot --env-file (Join-Path $PSScriptRoot '.env') --file (Join-Path $PSScriptRoot 'compose.yaml') ps --status running --quiet postgres 2>$null)).Trim()
             if (-not [string]::IsNullOrWhiteSpace($pgCid)) {
-                $xidLine = ([string](& docker exec $pgCid sh -c 'PGPASSWORD=$(cat /run/secrets/postgres_bootstrap_password 2>/dev/null || true) psql -U oscar_bootstrap -d gis -tA -c "SELECT age(datfrozenxid)::text || '\''|'\'' || pg_size_pretty(pg_database_size('\''gis'\'')) FROM pg_database WHERE datname = '\''gis'\'';"' 2>$null)).Trim()
+                $xidSqlCmd = @'
+PGPASSWORD=$(cat /run/secrets/postgres_bootstrap_password 2>/dev/null || true) psql -U oscar_bootstrap -d gis -tA -c "SELECT age(datfrozenxid)::text, pg_size_pretty(pg_database_size('gis')) FROM pg_database WHERE datname = 'gis';"
+'@
+                $xidLine = ([string](& docker exec $pgCid sh -c $xidSqlCmd 2>$null)).Trim()
                 if ($xidLine -match '^([0-9]+)\|(.+)$') {
                     $xidAge = [long]$Matches[1]
                     $dbSizePretty = $Matches[2].Trim()
