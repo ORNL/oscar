@@ -179,4 +179,5 @@ jobs:
             --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.nonAlarmKeysetAndUnadjudicatedAlarmPartialIndexesSupportGenericPreparedPlans \
             --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.parquetPrimaryFullOperationalStreamsUseLatestCacheSummaryCountersAndScopedOverlays \
             --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.unrelatedStreamTombstonesAndLegacyBackfillKeepLatestPushdownScoped \
-            --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.latestPushdownHandlesHotAndColdTombstonesAndOverlaysExact
+            --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.latestPushdownHandlesHotAndColdTombstonesAndOverlaysExact \
+            --tests org.sensorhub.impl.datastore.postgis.TestDisposableTieredPostgresIntegration.migrateAppliesTightenedAutovacuumReloptionsAndReindexMaintainsSchemaAndOverlay
