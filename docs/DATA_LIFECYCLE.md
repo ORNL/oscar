@@ -1,4 +1,4 @@
-# OSCAR 3.12.0 data lifecycle and retention policy
+# OSCAR 3.12.1 data lifecycle and retention policy
 
 This document defines when OSCAR data changes form, when it may be removed, and which safety gates
 apply. It complements the [storage architecture](STORAGE_ARCHITECTURE.md) and the operational
@@ -190,7 +190,7 @@ its rows in ID order, loads the exact hot IDs in bounded batches, and compares c
 digests. The receipt records expected/actual rows and success or failure. A failed receipt leaves
 all hot data in place.
 
-The shipped 3.12.0 profile sets `deleteHotAfterArchive=true`. In `PARQUET_PRIMARY`, this means
+The shipped 3.12.1 profile sets `deleteHotAfterArchive=true`. In `PARQUET_PRIMARY`, this means
 relation-level retirement rather than row-wise deletion or a rollback-grace overlap. Before a child
 can retire, every row must have an `ACTIVE` or `SEALED` exact owner with a successful
 `HOT_COLD_PARITY` receipt, and the worker re-hashes each authoritative Parquet object. Under the

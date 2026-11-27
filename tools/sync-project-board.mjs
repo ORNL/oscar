@@ -62,6 +62,15 @@ const BOARD_ITEMS = [
     { repo: 'ORNL/osh-oakridge-modules', kind: 'issue', number: 41, targetColumn: 'Done' },
     { repo: 'ORNL/oscar-viewer', kind: 'issue', number: 44, targetColumn: 'Done' },
     { repo: 'ORNL/oscar', kind: 'issue', number: 87, targetColumn: 'Done' },
+
+    // Incorporated (v3.12.1 — Staging CI Workflow, Sandbox TTL Auto-Shutdown & Printable Technician Handover One-Sheet PDF)
+    { repo: 'ORNL/oscar', kind: 'pr', number: 89, targetColumn: 'Done' },
+    { repo: 'ORNL/oscar', kind: 'pr', number: 90, targetColumn: 'Done' },
+    { repo: 'ORNL/oscar', kind: 'pr', number: 91, targetColumn: 'Done' },
+    { repo: 'ORNL/oscar', kind: 'pr', number: 92, targetColumn: 'Done' },
+    { repo: 'ORNL/oscar-viewer', kind: 'pr', number: 55, targetColumn: 'Done' },
+    { repo: 'ORNL/osh-oakridge-modules', kind: 'pr', number: 65, targetColumn: 'Done' },
+    { repo: 'ORNL/oscar-regression', kind: 'pr', number: 35, targetColumn: 'Done' },
 ];
 
 function ghGraphql(query, variables = {}) {

@@ -1,6 +1,6 @@
-# OSCAR 3.12.0 Continual & Occasional USB NVMe Incremental Backup Guide
+# OSCAR 3.12.1 Continual & Occasional USB NVMe Incremental Backup Guide
 
-OSCAR 3.12.0 provides a zero-downtime, incremental **USB NVMe Backup & Field Offload** workflow (`usb-backup` / `continual-backup`) designed specifically for **multi-year (`1–10` year, `40–900+ GiB`) deployments**, external **USB 3.2 Gen 2 NVMe SSDs**, **seamless mode switching** between continual and occasional schedules, **laptop-based field data offloads**, and **fast bare-metal server migration** across Ubuntu Server 24.04 LTS and Windows 11.
+OSCAR 3.12.1 provides a zero-downtime, incremental **USB NVMe Backup & Field Offload** workflow (`usb-backup` / `continual-backup`) designed specifically for **multi-year (`1–10` year, `40–900+ GiB`) deployments**, external **USB 3.2 Gen 2 NVMe SSDs**, **seamless mode switching** between continual and occasional schedules, **laptop-based field data offloads**, and **fast bare-metal server migration** across Ubuntu Server 24.04 LTS and Windows 11.
 
 For the single-snapshot quiesced recovery workflow (`OSCAR_BACKUP_MODE=single` via `oscar backup`), see [Backup, Restore, and Recovery](BACKUP_RESTORE.md) and [Administrator Guide](../dist/release/DEPLOYMENT.md).
 
@@ -200,7 +200,7 @@ Plug the OSCAR USB NVMe SSD AND your second archive SSD into your field laptop:
 
 Whether a server fails after 5 years or you are upgrading hardware, you can restore either **directly from the site USB NVMe SSD** or **from the copy you made onto your second SSD**—even onto a **brand-new, uninitialized replacement machine** (Ubuntu ↔ Windows cross-OS migration is also supported because all packs use a platform-neutral POSIX `.tar` + `pg_basebackup` format):
 
-1. **Prepare the replacement host** (extract the matching OSCAR `3.12.0` release or air-gapped offline bundle and run `prepare-host` — **do not** run `oscar init`, because `usb-backup restore` restores the original deployment ID, users, Passkeys, TLS certificates, and secrets automatically!).
+1. **Prepare the replacement host** (extract the matching OSCAR `3.12.1` release or air-gapped offline bundle and run `prepare-host` — **do not** run `oscar init`, because `usb-backup restore` restores the original deployment ID, users, Passkeys, TLS certificates, and secrets automatically!).
 2. **Plug in the USB SSD** and provide the separately escrowed `backup-key.txt`:
 
 **Ubuntu Server 24.04 Replacement Machine:**

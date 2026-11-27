@@ -1,4 +1,4 @@
-# OSCAR 3.12.0 storage operations
+# OSCAR 3.12.1 storage operations
 
 This is the administrator runbook for OSCAR's PostgreSQL hot store, primary Parquet cold tier,
 direct daily journal, retained media, and optional single coordinated snapshot. Commands assume the extracted 3.12.0
@@ -883,7 +883,7 @@ Track at least:
 | Retained-media lane parent cannot be resolved | No new manifest; source and retry state remain | Verify the RPM/camera systems are members of the intended OSH lane and that the deployed PostgreSQL datastore supports `getParent`; do not relabel an existing manifest by hand |
 | Media publication fails | Partial set stays invisible; source preserved; retry ledger records failure | Check FFmpeg, source integrity, filesystem/rename/space; allow idempotent retry |
 | Pressure cleanup cannot reach target | Protected data stays; error is logged | Add capacity or perform approved cold/media retention; never remove journal/adjudication files ad hoc |
-| PostgreSQL reports archiver activity or an external WAL mount | Deployment drifted from the 3.12.0 profile | Stop rollout, preserve legacy data, restore `archive_mode=off`/no-WAL-bind configuration through the supported release, and requalify backup/restore |
+| PostgreSQL reports archiver activity or an external WAL mount | Deployment drifted from the 3.12.1 profile | Stop rollout, preserve legacy data, restore `archive_mode=off`/no-WAL-bind configuration through the supported release, and requalify backup/restore |
 | Backup fails | `.partial` or finalized-but-unverified directory remains; services are resumed where possible | Check `status`, preserve diagnostics, correct the cause, then re-verify or run a new backup |
 | Restore fails | Deployment may remain stopped/partial | Keep producers disconnected; preserve `pre-restore-*`; repair cause and repeat from the same verified backup or escalate |
 | PostgreSQL shutdown errors appear during OSCAR stop/restart | Qualification fails; OSCAR may not complete its database-backed module drain | Use the release `oscar` launcher, which stops gateway, OSCAR, and PostgreSQL sequentially; confirm the media-retention cancellation log completes, preserve logs, and do not substitute an unscoped multi-service Compose stop/restart |

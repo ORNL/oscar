@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 env:
-  RELEASE_VERSION: '3.12.0'
+  RELEASE_VERSION: '3.12.1'
   JAVA_VERSION: '21'
   NODE_VERSION: '22'
   OSCAR_DIR: 'web/oscar-viewer'
