@@ -181,7 +181,11 @@ autoinstall:
         mkdir -p /mnt/oscar-media /target/srv/oscar
         mount -o ro "$DEV" /mnt/oscar-media
         for f in /mnt/oscar-media/oscar-*-ubuntu-x86_64-offline-full.zip /mnt/oscar-media/*.sha256 /mnt/oscar-media/*SHA256SUMS* /mnt/oscar-media/*.pdf /mnt/oscar-media/README*.txt; do
-          [ -f "$f" ] && cp -f "$f" /target/srv/oscar/ || true
+          [ -f "$f" ] || continue
+          case "$(basename "$f")" in
+            *OneSheet*|*one-sheet*|*onesheet*) continue ;;
+          esac
+          cp -f "$f" /target/srv/oscar/ || true
         done
         if [ -d /mnt/oscar-media/seed ]; then
           mkdir -p /target/srv/oscar/seed

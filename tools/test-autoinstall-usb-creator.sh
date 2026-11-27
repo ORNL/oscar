@@ -92,4 +92,62 @@ PY
 # Verify stage_spreadsheet_csv returns bare bucket object key (never 'spreadsheets/' prefix)
 grep -Fq 'printf '\''%s'\'' "$norm_csv"' "$pkg_root/oscar-firstboot-wizard.sh"
 
+# Verify printable 1-page Technician Handover One-Sheet PDF generation (pure Python stdlib, 0600, special-char escaping)
+mkdir -p "$work_dir/pdf-seed"
+printf 'P@ss(word)\\#2026!Lin\n' > "$work_dir/pdf-linux-pw.txt"
+printf 'Luks(Disk)\\Passphrase!2026\n' > "$work_dir/pdf-luks.txt"
+printf 'OscarWeb(Admin)\\#2026!\n' > "$work_dir/pdf-web-pw.txt"
+printf 'Name,UniqueID,AutoStart\nLane 01,lane-01,true\n' > "$work_dir/pdf-lanes.csv"
+cp "$pkg_root/site-network.example.env" "$work_dir/pdf-seed/site-network.env"
+printf 'BackupVault(Key)\\2026!Sec\n' > "$work_dir/pdf-seed/backup-key.txt"
+printf 'mock-iso\n' > "$work_dir/ubuntu-24.04.5-live-server-amd64.iso"
+printf 'mock-bundle\n' > "$work_dir/oscar-${version}-ubuntu-x86_64-offline-full.zip"
+expected_bundle_sha=$(sha256sum --binary "$work_dir/oscar-${version}-ubuntu-x86_64-offline-full.zip" | awk '{print $1}')
+
+bash "$pkg_root/create-autoinstall-usb.sh" \
+    --iso "$work_dir/ubuntu-24.04.5-live-server-amd64.iso" \
+    --offline-bundle "$work_dir/oscar-${version}-ubuntu-x86_64-offline-full.zip" \
+    --hostname portal-gate-01 \
+    --username siteadmin \
+    --password-file "$work_dir/pdf-linux-pw.txt" \
+    --luks-passphrase-file "$work_dir/pdf-luks.txt" \
+    --require-sudo-password \
+    --ssh-key-file "$work_dir/id_ed25519.pub" \
+    --ssh-keys-only \
+    --oscar-admin-password-file "$work_dir/pdf-web-pw.txt" \
+    --lanes-file "$work_dir/pdf-lanes.csv" \
+    --auto-init-oscar \
+    --seed-dir "$work_dir/pdf-seed" \
+    --render-one-sheet-pdf-only "$work_dir/handover.pdf"
+
+[[ -s "$work_dir/handover.pdf" ]] || { printf 'FAIL: Missing generated Technician One-Sheet PDF.\n' >&2; exit 1; }
+pdf_mode=$(stat -c '%a' "$work_dir/handover.pdf")
+[[ $pdf_mode == "600" ]] || { printf 'FAIL: Technician One-Sheet PDF permissions must be 600 (got %s).\n' "$pdf_mode" >&2; exit 1; }
+
+python3 - "$work_dir/handover.pdf" "$expected_bundle_sha" <<'PY'
+import pathlib, sys
+
+raw = pathlib.Path(sys.argv[1]).read_bytes()
+expected_sha = sys.argv[2]
+assert raw.startswith(b"%PDF-1.4\n"), "Missing %PDF-1.4 header"
+assert b"xref\n" in raw and b"startxref\n" in raw and raw.endswith(b"%%EOF\n"), "Invalid PDF xref/EOF structure"
+text = raw.decode("latin-1")
+for needle in [
+    "TECHNICIAN ONE-SHEET",
+    "portal-gate-01",
+    "siteadmin",
+    r"P@ss\(word\)\\#2026!Lin",
+    r"Luks\(Disk\)\\Passphrase!2026",
+    r"OscarWeb\(Admin\)\\#2026!",
+    r"BackupVault\(Key\)\\2026!Sec",
+    "198.51.100.10/24",
+    "203.0.113.10/24",
+    expected_sha,
+    "pdf-lanes.csv",
+    "NEVER written to the USB drive",
+    "FIELD DEPLOYMENT SIGN-OFF",
+]:
+    assert needle in text, f"Missing expected One-Sheet PDF token: {needle}"
+PY
+
 printf 'PASS: Standalone oscar-%s-autoinstall-usb-creator.zip validated (%d bytes).\n' "$version" "$zip_bytes"

@@ -22,8 +22,11 @@ param(
     [switch]$AutoInitOscar,
     [string]$SeedDirectory = '',
     [string[]]$SeedFile = @(),
+    [string]$OneSheetPdfPath = '',
+    [switch]$NoOneSheetPdf,
     [string]$ConfirmToken = '',
     [string]$RenderUserDataOnly = '',
+    [string]$RenderOneSheetPdfOnly = '',
     [string]$TestOscarPbkdf2Only = ''
 )
 
@@ -177,6 +180,566 @@ public static class OscarSha512Crypt {
 '@
 }
 
+if (-not ('OscarOneSheetPdfWriter' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Text;
+using System.Text.RegularExpressions;
+
+public sealed class OscarOneSheetSpec {
+    public string Hostname;
+    public string Username;
+    public string LinuxPasswordPlain;
+    public bool LinuxPasswordHashedOnly;
+    public bool RequireSudoPassword;
+    public string LuksPassphrase;
+    public bool SshKeysOnly;
+    public string[] SshKeys;
+    public string OscarWebPasswordPlain;
+    public bool OscarWebPasswordHashedOnly;
+    public bool AutoInitOscar;
+    public string IsoPath;
+    public string BundlePath;
+    public string BundleSha256;
+    public string LanesFile;
+    public string SeedDir;
+    public string[] SeedFiles;
+    public string TargetDesc;
+    public string GeneratedUtc;
+    public string GeneratedLocal;
+    public string[] BundledManuals;
+
+    public OscarOneSheetSpec() {
+        Hostname = "oscar-host";
+        Username = "oscaradmin";
+        LinuxPasswordPlain = "";
+        LuksPassphrase = "";
+        SshKeys = new string[0];
+        OscarWebPasswordPlain = "";
+        IsoPath = "";
+        BundlePath = "";
+        BundleSha256 = "";
+        LanesFile = "";
+        SeedDir = "";
+        SeedFiles = new string[0];
+        TargetDesc = "Removable USB Drive";
+        GeneratedUtc = "";
+        GeneratedLocal = "";
+        BundledManuals = new string[0];
+    }
+}
+
+public static class OscarOneSheetPdfWriter {
+    private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
+
+    private static string ToAscii(string val) {
+        if (string.IsNullOrEmpty(val)) return "";
+        StringBuilder sb = new StringBuilder(val.Length);
+        for (int i = 0; i < val.Length; i++) {
+            char c = val[i];
+            if (c == '\u2014') { sb.Append("--"); continue; }
+            if (c == '\u2013') { sb.Append('-'); continue; }
+            if (c == '\u2018' || c == '\u2019') { sb.Append('\''); continue; }
+            if (c == '\u201c' || c == '\u201d') { sb.Append('"'); continue; }
+            if (c == '\u2022') { sb.Append('*'); continue; }
+            if (c == '\u00a0') { sb.Append(' '); continue; }
+            sb.Append((c >= 32 && c <= 126) ? c : '?');
+        }
+        return sb.ToString();
+    }
+
+    private static string PdfEscape(string s) {
+        string a = ToAscii(s);
+        return a.Replace("\\", "\\\\").Replace("(", "\\(").Replace(")", "\\)");
+    }
+
+    private static List<string> WrapLine(string text, int maxChars, int maxLines) {
+        List<string> lines = new List<string>();
+        string clean = ToAscii(text).Trim();
+        if (clean.Length == 0) {
+            lines.Add("-");
+            return lines;
+        }
+        if (clean.Length <= maxChars) {
+            lines.Add(clean);
+            return lines;
+        }
+        string remaining = clean;
+        while (remaining.Length > 0 && lines.Count < maxLines) {
+            if (remaining.Length <= maxChars) {
+                lines.Add(remaining);
+                remaining = "";
+                break;
+            }
+            int splitAt = remaining.LastIndexOf(' ', maxChars);
+            if (splitAt < maxChars / 3) splitAt = maxChars;
+            lines.Add(remaining.Substring(0, splitAt).TrimEnd());
+            remaining = remaining.Substring(splitAt).TrimStart();
+        }
+        if (remaining.Length > 0 && lines.Count > 0) {
+            string last = lines[lines.Count - 1];
+            int keep = Math.Max(1, maxChars - 3);
+            if (last.Length > keep) last = last.Substring(0, keep).TrimEnd();
+            lines[lines.Count - 1] = last + "...";
+        }
+        return lines;
+    }
+
+    private static string FormatSize(string path) {
+        if (string.IsNullOrEmpty(path) || !File.Exists(path)) return "";
+        long sz = new FileInfo(path).Length;
+        if (sz >= 1073741824L) return string.Format(Inv, "{0:0.00} GiB", sz / 1073741824.0);
+        if (sz >= 1048576L) return string.Format(Inv, "{0:0.0} MiB", sz / 1048576.0);
+        if (sz >= 1024L) return string.Format(Inv, "{0:0.0} KiB", sz / 1024.0);
+        return string.Format(Inv, "{0} B", sz);
+    }
+
+    private static string ParseSiteNetworkSummary(string path) {
+        if (string.IsNullOrEmpty(path) || !File.Exists(path)) return "";
+        Dictionary<string, string> kv = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        try {
+            foreach (string raw in File.ReadAllLines(path)) {
+                string line = raw.Trim();
+                if (line.Length == 0 || line.StartsWith("#")) continue;
+                int eq = line.IndexOf('=');
+                if (eq <= 0) continue;
+                string k = line.Substring(0, eq).Trim();
+                string v = line.Substring(eq + 1).Trim().Trim('"', '\'');
+                kv[k] = v;
+            }
+        } catch {
+            return "";
+        }
+        List<string> parts = new List<string>();
+        string pCidr;
+        if (kv.TryGetValue("PRIMARY_IP_CIDR", out pCidr) && pCidr.Length > 0) {
+            string pNic;
+            if (!kv.TryGetValue("PRIMARY_NIC", out pNic) || pNic.Length == 0) pNic = "NIC1";
+            string s = "Primary " + pNic + ": " + pCidr;
+            string gw;
+            if (kv.TryGetValue("PRIMARY_GATEWAY", out gw) && gw.Length > 0) s += " (GW " + gw + ")";
+            string dns;
+            if (kv.TryGetValue("PRIMARY_DNS", out dns) && dns.Length > 0) s += " DNS " + dns;
+            parts.Add(s);
+        }
+        string sCidr;
+        if (kv.TryGetValue("SENSOR_IP_CIDR", out sCidr) && sCidr.Length > 0) {
+            string sNic;
+            if (!kv.TryGetValue("SENSOR_NIC", out sNic) || sNic.Length == 0) sNic = "NIC2";
+            parts.Add("Sensor " + sNic + ": " + sCidr);
+        }
+        string siteHost;
+        if (kv.TryGetValue("OSCAR_SITE_HOSTNAME", out siteHost) && siteHost.Length > 0) {
+            parts.Add("Site Host: " + siteHost);
+        }
+        return string.Join(" | ", parts.ToArray());
+    }
+
+    private static string ReadBackupKeySummary(string path) {
+        if (string.IsNullOrEmpty(path) || !File.Exists(path)) return "";
+        string name = Path.GetFileName(path);
+        List<string> nonEmpty = new List<string>();
+        try {
+            foreach (string raw in File.ReadAllLines(path)) {
+                string t = raw.Trim();
+                if (t.Length > 0 && !t.StartsWith("#")) nonEmpty.Add(t);
+            }
+        } catch {
+            return "Staged at /srv/oscar/seed/" + name;
+        }
+        if (nonEmpty.Count == 1 && nonEmpty[0].Length <= 128) {
+            bool printable = true;
+            for (int i = 0; i < nonEmpty[0].Length; i++) {
+                char c = nonEmpty[0][i];
+                if (c < 32 || c > 126) { printable = false; break; }
+            }
+            if (printable) return nonEmpty[0] + "  (file: /srv/oscar/seed/" + name + ")";
+        }
+        return string.Format(Inv, "Key file staged at /srv/oscar/seed/{0} ({1} line(s))", name, nonEmpty.Count);
+    }
+
+    private sealed class RowDef {
+        public string Label;
+        public string Value;
+        public bool IsMono;
+        public int MaxLines;
+        public RowDef(string label, string value, bool isMono, int maxLines) {
+            Label = label; Value = value; IsMono = isMono; MaxLines = maxLines;
+        }
+    }
+
+    private sealed class PdfCanvas {
+        public List<string> Cmds = new List<string>();
+        public double CurY = 758.0;
+        public const double MarginL = 36.0;
+        public const double ContentW = 540.0;
+
+        public void Rect(double x, double y, double w, double h, double[] fill, double[] stroke, double lw) {
+            Cmds.Add("q");
+            if (stroke != null) {
+                Cmds.Add(string.Format(Inv, "{0:0.00} w", lw));
+                Cmds.Add(string.Format(Inv, "{0:0.000} {1:0.000} {2:0.000} RG", stroke[0], stroke[1], stroke[2]));
+            }
+            if (fill != null) {
+                Cmds.Add(string.Format(Inv, "{0:0.000} {1:0.000} {2:0.000} rg", fill[0], fill[1], fill[2]));
+            }
+            string op = (fill != null && stroke != null) ? "B" : (fill != null ? "f" : "S");
+            Cmds.Add(string.Format(Inv, "{0:0.00} {1:0.00} {2:0.00} {3:0.00} re {4}", x, y, w, h, op));
+            Cmds.Add("Q");
+        }
+
+        public void Line(double x1, double y1, double x2, double y2, double[] stroke, double lw) {
+            Cmds.Add("q");
+            Cmds.Add(string.Format(Inv, "{0:0.00} w", lw));
+            Cmds.Add(string.Format(Inv, "{0:0.000} {1:0.000} {2:0.000} RG", stroke[0], stroke[1], stroke[2]));
+            Cmds.Add(string.Format(Inv, "{0:0.00} {1:0.00} m {2:0.00} {3:0.00} l S", x1, y1, x2, y2));
+            Cmds.Add("Q");
+        }
+
+        public void Text(double x, double y, string text, string font, double size, double[] color) {
+            Cmds.Add("q");
+            Cmds.Add(string.Format(Inv, "{0:0.000} {1:0.000} {2:0.000} rg", color[0], color[1], color[2]));
+            Cmds.Add(string.Format(Inv, "BT /{0} {1:0.0} Tf 1 0 0 1 {2:0.00} {3:0.00} Tm ({4}) Tj ET", font, size, x, y, PdfEscape(text)));
+            Cmds.Add("Q");
+        }
+    }
+
+    public static void WritePdf(string outputPath, OscarOneSheetSpec spec) {
+        string hostname = string.IsNullOrEmpty(spec.Hostname) ? "oscar-host" : spec.Hostname;
+        string username = string.IsNullOrEmpty(spec.Username) ? "oscaradmin" : spec.Username;
+
+        List<string> stagedSeedNames = new List<string>();
+        string siteNetPath = "";
+        string backupKeyPath = "";
+
+        Action<string, string> considerSeed = delegate(string fullPath, string relName) {
+            if (!stagedSeedNames.Contains(relName)) stagedSeedNames.Add(relName);
+            string lower = Path.GetFileName(relName).ToLowerInvariant();
+            if (lower == "site-network.env" && siteNetPath.Length == 0) siteNetPath = fullPath;
+            if (lower.Contains("backup") && lower.Contains("key") && lower.EndsWith(".txt") && backupKeyPath.Length == 0) backupKeyPath = fullPath;
+        };
+
+        if (!string.IsNullOrEmpty(spec.SeedDir) && Directory.Exists(spec.SeedDir)) {
+            string[] allFiles = Directory.GetFiles(spec.SeedDir, "*", SearchOption.AllDirectories);
+            Array.Sort(allFiles, StringComparer.OrdinalIgnoreCase);
+            string rootNorm = Path.GetFullPath(spec.SeedDir).TrimEnd('\\', '/') + Path.DirectorySeparatorChar;
+            foreach (string fp in allFiles) {
+                string fullNorm = Path.GetFullPath(fp);
+                string rel = fullNorm.StartsWith(rootNorm, StringComparison.OrdinalIgnoreCase)
+                    ? fullNorm.Substring(rootNorm.Length).Replace('\\', '/')
+                    : Path.GetFileName(fp);
+                considerSeed(fp, rel);
+            }
+        }
+        if (spec.SeedFiles != null) {
+            foreach (string sf in spec.SeedFiles) {
+                if (!string.IsNullOrEmpty(sf) && File.Exists(sf)) considerSeed(sf, Path.GetFileName(sf));
+            }
+        }
+        if (!string.IsNullOrEmpty(spec.LanesFile) && File.Exists(spec.LanesFile)) {
+            considerSeed(spec.LanesFile, Path.GetFileName(spec.LanesFile));
+        }
+        if (!string.IsNullOrEmpty(spec.OscarWebPasswordPlain) || spec.OscarWebPasswordHashedOnly) {
+            if (!stagedSeedNames.Contains("oscar-admin-password.txt (PBKDF2 hash)")) stagedSeedNames.Add("oscar-admin-password.txt (PBKDF2 hash)");
+        }
+        if (spec.AutoInitOscar) {
+            if (!stagedSeedNames.Contains("auto-provision.env")) stagedSeedNames.Add("auto-provision.env");
+        }
+
+        string siteNetSummary = ParseSiteNetworkSummary(siteNetPath);
+        string backupKeySummary = ReadBackupKeySummary(backupKeyPath);
+
+        string oscarVersion = "OS-Only USB";
+        if (!string.IsNullOrEmpty(spec.BundlePath)) {
+            string bName = Path.GetFileName(spec.BundlePath);
+            Match m = Regex.Match(bName, @"oscar-([0-9]+\.[0-9]+\.[0-9]+[^\s/\\]*?)-ubuntu", RegexOptions.IgnoreCase);
+            oscarVersion = m.Success ? ("v" + m.Groups[1].Value) : bName;
+        }
+
+        string linuxPwDisplay;
+        bool linuxPwMono;
+        if (!string.IsNullOrEmpty(spec.LinuxPasswordPlain)) {
+            linuxPwDisplay = spec.LinuxPasswordPlain;
+            linuxPwMono = true;
+        } else if (spec.LinuxPasswordHashedOnly) {
+            linuxPwDisplay = "[Pre-hashed SHA-512 supplied; plaintext unavailable]";
+            linuxPwMono = false;
+        } else {
+            linuxPwDisplay = "OscarChangeMe!24  (TEMPLATE DEFAULT -- run: passwd " + username + ")";
+            linuxPwMono = true;
+        }
+
+        string oscarWebDisplay;
+        bool oscarWebMono;
+        if (!string.IsNullOrEmpty(spec.OscarWebPasswordPlain)) {
+            oscarWebDisplay = "User: admin   |   Pass: " + spec.OscarWebPasswordPlain;
+            oscarWebMono = true;
+        } else if (spec.OscarWebPasswordHashedOnly) {
+            oscarWebDisplay = "User: admin   |   Pass: [Pre-encoded PBKDF2 hash supplied]";
+            oscarWebMono = false;
+        } else {
+            oscarWebDisplay = "User: admin   |   Pass: [Set 14+ char password during first-boot wizard]";
+            oscarWebMono = false;
+        }
+
+        string luksDisplay = !string.IsNullOrEmpty(spec.LuksPassphrase)
+            ? ("ENABLED -- Passphrase: " + spec.LuksPassphrase)
+            : "Disabled (unencrypted 100% internal NVMe/SSD LVM)";
+        bool luksMono = !string.IsNullOrEmpty(spec.LuksPassphrase);
+
+        string[] keysArr = spec.SshKeys ?? new string[0];
+        List<string> sshLabels = new List<string>();
+        int shownKeys = Math.Min(4, keysArr.Length);
+        for (int i = 0; i < shownKeys; i++) {
+            string[] parts = keysArr[i].Trim().Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length >= 3) sshLabels.Add(parts[0] + " (" + parts[2] + ")");
+            else if (parts.Length >= 1) {
+                string tail = parts[parts.Length - 1];
+                if (tail.Length > 12) tail = tail.Substring(tail.Length - 12);
+                sshLabels.Add(parts[0] + " (..." + tail + ")");
+            }
+        }
+        if (keysArr.Length > 4) sshLabels.Add("+" + (keysArr.Length - 4).ToString(Inv) + " more");
+        string sshPolicy = spec.SshKeysOnly ? "SSH keys ONLY (password login disabled)" : "Password + SSH key login allowed";
+        string sshDisplay = keysArr.Length > 0
+            ? (sshPolicy + " | " + keysArr.Length.ToString(Inv) + " key(s): " + string.Join(", ", sshLabels.ToArray()))
+            : (sshPolicy + " | No SSH public keys staged");
+
+        string isoDisplay = !string.IsNullOrEmpty(spec.IsoPath)
+            ? (Path.GetFileName(spec.IsoPath) + " (" + FormatSize(spec.IsoPath) + ")")
+            : "Not specified";
+        string bundleDisplay = !string.IsNullOrEmpty(spec.BundlePath)
+            ? (Path.GetFileName(spec.BundlePath) + " (" + FormatSize(spec.BundlePath) + ") -> /srv/oscar/")
+            : "None (OS-only Ubuntu 24.04 autoinstall USB)";
+        string shaDisplay = !string.IsNullOrEmpty(spec.BundleSha256)
+            ? spec.BundleSha256
+            : (!string.IsNullOrEmpty(spec.BundlePath) ? "Verified during USB write" : "N/A (no offline bundle)");
+        string lanesDisplay = !string.IsNullOrEmpty(spec.LanesFile)
+            ? (Path.GetFileName(spec.LanesFile) + " -> /srv/oscar/seed/" + Path.GetFileName(spec.LanesFile))
+            : "None pre-staged (configure in OSCAR UI or wizard)";
+        string seedsDisplay = stagedSeedNames.Count > 0 ? string.Join(", ", stagedSeedNames.ToArray()) : "None";
+        string manualsDisplay = (spec.BundledManuals != null && spec.BundledManuals.Length > 0)
+            ? string.Join(", ", spec.BundledManuals)
+            : "Included inside offline bundle (/srv/oscar/)";
+        string modeDisplay = spec.AutoInitOscar
+            ? "Turnkey Unattended Auto-Init (oscar-autoprovision.service)"
+            : "Interactive First-Boot Wizard (auto-opens on login, or: sudo oscar-wizard)";
+
+        double[] NAVY = new double[] { 0.059, 0.153, 0.267 };
+        double[] SLATE = new double[] { 0.118, 0.227, 0.373 };
+        double[] TEAL = new double[] { 0.051, 0.580, 0.533 };
+        double[] BADGE_DARK = new double[] { 0.200, 0.255, 0.333 };
+        double[] AMBER_BG = new double[] { 0.996, 0.953, 0.780 };
+        double[] AMBER_BORDER = new double[] { 0.851, 0.467, 0.024 };
+        double[] AMBER_TEXT = new double[] { 0.573, 0.251, 0.055 };
+        double[] ROW_ALT = new double[] { 0.969, 0.980, 0.988 };
+        double[] WHITE = new double[] { 1.0, 1.0, 1.0 };
+        double[] BORDER = new double[] { 0.796, 0.835, 0.882 };
+        double[] TEXT_DARK = new double[] { 0.086, 0.125, 0.184 };
+        double[] TEXT_MUTED = new double[] { 0.278, 0.333, 0.412 };
+        double[] SUB_COLOR = new double[] { 0.820, 0.870, 0.930 };
+        double[] CODE_BG = new double[] { 0.945, 0.961, 0.976 };
+
+        PdfCanvas c = new PdfCanvas();
+
+        // Header Banner
+        double headerH = 48.0;
+        c.Rect(PdfCanvas.MarginL, c.CurY - headerH, PdfCanvas.ContentW, headerH, NAVY, null, 0.0);
+        c.Text(PdfCanvas.MarginL + 12, c.CurY - 19, "OSCAR BARE-METAL DEPLOYMENT -- TECHNICIAN ONE-SHEET", "F2", 12.5, WHITE);
+        string tsShown = !string.IsNullOrEmpty(spec.GeneratedUtc) ? spec.GeneratedUtc : spec.GeneratedLocal;
+        string subLine = "Target Host: " + hostname + "   |   OSCAR: " + oscarVersion + "   |   Generated: " + tsShown;
+        if (subLine.Length > 95) subLine = subLine.Substring(0, 95);
+        c.Text(PdfCanvas.MarginL + 12, c.CurY - 36, subLine, "F1", 8.5, SUB_COLOR);
+
+        string badgeTxt = spec.AutoInitOscar ? "TURNKEY AUTO-INIT" : "INTERACTIVE WIZARD";
+        double badgeW = spec.AutoInitOscar ? 100.0 : 106.0;
+        double badgeX = PdfCanvas.MarginL + PdfCanvas.ContentW - badgeW - 10.0;
+        c.Rect(badgeX, c.CurY - 33.0, badgeW, 19.0, spec.AutoInitOscar ? TEAL : BADGE_DARK, null, 0.0);
+        c.Text(badgeX + (spec.AutoInitOscar ? 11.0 : 9.0), c.CurY - 26.5, badgeTxt, "F2", 7.8, WHITE);
+        c.CurY -= (headerH + 6.0);
+
+        // Security Notice Callout Strip
+        double warnH = 24.0;
+        c.Rect(PdfCanvas.MarginL, c.CurY - warnH, PdfCanvas.ContentW, warnH, AMBER_BG, AMBER_BORDER, 0.9);
+        c.Text(PdfCanvas.MarginL + 8, c.CurY - 10.5, "SENSITIVE CREDENTIALS -- PRINT FOR SITE SECURITY BINDER & HANDOVER (LOCAL WORKSTATION COPY ONLY)", "F2", 7.6, AMBER_TEXT);
+        c.Text(PdfCanvas.MarginL + 8, c.CurY - 20.0, "This one-sheet is NEVER written to the USB drive. Print now for field setup, then securely delete this PDF after site handover.", "F1", 7.4, AMBER_TEXT);
+        c.CurY -= (warnH + 7.0);
+
+        Action<string> drawSectionHeader = delegate(string title) {
+            double h = 16.5;
+            c.Rect(PdfCanvas.MarginL, c.CurY - h, PdfCanvas.ContentW, h, SLATE, null, 0.0);
+            c.Text(PdfCanvas.MarginL + 8, c.CurY - 11.5, title, "F2", 8.6, WHITE);
+            c.CurY -= h;
+        };
+
+        Action<RowDef[]> drawKvTable = delegate(RowDef[] rows) {
+            double labelW = 142.0;
+            double valX = PdfCanvas.MarginL + labelW + 6.0;
+            double topY = c.CurY;
+            for (int i = 0; i < rows.Length; i++) {
+                RowDef r = rows[i];
+                string fn = r.IsMono ? "F4" : "F1";
+                double fs = r.IsMono ? 8.1 : 8.2;
+                int mc = r.IsMono ? 66 : 80;
+                List<string> wrapped = WrapLine(r.Value, mc, r.MaxLines);
+                double rowH = Math.Max(14.5, 4.5 + wrapped.Count * 10.2);
+                c.Rect(PdfCanvas.MarginL, c.CurY - rowH, PdfCanvas.ContentW, rowH, (i % 2 == 1) ? ROW_ALT : WHITE, null, 0.0);
+                c.Line(PdfCanvas.MarginL, c.CurY - rowH, PdfCanvas.MarginL + PdfCanvas.ContentW, c.CurY - rowH, BORDER, 0.45);
+                c.Text(PdfCanvas.MarginL + 7, c.CurY - 10.5, r.Label, "F2", 8.0, TEXT_MUTED);
+                double ly = c.CurY - 10.5;
+                foreach (string wl in wrapped) {
+                    c.Text(valX, ly, wl, fn, fs, TEXT_DARK);
+                    ly -= 10.2;
+                }
+                c.CurY -= rowH;
+            }
+            c.Line(PdfCanvas.MarginL + labelW, topY, PdfCanvas.MarginL + labelW, c.CurY, BORDER, 0.5);
+            c.Rect(PdfCanvas.MarginL, c.CurY, PdfCanvas.ContentW, topY - c.CurY, null, BORDER, 0.6);
+            c.CurY -= 7.0;
+        };
+
+        drawSectionHeader("1. SYSTEM IDENTITY, PASSWORDS & PASSPHRASES");
+        drawKvTable(new RowDef[] {
+            new RowDef("Target Hostname / URLs", hostname + "  |  https://" + hostname + "/  |  /sensorhub/admin", true, 2),
+            new RowDef("Linux Admin Username", username + "   (SSH: ssh " + username + "@" + hostname + ")", true, 1),
+            new RowDef("Linux Admin Password", linuxPwDisplay, linuxPwMono, 2),
+            new RowDef("Sudo Privilege Policy", spec.RequireSudoPassword ? "Password required for sudo" : "Passwordless sudo (NOPASSWD enabled)", false, 1),
+            new RowDef("LUKS2 Disk Encryption", luksDisplay, luksMono, 2),
+            new RowDef("SSH Access & Keys", sshDisplay, false, 2),
+            new RowDef("OSCAR Web Admin Login", oscarWebDisplay, oscarWebMono, 2),
+            new RowDef("Backup Encryption Key", backupKeySummary.Length > 0 ? backupKeySummary : "Not pre-staged (configure during USB backup setup)", backupKeySummary.Length > 0, 2),
+            new RowDef("Staged Site Network", siteNetSummary.Length > 0 ? siteNetSummary : "Non-blocking DHCP (configure static IP in First-Boot Wizard)", siteNetSummary.Length > 0, 2)
+        });
+
+        drawSectionHeader("2. INSTALLATION MEDIA, VERIFIED CHECKSUMS & PRE-STAGED FILES");
+        drawKvTable(new RowDef[] {
+            new RowDef("Target USB / Image", string.IsNullOrEmpty(spec.TargetDesc) ? "Removable USB Drive" : spec.TargetDesc, false, 1),
+            new RowDef("Ubuntu 24.04 Live ISO", isoDisplay, false, 1),
+            new RowDef("OSCAR Offline Bundle", bundleDisplay, false, 2),
+            new RowDef("Verified Bundle SHA-256", shaDisplay, true, 2),
+            new RowDef("Pre-Staged Lanes/Config", lanesDisplay, false, 2),
+            new RowDef("Staged Seed Files", seedsDisplay, false, 2),
+            new RowDef("Bundled Manuals / Docs", manualsDisplay, false, 2),
+            new RowDef("First-Boot Mode", modeDisplay, false, 1)
+        });
+
+        drawSectionHeader("3. POST-AUTOINSTALL FIELD SETUP & ACCESS CHECKLIST");
+        string step4 = spec.AutoInitOscar
+            ? ("4. Verify Turnkey OSCAR: Run 'sudo bash /srv/oscar/oscar-*/oscar.sh status' (log: /var/log/oscar-autoprovision.log). Open https://" + hostname + "/ as 'admin', register site users/Passkeys, and upload .pmtiles or site diagram if not pre-staged.")
+            : "4. Run First-Boot Wizard: The OSCAR Provisioning Wizard auto-launches on first login (or run 'sudo oscar-wizard') to optimize host offline, apply static IP, restore a backup, or initialize OSCAR.";
+
+        string[] steps = new string[] {
+            "1. Boot Target Server: Insert this USB into the target x86-64 machine (no internet needed) and select USB in UEFI Boot Menu.",
+            "2. Complete Unattended Install: Ubuntu 24.04 installs onto the internal NVMe/SSD (100% LVM; USB drives protected) and unpacks OSCAR into /srv/oscar/. Remove USB when prompted and press Enter.",
+            "3. Unlock & Sign In: " + (!string.IsNullOrEmpty(spec.LuksPassphrase) ? "Enter the LUKS2 Boot Passphrase above when prompted. " : "") + "Log in on console or SSH as '" + username + "'.",
+            step4,
+            "5. Hardware & Ops Check: Verify SensorHub Admin (/sensorhub/admin), time sync, and lanes. Power 1-4 TB M.2 NVMe USB backup drives via a mains-powered USB 3.2 Gen 2 hub or 15W USB-C port (USB-NVMe quirks pre-installed).",
+            "6. Handover & Cleanup: Record the assigned site IP below, file this printed one-sheet in the site binder, and securely delete the local PDF copy from the staging workstation."
+        };
+
+        List<List<string>> wrappedSteps = new List<List<string>>();
+        int totalStepLines = 0;
+        foreach (string st in steps) {
+            List<string> ws = WrapLine(st, 124, 3);
+            wrappedSteps.Add(ws);
+            totalStepLines += ws.Count;
+        }
+        double panelTop = c.CurY;
+        double quickCmdH = 26.0;
+        double lineStep = 9.5;
+        double stepGap = 2.5;
+        double panelH = 8.0 + totalStepLines * lineStep + wrappedSteps.Count * stepGap + quickCmdH + 6.0;
+        if (panelTop - panelH < 94.0) {
+            lineStep = 8.6;
+            stepGap = 1.6;
+            panelH = 6.0 + totalStepLines * lineStep + wrappedSteps.Count * stepGap + quickCmdH + 5.0;
+        }
+
+        c.Rect(PdfCanvas.MarginL, panelTop - panelH, PdfCanvas.ContentW, panelH, WHITE, BORDER, 0.6);
+        double cy = panelTop - 11.5;
+        foreach (List<string> ws in wrappedSteps) {
+            c.Rect(PdfCanvas.MarginL + 8, cy - 1.0, 6.5, 6.5, WHITE, SLATE, 0.6);
+            foreach (string sl in ws) {
+                c.Text(PdfCanvas.MarginL + 19, cy, sl, "F1", 7.8, TEXT_DARK);
+                cy -= lineStep;
+            }
+            cy -= stepGap;
+        }
+
+        double cmdBoxY = panelTop - panelH + 4.5;
+        c.Rect(PdfCanvas.MarginL + 6, cmdBoxY, PdfCanvas.ContentW - 12, quickCmdH, CODE_BG, BORDER, 0.5);
+        c.Text(PdfCanvas.MarginL + 12, cmdBoxY + 15.5, "Commands:  sudo bash /srv/oscar/oscar-*/oscar.sh status   |   sudo oscar-wizard   |   oscar.sh reset-admin-password", "F3", 7.3, NAVY);
+        c.Text(PdfCanvas.MarginL + 12, cmdBoxY + 5.5, "Paths:     Release: /srv/oscar/   |   Seeds: /srv/oscar/seed/   |   Auto-Init Log: /var/log/oscar-autoprovision.log", "F3", 7.3, NAVY);
+
+        double signTop = Math.Min(panelTop - panelH - 6.0, 86.0);
+        double signH = 44.0;
+        double signY = Math.Max(38.0, signTop - signH);
+        c.Rect(PdfCanvas.MarginL, signY, PdfCanvas.ContentW, signH, ROW_ALT, BORDER, 0.6);
+        c.Text(PdfCanvas.MarginL + 8, signY + 33.5, "FIELD DEPLOYMENT SIGN-OFF", "F2", 7.8, SLATE);
+        c.Text(PdfCanvas.MarginL + 8, signY + 20.5, "Site / Facility: _____________________________________   Assigned IP: _________________________   Date: __________________", "F1", 8.0, TEXT_DARK);
+        c.Text(PdfCanvas.MarginL + 8, signY + 7.5, "Technician: __________________________________________   Signature: ___________________________   Binder Ref: ____________", "F1", 8.0, TEXT_DARK);
+
+        c.Text(PdfCanvas.MarginL, 24.0, "OSCAR Bare-Metal Autoinstall USB Creator   |   Host: " + hostname + "   |   Page 1 of 1   |   Local workstation copy only (NOT stored on USB)", "F1", 7.0, TEXT_MUTED);
+
+        byte[] streamBytes = Encoding.GetEncoding(28591).GetBytes(string.Join("\n", c.Cmds.ToArray()) + "\n");
+        Encoding ascii = Encoding.ASCII;
+
+        List<byte[]> objects = new List<byte[]>();
+        objects.Add(ascii.GetBytes("<< /Type /Catalog /Pages 2 0 R >>"));
+        objects.Add(ascii.GetBytes("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"));
+        objects.Add(ascii.GetBytes("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R /F2 5 0 R /F3 6 0 R /F4 7 0 R >> >> /Contents 8 0 R >>"));
+        objects.Add(ascii.GetBytes("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"));
+        objects.Add(ascii.GetBytes("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>"));
+        objects.Add(ascii.GetBytes("<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>"));
+        objects.Add(ascii.GetBytes("<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold /Encoding /WinAnsiEncoding >>"));
+
+        using (MemoryStream stObj = new MemoryStream()) {
+            byte[] hdr = ascii.GetBytes(string.Format(Inv, "<< /Length {0} >>\nstream\n", streamBytes.Length));
+            byte[] ftr = ascii.GetBytes("endstream");
+            stObj.Write(hdr, 0, hdr.Length);
+            stObj.Write(streamBytes, 0, streamBytes.Length);
+            stObj.Write(ftr, 0, ftr.Length);
+            objects.Add(stObj.ToArray());
+        }
+
+        string parentDir = Path.GetDirectoryName(Path.GetFullPath(outputPath));
+        if (!string.IsNullOrEmpty(parentDir) && !Directory.Exists(parentDir)) {
+            Directory.CreateDirectory(parentDir);
+        }
+
+        using (MemoryStream ms = new MemoryStream()) {
+            byte[] pdfHeader = new byte[] { 0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a, 0x25, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a };
+            ms.Write(pdfHeader, 0, pdfHeader.Length);
+            List<long> offsets = new List<long>();
+            offsets.Add(0);
+            for (int i = 0; i < objects.Count; i++) {
+                offsets.Add(ms.Position);
+                byte[] obHdr = ascii.GetBytes(string.Format(Inv, "{0} 0 obj\n", i + 1));
+                byte[] obFtr = ascii.GetBytes("\nendobj\n");
+                ms.Write(obHdr, 0, obHdr.Length);
+                ms.Write(objects[i], 0, objects[i].Length);
+                ms.Write(obFtr, 0, obFtr.Length);
+            }
+            long xrefPos = ms.Position;
+            StringBuilder xref = new StringBuilder();
+            xref.AppendFormat(Inv, "xref\n0 {0}\n", objects.Count + 1);
+            xref.Append("0000000000 65535 f \n");
+            for (int i = 1; i < offsets.Count; i++) {
+                xref.AppendFormat(Inv, "{0:0000000000} 00000 n \n", offsets[i]);
+            }
+            xref.AppendFormat(Inv, "trailer\n<< /Size {0} /Root 1 0 R >>\nstartxref\n{1}\n%%EOF\n", objects.Count + 1, xrefPos);
+            byte[] xrefBytes = ascii.GetBytes(xref.ToString());
+            ms.Write(xrefBytes, 0, xrefBytes.Length);
+            File.WriteAllBytes(outputPath, ms.ToArray());
+        }
+    }
+}
+'@
+}
+
 function Assert-NoReparsePoint([string]$CandidatePath) {
     $current = [IO.Path]::GetFullPath($CandidatePath)
     while ($current) {
@@ -219,12 +782,14 @@ Usage (run from create-autoinstall-usb.bat, Administrator PowerShell, or .\oscar
       -LanesFile C:\oscar-seed\lanes.csv `
       -AutoInitOscar `
       -SeedDirectory C:\oscar-seed `
+      -OneSheetPdfPath "$HOME\Desktop\OSCAR-Install-OneSheet.pdf" `
       -ConfirmToken ERASE-USB
 
 Modes:
   -Gui           Open the native Windows desktop GUI (default via create-autoinstall-usb.bat).
   -Tui           Run the step-by-step interactive terminal wizard (default in PowerShell consoles).
   CLI flags      Run 100% non-interactively for automated staging.
+  -NoOneSheetPdf Skip generating the local printable Technician Handover One-Sheet PDF.
 
 Safety guarantees:
   - Strictly blocks internal NVMe/SATA/SAS OS drives, system/boot disks, the drive
@@ -232,6 +797,10 @@ Safety guarantees:
   - Requires ZERO third-party tools (no Rufus, OpenSSL, or 7-Zip needed): hashes Linux
     SHA-512 ($6$) passwords natively and builds a 3-partition GPT UEFI (Secure Boot
     compatible) USB drive with UBUNTU_LIVE, CIDATA, and OSCAR_MEDIA + verified SHA-256.
+  - Generates a printable 1-page Technician Handover One-Sheet PDF strictly on this
+    local workstation (restricted user-only NTFS ACL, NEVER written to the USB drive)
+    containing usernames, passwords, passphrases, SHA-256 checksums, staged files,
+    and post-autoinstall setup steps.
 '@
 }
 
@@ -413,6 +982,94 @@ function Get-CandidateUsbDisks {
     return $results
 }
 
+function Resolve-DefaultOneSheetPdfPath([string]$HostVal) {
+    $slug = [Regex]::Replace($HostVal, '[^A-Za-z0-9._-]', '_')
+    if (-not $slug) { $slug = 'oscar-host' }
+    $ts = [DateTime]::Now.ToString('yyyyMMdd-HHmmss')
+    $baseDir = [Environment]::GetFolderPath('Desktop')
+    if (-not $baseDir -or -not (Test-Path -LiteralPath $baseDir -PathType Container)) {
+        $baseDir = [Environment]::GetFolderPath('MyDocuments')
+    }
+    if (-not $baseDir -or -not (Test-Path -LiteralPath $baseDir -PathType Container)) {
+        $baseDir = (Get-Location).Path
+    }
+    return (Join-Path $baseDir "OSCAR-Install-OneSheet-$slug-$ts.pdf")
+}
+
+function Protect-LocalOneSheetPdfAcl([string]$PdfPath) {
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return }
+    if (-not (Test-Path -LiteralPath $PdfPath -PathType Leaf)) { return }
+    try {
+        $acl = New-Object System.Security.AccessControl.FileSecurity
+        $acl.SetAccessRuleProtection($true, $false)
+        $currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+        $sysSid = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::LocalSystemSid, $null)
+        $adminSid = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid, $null)
+        foreach ($sid in @($currentSid, $sysSid, $adminSid)) {
+            if ($sid) {
+                $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                    $sid,
+                    [System.Security.AccessControl.FileSystemRights]::FullControl,
+                    [System.Security.AccessControl.AccessControlType]::Allow
+                )
+                $acl.AddAccessRule($rule)
+            }
+        }
+        [System.IO.File]::SetAccessControl($PdfPath, $acl)
+    } catch {}
+}
+
+function New-TechnicianOneSheetPdf(
+    [string]$OutputPath,
+    [string]$HostVal,
+    [string]$UserVal,
+    [string]$LinuxPasswordPlain,
+    [bool]$LinuxPasswordHashedOnly,
+    [bool]$ReqSudoPw,
+    [string]$LuksPass,
+    [bool]$KeysOnly,
+    [string[]]$AuthorizedKeys,
+    [string]$OscarWebPasswordPlain,
+    [bool]$OscarWebPasswordHashedOnly,
+    [bool]$AutoInitFirstBoot,
+    [string]$UbuntuIso,
+    [string]$BundleZip,
+    [string]$BundleSha256,
+    [string]$PreconfiguredLanesFile,
+    [string]$SeedDir,
+    [string[]]$ExtraSeedFiles,
+    [string]$TargetDesc,
+    [string[]]$BundledManuals
+) {
+    $fullOut = [IO.Path]::GetFullPath($OutputPath)
+    $spec = New-Object OscarOneSheetSpec
+    $spec.Hostname = $HostVal
+    $spec.Username = $UserVal
+    $spec.LinuxPasswordPlain = $LinuxPasswordPlain
+    $spec.LinuxPasswordHashedOnly = $LinuxPasswordHashedOnly
+    $spec.RequireSudoPassword = $ReqSudoPw
+    $spec.LuksPassphrase = $LuksPass
+    $spec.SshKeysOnly = $KeysOnly
+    $spec.SshKeys = if ($AuthorizedKeys) { [string[]]$AuthorizedKeys } else { @() }
+    $spec.OscarWebPasswordPlain = $OscarWebPasswordPlain
+    $spec.OscarWebPasswordHashedOnly = $OscarWebPasswordHashedOnly
+    $spec.AutoInitOscar = $AutoInitFirstBoot
+    $spec.IsoPath = $UbuntuIso
+    $spec.BundlePath = $BundleZip
+    $spec.BundleSha256 = $BundleSha256
+    $spec.LanesFile = $PreconfiguredLanesFile
+    $spec.SeedDir = $SeedDir
+    $spec.SeedFiles = if ($ExtraSeedFiles) { [string[]]$ExtraSeedFiles } else { @() }
+    $spec.TargetDesc = $TargetDesc
+    $spec.GeneratedUtc = [DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm UTC')
+    $spec.GeneratedLocal = [DateTime]::Now.ToString('yyyy-MM-dd HH:mm')
+    $spec.BundledManuals = if ($BundledManuals) { [string[]]$BundledManuals } else { @() }
+
+    [OscarOneSheetPdfWriter]::WritePdf($fullOut, $spec)
+    Protect-LocalOneSheetPdfAcl $fullOut
+    return $fullOut
+}
+
 function Invoke-BuildAutoinstallUsb(
     [int]$TargetDiskNumber,
     [string]$UbuntuIso,
@@ -420,15 +1077,19 @@ function Invoke-BuildAutoinstallUsb(
     [string]$HostVal,
     [string]$UserVal,
     [string]$PassHash,
+    [string]$LinuxPasswordPlain,
     [string]$LuksPass,
     [bool]$ReqSudoPw,
     [bool]$KeysOnly,
     [string[]]$AuthorizedKeys,
     [string]$OscarWebPassHash,
+    [string]$OscarWebPasswordPlain,
     [string]$PreconfiguredLanesFile,
     [bool]$AutoInitFirstBoot,
     [string]$SeedDir,
     [string[]]$ExtraSeedFiles,
+    [string]$OneSheetPdfOutPath,
+    [bool]$SkipOneSheetPdf,
     [scriptblock]$Logger
 ) {
     $emit = {
@@ -558,6 +1219,8 @@ function Invoke-BuildAutoinstallUsb(
         $seedOutDir = Join-Path $mediaDrive 'seed'
         New-Item -ItemType Directory -Force -Path $seedOutDir | Out-Null
 
+        $verifiedBundleSha = ''
+        $bundledManualNames = New-Object System.Collections.Generic.List[string]
         if ($BundleZip) {
             $bundleLeaf = Split-Path -Leaf $BundleZip
             $destBundle = Join-Path $mediaDrive $bundleLeaf
@@ -573,13 +1236,17 @@ function Invoke-BuildAutoinstallUsb(
             if ($expectedSha -and $actualUsbSha -cne $expectedSha) {
                 throw "SHA-256 mismatch on USB copy ($destBundle): expected $expectedSha, got $actualUsbSha"
             }
+            $verifiedBundleSha = $actualUsbSha
             [IO.File]::WriteAllText($destShaFile, "$actualUsbSha *$bundleLeaf`n", $Utf8NoBom)
             $bundleParentDir = Split-Path -Parent $BundleZip
             foreach ($searchDir in @($bundleParentDir, (Join-Path (Join-Path $ReleaseDir 'documentation') 'operator-manual'))) {
                 if ($searchDir -and (Test-Path -LiteralPath $searchDir -PathType Container)) {
                     Get-ChildItem -LiteralPath $searchDir -File -ErrorAction SilentlyContinue |
                         Where-Object { $_.Name -like 'OSCAR-*-Administrator-Operator-Manual-*.pdf' -or $_.Name -like 'OSCAR-*-SHA256SUMS.txt' } |
-                        ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $mediaDrive $_.Name) -Force }
+                        ForEach-Object {
+                            Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $mediaDrive $_.Name) -Force
+                            if (-not $bundledManualNames.Contains($_.Name)) { $bundledManualNames.Add($_.Name) }
+                        }
                 }
             }
         }
@@ -631,11 +1298,42 @@ Hardware Power Tip for 1-4 TB M.2 NVMe USB Backup Enclosures:
 "@
         [IO.File]::WriteAllText((Join-Path $mediaDrive 'README-BARE-METAL-INSTALL.txt'), ($readmeText -replace "`r`n", "`n"), $Utf8NoBom)
 
-        & $emit 'Flushing volume caches to USB media...' 97
+        & $emit 'Flushing volume caches to USB media...' 96
         foreach ($dl in @($liveDrive[0], $cidataDrive[0], $mediaDrive[0])) {
             Write-VolumeCache -DriveLetter $dl -ErrorAction SilentlyContinue
         }
+
+        $savedPdfPath = ''
+        if (-not $SkipOneSheetPdf) {
+            $pdfTarget = if ($OneSheetPdfOutPath) { $OneSheetPdfOutPath } else { Resolve-DefaultOneSheetPdfPath $HostVal }
+            $usbSummary = "Disk $TargetDiskNumber ($($selectedCandidate.SizeGiB) GiB $($selectedCandidate.FriendlyName), Serial: $($selectedCandidate.SerialNumber))"
+            & $emit "Generating printable Technician Handover One-Sheet PDF on local workstation (never stored on USB)..." 98
+            $savedPdfPath = New-TechnicianOneSheetPdf `
+                -OutputPath $pdfTarget `
+                -HostVal $HostVal `
+                -UserVal $UserVal `
+                -LinuxPasswordPlain $LinuxPasswordPlain `
+                -LinuxPasswordHashedOnly ([bool]($PassHash -and -not $LinuxPasswordPlain)) `
+                -ReqSudoPw $ReqSudoPw `
+                -LuksPass $LuksPass `
+                -KeysOnly $KeysOnly `
+                -AuthorizedKeys $AuthorizedKeys `
+                -OscarWebPasswordPlain $OscarWebPasswordPlain `
+                -OscarWebPasswordHashedOnly ([bool]($OscarWebPassHash -and -not $OscarWebPasswordPlain)) `
+                -AutoInitFirstBoot $AutoInitFirstBoot `
+                -UbuntuIso $UbuntuIso `
+                -BundleZip $BundleZip `
+                -BundleSha256 $verifiedBundleSha `
+                -PreconfiguredLanesFile $PreconfiguredLanesFile `
+                -SeedDir $SeedDir `
+                -ExtraSeedFiles $ExtraSeedFiles `
+                -TargetDesc $usbSummary `
+                -BundledManuals $bundledManualNames.ToArray()
+            & $emit "TECHNICIAN ONE-SHEET PDF (local only, NEVER stored on USB): $savedPdfPath" 99
+        }
+
         & $emit "SUCCESS: OSCAR Bare-Metal Autoinstall USB ready on Disk $TargetDiskNumber ($($selectedCandidate.FriendlyName)). Safe to eject and boot!" 100
+        return $savedPdfPath
     } finally {
         if ($mountedIso) {
             Dismount-DiskImage -ImagePath $UbuntuIso -ErrorAction SilentlyContinue | Out-Null
@@ -659,7 +1357,7 @@ function Show-AutoinstallUsbGui([string]$InitialIso, [string]$InitialBundle, [st
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = 'OSCAR Bare-Metal Ubuntu 24.04 Offline Autoinstall USB Creator'
-    $form.ClientSize = New-Object System.Drawing.Size(760, 810)
+    $form.ClientSize = New-Object System.Drawing.Size(760, 868)
     $form.StartPosition = 'CenterScreen'
     $form.FormBorderStyle = 'FixedDialog'
     $form.MaximizeBox = $false
@@ -956,16 +1654,49 @@ function Show-AutoinstallUsbGui([string]$InitialIso, [string]$InitialBundle, [st
     })
     $form.Controls.Add($btnSeed)
 
-    # 7. Destructive Confirmation & Action Bar
+    # 7. Printable Technician Handover One-Sheet PDF (Local Workstation Only)
+    $chkOneSheet = New-Object System.Windows.Forms.CheckBox
+    $chkOneSheet.Text = '7. Save printable Technician Handover One-Sheet PDF locally (NEVER written to USB):'
+    $chkOneSheet.Checked = $true
+    $chkOneSheet.Location = New-Object System.Drawing.Point(16, 622)
+    $chkOneSheet.Size = New-Object System.Drawing.Size(610, 22)
+    $form.Controls.Add($chkOneSheet)
+
+    $txtOneSheet = New-Object System.Windows.Forms.TextBox
+    $txtOneSheet.Text = Resolve-DefaultOneSheetPdfPath $InitialHost
+    $txtOneSheet.Location = New-Object System.Drawing.Point(16, 646)
+    $txtOneSheet.Size = New-Object System.Drawing.Size(610, 24)
+    $form.Controls.Add($txtOneSheet)
+
+    $btnOneSheet = New-Object System.Windows.Forms.Button
+    $btnOneSheet.Text = 'Save As...'
+    $btnOneSheet.Location = New-Object System.Drawing.Point(634, 644)
+    $btnOneSheet.Size = New-Object System.Drawing.Size(110, 26)
+    $btnOneSheet.Add_Click({
+        $dlg = New-Object System.Windows.Forms.SaveFileDialog
+        $dlg.Title = 'Save Printable Technician Handover One-Sheet PDF (Local Workstation Only)'
+        $dlg.Filter = 'PDF Document (*.pdf)|*.pdf|All Files (*.*)|*.*'
+        $dlg.DefaultExt = 'pdf'
+        $dlg.FileName = Split-Path -Leaf (Resolve-DefaultOneSheetPdfPath ($txtHost.Text.Trim()))
+        if ($dlg.ShowDialog() -eq 'OK') { $txtOneSheet.Text = $dlg.FileName }
+    })
+    $form.Controls.Add($btnOneSheet)
+
+    $chkOneSheet.Add_CheckedChanged({
+        $txtOneSheet.Enabled = $chkOneSheet.Checked
+        $btnOneSheet.Enabled = $chkOneSheet.Checked
+    })
+
+    # 8. Destructive Confirmation & Action Bar
     $lblConfirm = New-Object System.Windows.Forms.Label
     $lblConfirm.Text = 'Type ERASE-USB to unlock:'
     $lblConfirm.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
-    $lblConfirm.Location = New-Object System.Drawing.Point(16, 626)
+    $lblConfirm.Location = New-Object System.Drawing.Point(16, 684)
     $lblConfirm.Size = New-Object System.Drawing.Size(175, 22)
     $form.Controls.Add($lblConfirm)
 
     $txtConfirm = New-Object System.Windows.Forms.TextBox
-    $txtConfirm.Location = New-Object System.Drawing.Point(195, 624)
+    $txtConfirm.Location = New-Object System.Drawing.Point(195, 682)
     $txtConfirm.Size = New-Object System.Drawing.Size(130, 24)
     $form.Controls.Add($txtConfirm)
 
@@ -973,13 +1704,13 @@ function Show-AutoinstallUsbGui([string]$InitialIso, [string]$InitialBundle, [st
     $btnBuild.Text = 'Create Bootable Autoinstall USB'
     $btnBuild.Font = New-Object System.Drawing.Font('Segoe UI', 9.5, [System.Drawing.FontStyle]::Bold)
     $btnBuild.Enabled = $false
-    $btnBuild.Location = New-Object System.Drawing.Point(340, 620)
+    $btnBuild.Location = New-Object System.Drawing.Point(340, 678)
     $btnBuild.Size = New-Object System.Drawing.Size(286, 32)
     $form.Controls.Add($btnBuild)
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = 'Close'
-    $btnClose.Location = New-Object System.Drawing.Point(634, 620)
+    $btnClose.Location = New-Object System.Drawing.Point(634, 678)
     $btnClose.Size = New-Object System.Drawing.Size(110, 32)
     $btnClose.Add_Click({ $form.Close() })
     $form.Controls.Add($btnClose)
@@ -987,7 +1718,7 @@ function Show-AutoinstallUsbGui([string]$InitialIso, [string]$InitialBundle, [st
     $progressBar = New-Object System.Windows.Forms.ProgressBar
     $progressBar.Minimum = 0
     $progressBar.Maximum = 100
-    $progressBar.Location = New-Object System.Drawing.Point(16, 660)
+    $progressBar.Location = New-Object System.Drawing.Point(16, 718)
     $progressBar.Size = New-Object System.Drawing.Size(728, 18)
     $form.Controls.Add($progressBar)
 
@@ -996,7 +1727,7 @@ function Show-AutoinstallUsbGui([string]$InitialIso, [string]$InitialBundle, [st
     $txtLog.ReadOnly = $true
     $txtLog.ScrollBars = 'Vertical'
     $txtLog.Font = New-Object System.Drawing.Font('Consolas', 8.5)
-    $txtLog.Location = New-Object System.Drawing.Point(16, 684)
+    $txtLog.Location = New-Object System.Drawing.Point(16, 742)
     $txtLog.Size = New-Object System.Drawing.Size(728, 112)
     $form.Controls.Add($txtLog)
 
@@ -1081,27 +1812,40 @@ function Show-AutoinstallUsbGui([string]$InitialIso, [string]$InitialBundle, [st
         }
 
         try {
-            Invoke-BuildAutoinstallUsb `
+            $savedPdf = Invoke-BuildAutoinstallUsb `
                 -TargetDiskNumber $chosenDisk.DiskNumber `
                 -UbuntuIso $txtIso.Text.Trim('" ') `
                 -BundleZip $txtBundle.Text.Trim('" ') `
                 -HostVal $txtHost.Text.Trim() `
                 -UserVal $txtUser.Text.Trim() `
                 -PassHash $pwHashVal `
+                -LinuxPasswordPlain $txtPw1.Text `
                 -LuksPass $luksVal `
                 -ReqSudoPw $reqSudo `
                 -KeysOnly ([bool]$chkKeysOnly.Checked) `
                 -AuthorizedKeys $authKeys `
                 -OscarWebPassHash $oscarWebHashVal `
+                -OscarWebPasswordPlain $txtOPw1.Text `
                 -PreconfiguredLanesFile $txtLanes.Text.Trim('" ') `
                 -AutoInitFirstBoot ([bool]$chkAutoInit.Checked) `
                 -SeedDir $txtSeed.Text.Trim('" ') `
                 -ExtraSeedFiles @() `
+                -OneSheetPdfOutPath $txtOneSheet.Text.Trim('" ') `
+                -SkipOneSheetPdf (-not $chkOneSheet.Checked) `
                 -Logger $guiLogger
             $txtConfirm.Text = ''
-            [System.Windows.Forms.MessageBox]::Show(
-                "Autoinstall USB created and verified on Disk $($chosenDisk.DiskNumber) ($($chosenDisk.FriendlyName)).`n`nSafe to eject and boot on the target x86-64 machine.",
-                'OSCAR Autoinstall USB Ready', 'OK', 'Information') | Out-Null
+            if ($savedPdf -and (Test-Path -LiteralPath $savedPdf -PathType Leaf)) {
+                $openChoice = [System.Windows.Forms.MessageBox]::Show(
+                    "Autoinstall USB created and verified on Disk $($chosenDisk.DiskNumber) ($($chosenDisk.FriendlyName)).`n`nPrintable Technician Handover One-Sheet PDF saved locally (NEVER written to USB):`n$savedPdf`n`nOpen the One-Sheet PDF now to print for site handover?",
+                    'OSCAR Autoinstall USB Ready', 'YesNo', 'Information')
+                if ($openChoice -eq [System.Windows.Forms.DialogResult]::Yes) {
+                    Start-Process -FilePath $savedPdf | Out-Null
+                }
+            } else {
+                [System.Windows.Forms.MessageBox]::Show(
+                    "Autoinstall USB created and verified on Disk $($chosenDisk.DiskNumber) ($($chosenDisk.FriendlyName)).`n`nSafe to eject and boot on the target x86-64 machine.",
+                    'OSCAR Autoinstall USB Ready', 'OK', 'Information') | Out-Null
+            }
         } catch {
             $txtLog.AppendText("ERROR: $($_.Exception.Message)`r`n")
             [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Autoinstall USB Creation Failed', 'OK', 'Error') | Out-Null
@@ -1139,6 +1883,7 @@ foreach ($rk in @(Read-SshKeysFromFiles $SshKeyFile)) {
     if ($rk) { $resolvedSshKeys.Add([string]$rk) }
 }
 
+$linuxPwForSheet = ''
 if ($PasswordFile) {
     if (-not (Test-Path -LiteralPath $PasswordFile -PathType Leaf)) {
         throw "Password file not found: $PasswordFile"
@@ -1148,6 +1893,8 @@ if ($PasswordFile) {
         throw "Password file is empty: $PasswordFile"
     }
     $PasswordHash = [OscarSha512Crypt]::Crypt($plainFromFile, '')
+    if (-not $NoOneSheetPdf) { $linuxPwForSheet = $plainFromFile }
+    $plainFromFile = ''
 }
 
 $luksPassphrase = ''
@@ -1161,6 +1908,7 @@ if ($LuksPassphraseFile) {
     }
 }
 
+$oscarWebPwForSheet = ''
 if ($OscarAdminPasswordFile) {
     if (-not (Test-Path -LiteralPath $OscarAdminPasswordFile -PathType Leaf)) {
         throw "OSCAR admin password file not found: $OscarAdminPasswordFile"
@@ -1178,6 +1926,7 @@ if ($OscarAdminPasswordFile) {
             throw 'Initial OSCAR Web administrator password must contain at least 14 characters.'
         }
         $OscarAdminPasswordHash = [OscarSha512Crypt]::Pbkdf2Credential($opwFromFile)
+        if (-not $NoOneSheetPdf) { $oscarWebPwForSheet = $opwFromFile }
     }
     $opwFromFile = ''
 } elseif ($OscarAdminPassword) {
@@ -1185,12 +1934,45 @@ if ($OscarAdminPasswordFile) {
         throw 'Initial OSCAR Web administrator password must contain at least 14 characters.'
     }
     $OscarAdminPasswordHash = [OscarSha512Crypt]::Pbkdf2Credential($OscarAdminPassword)
+    if (-not $NoOneSheetPdf) { $oscarWebPwForSheet = $OscarAdminPassword }
     $OscarAdminPassword = ''
 } elseif ($OscarAdminPasswordHash -and -not $OscarAdminPasswordHash.StartsWith('# PBKDF2_PREENCODED:')) {
     if (-not $OscarAdminPasswordHash.StartsWith('PBKDF2WithHmacSHA1:')) {
         throw '-OscarAdminPasswordHash must start with PBKDF2WithHmacSHA1: or # PBKDF2_PREENCODED:.'
     }
     $OscarAdminPasswordHash = "# PBKDF2_PREENCODED:$OscarAdminPasswordHash"
+}
+
+# Offline unit-test mode: render Technician Handover One-Sheet PDF cleanly without touching disks
+if ($RenderOneSheetPdfOnly) {
+    $previewSha = ''
+    if ($OfflineBundlePath -and (Test-Path -LiteralPath $OfflineBundlePath -PathType Leaf)) {
+        $previewSha = (Get-FileHash -LiteralPath $OfflineBundlePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
+    $savedPreview = New-TechnicianOneSheetPdf `
+        -OutputPath $RenderOneSheetPdfOnly `
+        -HostVal $Hostname `
+        -UserVal $Username `
+        -LinuxPasswordPlain $linuxPwForSheet `
+        -LinuxPasswordHashedOnly ([bool]($PasswordHash -and -not $linuxPwForSheet)) `
+        -ReqSudoPw ([bool]$RequireSudoPassword) `
+        -LuksPass $luksPassphrase `
+        -KeysOnly ([bool]$SshKeysOnly) `
+        -AuthorizedKeys $resolvedSshKeys.ToArray() `
+        -OscarWebPasswordPlain $oscarWebPwForSheet `
+        -OscarWebPasswordHashedOnly ([bool]($OscarAdminPasswordHash -and -not $oscarWebPwForSheet)) `
+        -AutoInitFirstBoot ([bool]$AutoInitOscar) `
+        -UbuntuIso $IsoPath `
+        -BundleZip $OfflineBundlePath `
+        -BundleSha256 $previewSha `
+        -PreconfiguredLanesFile $LanesFile `
+        -SeedDir $SeedDirectory `
+        -ExtraSeedFiles $SeedFile `
+        -TargetDesc 'Preview / Dry-Run' `
+        -BundledManuals @()
+    $linuxPwForSheet = ''; $oscarWebPwForSheet = ''; $luksPassphrase = ''
+    Write-Host "Rendered Technician Handover One-Sheet PDF to $savedPreview"
+    exit 0
 }
 
 # Offline unit-test mode: render user-data cleanly with LF endings without touching disks
@@ -1295,6 +2077,7 @@ if ($isInteractiveWizard) {
                 throw 'Linux admin passwords did not match.'
             }
             $PasswordHash = [OscarSha512Crypt]::Crypt($plainPw1, '')
+            if (-not $NoOneSheetPdf) { $linuxPwForSheet = $plainPw1 }
             $plainPw1 = ''; $plainPw2 = ''
             if (-not $PSBoundParameters.ContainsKey('RequireSudoPassword')) {
                 $replySudo = Read-Host 'Require password for sudo? [Y/n]'
@@ -1355,6 +2138,7 @@ if ($isInteractiveWizard -and $OfflineBundlePath) {
                 throw 'OSCAR Web administrator passwords did not match.'
             }
             $OscarAdminPasswordHash = [OscarSha512Crypt]::Pbkdf2Credential($plainOPw1)
+            if (-not $NoOneSheetPdf) { $oscarWebPwForSheet = $plainOPw1 }
             $plainOPw1 = ''; $plainOPw2 = ''
         }
     }
@@ -1387,20 +2171,28 @@ if (-not $PasswordHash) {
     Write-Warning "No custom password supplied for '$Username'; change the template bootstrap password immediately after first boot via 'passwd $Username'!"
 }
 
-Invoke-BuildAutoinstallUsb `
+$savedCliPdf = Invoke-BuildAutoinstallUsb `
     -TargetDiskNumber $DiskNumber `
     -UbuntuIso $IsoPath `
     -BundleZip $OfflineBundlePath `
     -HostVal $Hostname `
     -UserVal $Username `
     -PassHash $PasswordHash `
+    -LinuxPasswordPlain $linuxPwForSheet `
     -LuksPass $luksPassphrase `
     -ReqSudoPw ([bool]$RequireSudoPassword) `
     -KeysOnly ([bool]$SshKeysOnly) `
     -AuthorizedKeys $resolvedSshKeys.ToArray() `
     -OscarWebPassHash $OscarAdminPasswordHash `
+    -OscarWebPasswordPlain $oscarWebPwForSheet `
     -PreconfiguredLanesFile $LanesFile `
     -AutoInitFirstBoot ([bool]$AutoInitOscar) `
     -SeedDir $SeedDirectory `
     -ExtraSeedFiles $SeedFile `
+    -OneSheetPdfOutPath $OneSheetPdfPath `
+    -SkipOneSheetPdf ([bool]$NoOneSheetPdf) `
     -Logger $null
+$linuxPwForSheet = ''; $oscarWebPwForSheet = ''; $luksPassphrase = ''
+if ($savedCliPdf -and (Test-Path -LiteralPath $savedCliPdf -PathType Leaf)) {
+    Write-Host "Print this Technician Handover One-Sheet PDF for site handover and securely delete the digital copy afterwards: $savedCliPdf" -ForegroundColor Yellow
+}
