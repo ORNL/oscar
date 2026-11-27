@@ -4682,4 +4682,146 @@ grep -Fq '127.0.0.1,11602' "$test_root/proxied-lanes.csv" || {
     exit 1
 }
 
+# Verify oscar-sandbox.sh TTL auto-shutdown never kills itself inside oscar-sandbox-expiry.service
+# and that poll-bridge enforces expired TTLs via both sandbox.meta and container env fallback.
+sandbox_sh="$repo_root/dist/release/oscar-sandbox.sh"
+sb_test_root="$test_root/sandbox-ttl"
+sb_bin="$sb_test_root/bin"
+sb_runtime="$sb_test_root/runtime"
+sb_ctrl="$sb_test_root/ctrl"
+sb_state="$sb_test_root/running.flag"
+sb_docker_log="$sb_test_root/docker.log"
+sb_systemctl_log="$sb_test_root/systemctl.log"
+mkdir -p "$sb_bin" "$sb_runtime" "$sb_ctrl"
+
+cat >"$sb_bin/systemctl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$SB_SYSTEMCTL_LOG"
+exit 0
+EOF
+chmod +x "$sb_bin/systemctl"
+
+cat >"$sb_bin/docker" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$SB_DOCKER_LOG"
+case "${1:-}" in
+    ps)
+        if [[ -f "$SB_RUNNING_FLAG" ]]; then
+            printf 'mock-sandbox-cid\n'
+        fi
+        exit 0
+        ;;
+    inspect)
+        printf 'OSCAR_SANDBOX_STARTED_EPOCH_SEC=1700000000\nOSCAR_SANDBOX_TTL_MINUTES=120\n'
+        exit 0
+        ;;
+    compose)
+        if [[ " $* " == *" down "* ]]; then
+            rm -f -- "$SB_RUNNING_FLAG"
+        fi
+        exit 0
+        ;;
+    rm)
+        rm -f -- "$SB_RUNNING_FLAG"
+        exit 0
+        ;;
+    *)
+        exit 0
+        ;;
+esac
+EOF
+chmod +x "$sb_bin/docker"
+
+# Case 1: Inside oscar-sandbox-expiry.service (OSCAR_SANDBOX_EXPIRY_TRIGGERED=1), stop must NOT
+# call systemctl stop oscar-sandbox-expiry.service (which would SIGTERM itself mid-teardown).
+touch "$sb_state"
+mkdir -p "$sb_runtime"
+printf 'HTTPS_PORT=8444\nTTL_MINUTES=120\nSTARTED_EPOCH=1700000000\nEXPIRES_AT=2023-11-15T00:13:20Z\n' >"$sb_runtime/sandbox.meta"
+: >"$sb_docker_log"
+: >"$sb_systemctl_log"
+PATH="$sb_bin:$PATH" \
+SB_RUNNING_FLAG="$sb_state" \
+SB_DOCKER_LOG="$sb_docker_log" \
+SB_SYSTEMCTL_LOG="$sb_systemctl_log" \
+OSCAR_SANDBOX_ALLOW_NONROOT=1 \
+OSCAR_SANDBOX_EXPIRY_TRIGGERED=1 \
+OSCAR_SANDBOX_RUNTIME_DIR="$sb_runtime" \
+OSCAR_SANDBOX_CONTROL_DIR="$sb_ctrl" \
+    bash "$sandbox_sh" stop >/dev/null
+! grep -Fq 'stop oscar-sandbox-expiry.service' "$sb_systemctl_log" || {
+    printf 'oscar-sandbox.sh stop attempted to stop oscar-sandbox-expiry.service from inside itself.\n' >&2
+    exit 1
+}
+grep -Fq 'compose --project-name oscar-sandbox' "$sb_docker_log" &&
+[[ ! -f "$sb_state" && ! -d "$sb_runtime" ]] &&
+grep -Fq '"sandboxRunning": false' "$sb_ctrl/status.json" || {
+    printf 'oscar-sandbox.sh expiry-triggered stop did not complete teardown.\n' >&2
+    exit 1
+}
+
+# Case 2: Manual stop outside the expiry unit must disarm pending oscar-sandbox-expiry timer.
+: >"$sb_systemctl_log"
+PATH="$sb_bin:$PATH" \
+SB_RUNNING_FLAG="$sb_state" \
+SB_DOCKER_LOG="$sb_docker_log" \
+SB_SYSTEMCTL_LOG="$sb_systemctl_log" \
+OSCAR_SANDBOX_ALLOW_NONROOT=1 \
+OSCAR_SANDBOX_RUNTIME_DIR="$sb_runtime" \
+OSCAR_SANDBOX_CONTROL_DIR="$sb_ctrl" \
+    bash "$sandbox_sh" stop >/dev/null
+grep -Fq 'stop oscar-sandbox-expiry.timer oscar-sandbox-expiry.service' "$sb_systemctl_log" || {
+    printf 'Manual oscar-sandbox.sh stop did not cancel pending expiry timer.\n' >&2
+    exit 1
+}
+
+# Case 3: poll-bridge preserves an active non-expired sandbox and stops it once TTL expires.
+touch "$sb_state"
+mkdir -p "$sb_runtime"
+printf 'HTTPS_PORT=8444\nTTL_MINUTES=120\nSTARTED_EPOCH=1700000000\nEXPIRES_AT=2023-11-15T00:13:20Z\n' >"$sb_runtime/sandbox.meta"
+: >"$sb_docker_log"
+PATH="$sb_bin:$PATH" \
+SB_RUNNING_FLAG="$sb_state" \
+SB_DOCKER_LOG="$sb_docker_log" \
+SB_SYSTEMCTL_LOG="$sb_systemctl_log" \
+OSCAR_SANDBOX_ALLOW_NONROOT=1 \
+OSCAR_SANDBOX_NOW_EPOCH=1700003600 \
+OSCAR_SANDBOX_RUNTIME_DIR="$sb_runtime" \
+OSCAR_SANDBOX_CONTROL_DIR="$sb_ctrl" \
+    bash "$sandbox_sh" poll-bridge >/dev/null
+[[ -f "$sb_state" ]] && grep -Fq '"sandboxRunning": true' "$sb_ctrl/status.json" || {
+    printf 'poll-bridge stopped a non-expired sandbox prematurely.\n' >&2
+    exit 1
+}
+
+PATH="$sb_bin:$PATH" \
+SB_RUNNING_FLAG="$sb_state" \
+SB_DOCKER_LOG="$sb_docker_log" \
+SB_SYSTEMCTL_LOG="$sb_systemctl_log" \
+OSCAR_SANDBOX_ALLOW_NONROOT=1 \
+OSCAR_SANDBOX_NOW_EPOCH=1700007200 \
+OSCAR_SANDBOX_RUNTIME_DIR="$sb_runtime" \
+OSCAR_SANDBOX_CONTROL_DIR="$sb_ctrl" \
+    bash "$sandbox_sh" poll-bridge >/dev/null
+[[ ! -f "$sb_state" && ! -d "$sb_runtime" ]] && grep -Fq '"sandboxRunning": false' "$sb_ctrl/status.json" || {
+    printf 'poll-bridge failed to stop an expired sandbox from sandbox.meta.\n' >&2
+    exit 1
+}
+
+# Case 4: poll-bridge falls back to container environment variables when sandbox.meta is missing.
+touch "$sb_state"
+rm -rf -- "$sb_runtime"
+PATH="$sb_bin:$PATH" \
+SB_RUNNING_FLAG="$sb_state" \
+SB_DOCKER_LOG="$sb_docker_log" \
+SB_SYSTEMCTL_LOG="$sb_systemctl_log" \
+OSCAR_SANDBOX_ALLOW_NONROOT=1 \
+OSCAR_SANDBOX_NOW_EPOCH=1700007300 \
+OSCAR_SANDBOX_RUNTIME_DIR="$sb_runtime" \
+OSCAR_SANDBOX_CONTROL_DIR="$sb_ctrl" \
+    bash "$sandbox_sh" poll-bridge >/dev/null
+[[ ! -f "$sb_state" ]] && grep -Fq '"sandboxRunning": false' "$sb_ctrl/status.json" || {
+    printf 'poll-bridge failed to stop an expired sandbox via container env fallback.\n' >&2
+    exit 1
+}
+
 printf 'OSCAR storage script safety tests passed.\n'

@@ -222,13 +222,81 @@ function Write-BridgeStatusJson {
     } catch {}
 }
 
+function Get-SandboxNowEpoch {
+    if ($env:OSCAR_SANDBOX_NOW_EPOCH -and $env:OSCAR_SANDBOX_NOW_EPOCH -match '^\d+$') {
+        return [int64]$env:OSCAR_SANDBOX_NOW_EPOCH
+    }
+    $epochOrigin = New-Object DateTime(1970, 1, 1, 0, 0, 0, [DateTimeKind]::Utc)
+    return [int64][Math]::Floor(([DateTime]::UtcNow - $epochOrigin).TotalSeconds)
+}
+
+function Get-SandboxExpiryEpoch {
+    $metaFile = Join-Path $RuntimeDir 'sandbox.meta'
+    if (Test-Path -LiteralPath $metaFile) {
+        $startedRaw = Get-EnvFileValue -Key 'STARTED_EPOCH' -DefaultValue '' -FilePath $metaFile
+        $ttlRaw = Get-EnvFileValue -Key 'TTL_MINUTES' -DefaultValue '' -FilePath $metaFile
+        if ($startedRaw -match '^\d+$' -and $ttlRaw -match '^\d+$') {
+            $startedVal = [int64]$startedRaw
+            $ttlVal = [int64]$ttlRaw
+            if ($startedVal -gt 0 -and $ttlVal -gt 0) {
+                return ($startedVal + ($ttlVal * 60))
+            }
+        }
+        $expRaw = Get-EnvFileValue -Key 'EXPIRES_AT' -DefaultValue '' -FilePath $metaFile
+        if (-not [string]::IsNullOrWhiteSpace($expRaw)) {
+            try {
+                $parsed = [DateTime]::Parse($expRaw, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
+                $epochOrigin = New-Object DateTime(1970, 1, 1, 0, 0, 0, [DateTimeKind]::Utc)
+                return [int64][Math]::Floor(($parsed.ToUniversalTime() - $epochOrigin).TotalSeconds)
+            } catch {}
+        }
+    }
+
+    # Fallback: read TTL metadata directly from the running oscar sandbox container
+    $cidRes = Invoke-DockerSafe @('ps', '--filter', "label=com.docker.compose.project=$SandboxProject", '--filter', 'label=com.docker.compose.service=oscar', '--format', '{{.ID}}')
+    if ($cidRes.ExitCode -eq 0 -and $cidRes.Output -and $cidRes.Output.Trim().Length -gt 0) {
+        $cid = ($cidRes.Output -split '\r?\n' | Where-Object { $_.Trim().Length -gt 0 } | Select-Object -First 1).Trim()
+        if ($cid) {
+            $envRes = Invoke-DockerSafe @('inspect', '--format', '{{range .Config.Env}}{{println .}}{{end}}', $cid)
+            if ($envRes.ExitCode -eq 0 -and $envRes.Output) {
+                $startedVal = [int64]0
+                $ttlVal = [int64]0
+                foreach ($line in ($envRes.Output -split '\r?\n')) {
+                    if ($line -match '^OSCAR_SANDBOX_STARTED_EPOCH_SEC=(\d+)$') { $startedVal = [int64]$Matches[1] }
+                    elseif ($line -match '^OSCAR_SANDBOX_TTL_MINUTES=(\d+)$') { $ttlVal = [int64]$Matches[1] }
+                }
+                if ($startedVal -gt 0 -and $ttlVal -gt 0) {
+                    return ($startedVal + ($ttlVal * 60))
+                }
+            }
+        }
+    }
+    return $null
+}
+
+function Invoke-EnforceSandboxExpiry {
+    if (-not (Test-SandboxRunning)) { return $false }
+    $expEpoch = Get-SandboxExpiryEpoch
+    if ($null -eq $expEpoch) { return $false }
+    $nowEpoch = Get-SandboxNowEpoch
+    if ($nowEpoch -ge $expEpoch) {
+        Stop-SandboxStack -Reason 'Training Sandbox auto-shutdown TTL expired; ephemeral volumes flushed.'
+        return $true
+    }
+    return $false
+}
+
 function Invoke-BridgeTick {
     param([switch]$StatusOnly)
     $reqRaw = Invoke-SandboxControlSh 'if [ -f /var/lib/oscar/.moduledata/sandbox-control/request.json ]; then mv -f /var/lib/oscar/.moduledata/sandbox-control/request.json /var/lib/oscar/.moduledata/sandbox-control/.processing.json && touch /var/lib/oscar/.moduledata/sandbox-control/.active-job.lock && cat /var/lib/oscar/.moduledata/sandbox-control/.processing.json && rm -f /var/lib/oscar/.moduledata/sandbox-control/.processing.json; fi'
     if ([string]::IsNullOrWhiteSpace($reqRaw)) {
         if ($StatusOnly) {
             $locked = Invoke-SandboxControlSh 'if [ -f /var/lib/oscar/.moduledata/sandbox-control/.active-job.lock ]; then age=$(( $(date +%s) - $(stat -c %Y /var/lib/oscar/.moduledata/sandbox-control/.active-job.lock 2>/dev/null || echo 0) )); if [ "$age" -ge 0 ] && [ "$age" -lt 180 ]; then printf LOCKED; else rm -f /var/lib/oscar/.moduledata/sandbox-control/.active-job.lock; fi; fi'
-            if ($locked -ne 'LOCKED') { Write-BridgeStatusJson $null }
+            if ($locked -ne 'LOCKED') {
+                if (-not (Invoke-EnforceSandboxExpiry)) {
+                    Write-BridgeStatusJson $null
+                }
+            }
         }
         return
     }
@@ -251,7 +319,7 @@ function Invoke-BridgeTick {
     try {
         switch ($act) {
             'start' {
-                if (Test-SandboxRunning) {
+                if ((Test-SandboxRunning) -and (-not (Invoke-EnforceSandboxExpiry))) {
                     Write-BridgeStatusJson ([ordered]@{
                         requestId = $reqId; action = 'start'; state = 'COMPLETED'; startedAt = $startedAt
                         message = "Training Sandbox already running on port $reqPort."
@@ -351,6 +419,7 @@ function Disable-UiBridge {
 }
 
 function Stop-SandboxStack {
+    param([string]$Reason = '')
     try { Unregister-ScheduledTask -TaskName 'OSCAR-Sandbox-Expiry' -Confirm:$false -ErrorAction SilentlyContinue } catch {}
     if (Test-Path -LiteralPath $RuntimeDir) {
         $prev = $ErrorActionPreference
@@ -365,19 +434,27 @@ function Stop-SandboxStack {
         } catch {} finally {
             $ErrorActionPreference = $prev
         }
-    } else {
-        $psRes = Invoke-DockerSafe @('ps', '-aq', '--filter', "label=com.docker.compose.project=$SandboxProject")
-        if ($psRes.Output -and $psRes.Output.Trim().Length -gt 0) {
-            $containerIds = @($psRes.Output -split '\r?\n' | Where-Object { $_.Trim().Length -gt 0 })
-            [void](Invoke-DockerSafe (@('rm', '-f') + $containerIds))
-        }
+    }
+    $psRes = Invoke-DockerSafe @('ps', '-aq', '--filter', "label=com.docker.compose.project=$SandboxProject")
+    if ($psRes.Output -and $psRes.Output.Trim().Length -gt 0) {
+        $containerIds = @($psRes.Output -split '\r?\n' | Where-Object { $_.Trim().Length -gt 0 })
+        [void](Invoke-DockerSafe (@('rm', '-f') + $containerIds))
     }
     [void](Invoke-DockerSafe @('volume', 'rm', '-f', 'oscar_sandbox_state', 'oscar_sandbox_pg'))
     [void](Invoke-DockerSafe @('network', 'rm', "${SandboxProject}_sandbox_frontend", "${SandboxProject}_sandbox_database"))
     if (Test-Path -LiteralPath $RuntimeDir) {
         Remove-Item -LiteralPath $RuntimeDir -Recurse -Force -ErrorAction SilentlyContinue
     }
-    Write-BridgeStatusJson $null
+    if (-not [string]::IsNullOrWhiteSpace($Reason)) {
+        Write-BridgeStatusJson ([ordered]@{
+            requestId = ''
+            action    = 'stop'
+            state     = 'COMPLETED'
+            message   = $Reason
+        })
+    } else {
+        Write-BridgeStatusJson $null
+    }
 }
 
 function Start-SandboxStack {
@@ -476,11 +553,16 @@ function Start-SandboxStack {
     Invoke-SandboxCompose @('up', '--detach', '--no-build', '--pull', 'never', '--wait', '--wait-timeout', '180')
 
     try {
-        $expireAtLocal = (Get-Date).AddMinutes($TtlMinutes)
+        $expireAtLocal = $utcNow.AddMinutes($TtlMinutes).ToLocalTime()
+        if ($expireAtLocal -le (Get-Date).AddSeconds(5)) {
+            $expireAtLocal = (Get-Date).AddSeconds(5)
+        }
         $psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-        $taskAction = New-ScheduledTaskAction -Execute $psExe -Argument "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$SelfScript`" stop"
+        $taskAction = New-ScheduledTaskAction -Execute $psExe -Argument "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$SelfScript`" stop" -WorkingDirectory $ScriptRoot
         $taskTrigger = New-ScheduledTaskTrigger -Once -At $expireAtLocal
-        Register-ScheduledTask -TaskName 'OSCAR-Sandbox-Expiry' -Action $taskAction -Trigger $taskTrigger -User 'SYSTEM' -Force | Out-Null
+        $taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+        $taskPrincipal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+        Register-ScheduledTask -TaskName 'OSCAR-Sandbox-Expiry' -Action $taskAction -Trigger $taskTrigger -Settings $taskSettings -Principal $taskPrincipal -Force | Out-Null
     } catch {}
     Write-BridgeStatusJson $null
 

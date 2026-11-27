@@ -180,8 +180,69 @@ sandbox_compose() {
         --file "$script_dir/compose.sandbox.yaml" "$@"
 }
 
+is_running_in_expiry_unit() {
+    if [[ ${OSCAR_SANDBOX_EXPIRY_TRIGGERED:-0} == 1 ]]; then
+        return 0
+    fi
+    if [[ -r /proc/self/cgroup ]] && grep -q 'oscar-sandbox-expiry\.service' /proc/self/cgroup 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
+sandbox_now_epoch() {
+    if [[ -n ${OSCAR_SANDBOX_NOW_EPOCH:-} && ${OSCAR_SANDBOX_NOW_EPOCH} =~ ^[0-9]+$ ]]; then
+        printf '%s' "$OSCAR_SANDBOX_NOW_EPOCH"
+        return 0
+    fi
+    date +%s
+}
+
+sandbox_expiry_epoch() {
+    local started="" ttl="" expires="" exp_epoch=""
+    if [[ -f "$runtime_dir/sandbox.meta" ]]; then
+        started=$(env_value STARTED_EPOCH '' "$runtime_dir/sandbox.meta")
+        ttl=$(env_value TTL_MINUTES '' "$runtime_dir/sandbox.meta")
+        expires=$(env_value EXPIRES_AT '' "$runtime_dir/sandbox.meta")
+        if [[ $started =~ ^[0-9]+$ && $ttl =~ ^[0-9]+$ ]] && ((started > 0 && ttl > 0)); then
+            printf '%s' "$((started + ttl * 60))"
+            return 0
+        fi
+        if [[ -n $expires ]]; then
+            exp_epoch=$(date -u -d "$expires" +%s 2>/dev/null || true)
+            if [[ $exp_epoch =~ ^[0-9]+$ ]] && ((exp_epoch > 0)); then
+                printf '%s' "$exp_epoch"
+                return 0
+            fi
+        fi
+    fi
+
+    # Fallback: read TTL metadata directly from the running oscar sandbox container
+    # in case /run/oscar-sandbox/sandbox.meta was removed or truncated.
+    if command -v docker >/dev/null 2>&1; then
+        local oscar_cid env_dump
+        oscar_cid=$(docker ps --filter "label=com.docker.compose.project=${sandbox_project}" \
+            --filter "label=com.docker.compose.service=oscar" --format '{{.ID}}' 2>/dev/null | head -n 1 || true)
+        if [[ -n $oscar_cid ]]; then
+            env_dump=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$oscar_cid" 2>/dev/null || true)
+            started=$(awk -F= '$1 == "OSCAR_SANDBOX_STARTED_EPOCH_SEC" { print $2; exit }' <<<"$env_dump" | tr -d '\r')
+            ttl=$(awk -F= '$1 == "OSCAR_SANDBOX_TTL_MINUTES" { print $2; exit }' <<<"$env_dump" | tr -d '\r')
+            if [[ $started =~ ^[0-9]+$ && $ttl =~ ^[0-9]+$ ]] && ((started > 0 && ttl > 0)); then
+                printf '%s' "$((started + ttl * 60))"
+                return 0
+            fi
+        fi
+    fi
+    return 1
+}
+
 cancel_expiry_timer() {
-    if [[ ${EUID:-$(id -u)} -eq 0 ]] && command -v systemctl >/dev/null 2>&1; then
+    # Never stop oscar-sandbox-expiry.service from inside itself: systemd sends
+    # SIGTERM to the running stop script before docker compose down can execute.
+    if is_running_in_expiry_unit; then
+        return 0
+    fi
+    if [[ ${EUID:-$(id -u)} -eq 0 || ${OSCAR_SANDBOX_ALLOW_NONROOT:-0} == 1 ]] && command -v systemctl >/dev/null 2>&1; then
         systemctl --no-ask-password stop oscar-sandbox-expiry.timer oscar-sandbox-expiry.service >/dev/null 2>&1 || true
         systemctl --no-ask-password reset-failed oscar-sandbox-expiry.timer oscar-sandbox-expiry.service >/dev/null 2>&1 || true
     fi
@@ -189,12 +250,35 @@ cancel_expiry_timer() {
 
 schedule_expiry_timer() {
     local ttl_minutes=$1
+    local target_expiry_epoch=${2:-}
     cancel_expiry_timer
     if [[ ${EUID:-$(id -u)} -eq 0 ]] && command -v systemd-run >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
-        systemd-run --no-ask-password --quiet --unit=oscar-sandbox-expiry \
-            --on-active="${ttl_minutes}m" \
+        local delay_sec=$((ttl_minutes * 60))
+        if [[ $target_expiry_epoch =~ ^[0-9]+$ ]]; then
+            local now_sec
+            now_sec=$(sandbox_now_epoch)
+            delay_sec=$((target_expiry_epoch - now_sec))
+            ((delay_sec < 1)) && delay_sec=1
+        fi
+        systemd-run --no-ask-password --quiet --collect \
+            --unit=oscar-sandbox-expiry \
+            --on-active="${delay_sec}s" \
+            --setenv=OSCAR_SANDBOX_EXPIRY_TRIGGERED=1 \
             /bin/bash "$script_dir/oscar-sandbox.sh" stop >/dev/null 2>&1 || true
     fi
+}
+
+enforce_expiry_if_due() {
+    is_sandbox_running || return 1
+    local exp_epoch now_epoch
+    exp_epoch=$(sandbox_expiry_epoch || true)
+    [[ $exp_epoch =~ ^[0-9]+$ ]] || return 1
+    now_epoch=$(sandbox_now_epoch)
+    if ((now_epoch >= exp_epoch)); then
+        do_stop "Training Sandbox auto-shutdown TTL expired; ephemeral volumes flushed." >/dev/null 2>&1 || true
+        return 0
+    fi
+    return 1
 }
 
 prepare_sandbox_secrets_and_tls() {
@@ -259,19 +343,19 @@ seed_identities_one_way() {
 }
 
 do_stop() {
+    local stop_msg=${1:-"Training Sandbox stopped and ephemeral volumes flushed."}
     cancel_expiry_timer
     if [[ -d $runtime_dir ]] && command -v docker >/dev/null 2>&1; then
         sandbox_compose down -v --remove-orphans >/dev/null 2>&1 || true
-    elif command -v docker >/dev/null 2>&1; then
-        docker ps -aq --filter "label=com.docker.compose.project=${sandbox_project}" | xargs -r docker rm -f >/dev/null 2>&1 || true
     fi
     if command -v docker >/dev/null 2>&1; then
+        docker ps -aq --filter "label=com.docker.compose.project=${sandbox_project}" | xargs -r docker rm -f >/dev/null 2>&1 || true
         docker volume rm -f oscar_sandbox_state oscar_sandbox_pg >/dev/null 2>&1 || true
         docker network rm "${sandbox_project}_sandbox_frontend" "${sandbox_project}_sandbox_database" >/dev/null 2>&1 || true
     fi
     chmod -R u+w "$runtime_dir" 2>/dev/null || true
     rm -rf -- "$runtime_dir"
-    write_bridge_status "" "stop" "COMPLETED" "Training Sandbox stopped and ephemeral volumes flushed."
+    write_bridge_status "" "stop" "COMPLETED" "$stop_msg"
 }
 
 do_start() {
@@ -312,9 +396,10 @@ do_start() {
     do_stop >/dev/null 2>&1 || true
     prepare_sandbox_secrets_and_tls "$admin_pw"
 
-    local now_epoch exp_iso
-    now_epoch=$(date +%s)
-    exp_iso=$(date -u -d "@$((now_epoch + ttl * 60))" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || printf '')
+    local now_epoch exp_epoch exp_iso
+    now_epoch=$(sandbox_now_epoch)
+    exp_epoch=$((now_epoch + ttl * 60))
+    exp_iso=$(date -u -d "@${exp_epoch}" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || printf '')
     cat >"$runtime_dir/sandbox.meta" <<EOF
 HTTPS_PORT=$port
 TTL_MINUTES=$ttl
@@ -338,7 +423,7 @@ EOF
     OSCAR_SANDBOX_INITIAL_TRACK="$track" \
     sandbox_compose up --detach --no-build --pull never --wait --wait-timeout 180
 
-    schedule_expiry_timer "$ttl"
+    schedule_expiry_timer "$ttl" "$exp_epoch"
     write_bridge_status "" "start" "COMPLETED" "Training Sandbox active on port ${port}"
 
     local host_display oct_domain="" oct_sandbox_url="" remote_line=""
@@ -485,7 +570,9 @@ poll_bridge() {
             fi
             rm -f -- "$lock_file"
         fi
-        write_bridge_status
+        if ! enforce_expiry_if_due; then
+            write_bridge_status
+        fi
         return 0
     fi
     local processing="$ctrl_dir/request.processing.$$"
@@ -505,7 +592,7 @@ poll_bridge() {
     write_bridge_status "$req_id" "$action" "RUNNING" "Executing sandbox '${action}'..."
     case "$action" in
         start)
-            if is_sandbox_running; then
+            if is_sandbox_running && ! enforce_expiry_if_due; then
                 rm -f -- "$lock_file"
                 write_bridge_status "$req_id" "start" "COMPLETED" "Training Sandbox already running on port ${port}."
             elif do_start --port "$port" --ttl-minutes "$ttl" >/dev/null 2>&1; then
