@@ -1026,19 +1026,21 @@ assert_contains '^READY_FILE=/tmp/oscar-ready$' "$oscar_entrypoint"
 assert_contains 'rm -f -- "\$\{READY_FILE\}" "\$\{READY_FILE\}\.tmp"' "$oscar_entrypoint"
 assert_contains 'test -f /tmp/oscar-ready && curl --silent --show-error' "$compose_file"
 for g1_uncommit_flag in \
+    '-XX:+UseCompactObjectHeaders' \
     '-XX:G1PeriodicGCInterval=300000' \
     '-XX:+G1PeriodicGCInvokesConcurrent' \
     '-XX:MinHeapFreeRatio=15' \
     '-XX:MaxHeapFreeRatio=35'; do
     grep -Fq -- "$g1_uncommit_flag" <<<"$oscar_service_block" || {
-        printf 'Compose oscar service is missing G1GC idle-heap uncommit flag %s.\n' "$g1_uncommit_flag" >&2
+        printf 'Compose oscar service is missing G1GC/JDK25 flag %s.\n' "$g1_uncommit_flag" >&2
         exit 1
     }
     grep -Fq -- "$g1_uncommit_flag" "$environment_template" || {
-        printf 'Environment template is missing G1GC idle-heap uncommit flag %s.\n' "$g1_uncommit_flag" >&2
+        printf 'Environment template is missing G1GC/JDK25 flag %s.\n' "$g1_uncommit_flag" >&2
         exit 1
     }
 done
+assert_contains '--enable-native-access=ALL-UNNAMED' "$oscar_entrypoint"
 postgres_service_block=$(sed -n '/^  postgres:$/,/^volumes:$/p' "$compose_file")
 [[ $(grep -Fxc '    shm_size: 256m' <<<"$postgres_service_block") == 1 ]] || {
     printf 'Compose postgres service must configure shm_size: 256m so PostgreSQL 16 parallel maintenance cannot exhaust default 64 MiB /dev/shm.\n' >&2

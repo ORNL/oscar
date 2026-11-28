@@ -207,11 +207,12 @@ try {
     Assert-True ($oscarService.Contains('test -f /tmp/oscar-ready && curl --silent --show-error')) `
         'Compose health does not require application readiness before HTTP availability.'
     foreach ($g1Flag in @(
+        '-XX:+UseCompactObjectHeaders',
         '-XX:G1PeriodicGCInterval=300000',
         '-XX:+G1PeriodicGCInvokesConcurrent',
         '-XX:MinHeapFreeRatio=15',
         '-XX:MaxHeapFreeRatio=35')) {
-        Assert-True ($oscarService.Contains($g1Flag)) "Compose oscar service is missing G1GC idle-heap uncommit flag: $g1Flag"
+        Assert-True ($oscarService.Contains($g1Flag)) "Compose oscar service is missing G1GC/JDK25 flag: $g1Flag"
     }
     $postgresService = [Text.RegularExpressions.Regex]::Match(
         $compose, '^  postgres:\r?\n.*?(?=^volumes:)',

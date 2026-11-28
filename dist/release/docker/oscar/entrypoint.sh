@@ -178,6 +178,7 @@ fi
 # cannot be redirected to /tmp and user-controlled data cannot enter the executable mount.
 # shellcheck disable=SC2086
 exec java ${JAVA_OPTS:-} \
+    --enable-native-access=ALL-UNNAMED \
     -Duser.timezone="${TZ:-UTC}" \
     -Djava.io.tmpdir="${NATIVE_TMP_DIR}" \
     -Dorg.bytedeco.javacpp.cachedir="${NATIVE_TMP_DIR}/javacpp" \

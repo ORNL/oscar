@@ -1,12 +1,12 @@
 FROM bluenviron/mediamtx:1.12.2@sha256:691bd1d4cef49226d1d3c86db2e9abe1fe8c7f98547cdc77d1c464637adadb6e AS mediamtx-bin
 
-FROM eclipse-temurin:21.0.10_7-jre-noble@sha256:420374e45e8e9dce3057e768c87a3e8ba58e815049511d8df95ca88a041ec82b AS app-tree
+FROM eclipse-temurin:25.0.5.1_2-jre-noble@sha256:2ec98aa522c472deadfd2b7c5b39bca680e33ef522a53a72f10789bdf89a6bb5 AS app-tree
 
 COPY --chown=root:root osh-node-oscar/ /opt/oscar/
 RUN find /opt/oscar -type d -exec chmod 0555 {} + \
     && find /opt/oscar -type f -exec chmod 0444 {} +
 
-FROM eclipse-temurin:21.0.10_7-jre-noble@sha256:420374e45e8e9dce3057e768c87a3e8ba58e815049511d8df95ca88a041ec82b
+FROM eclipse-temurin:25.0.5.1_2-jre-noble@sha256:2ec98aa522c472deadfd2b7c5b39bca680e33ef522a53a72f10789bdf89a6bb5
 
 ARG OSCAR_VERSION=local
 ARG OSCAR_UID=10001

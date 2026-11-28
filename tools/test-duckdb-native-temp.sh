@@ -5,7 +5,7 @@ script_path=${BASH_SOURCE[0]}
 repo_root=$(CDPATH= cd -- "${script_path%/*}/.." && pwd -P)
 fixture="$repo_root/tools/test-fixtures/DuckDBNativeTempSmoke.java"
 duckdb_jar=${1:-}
-probe_image=${OSCAR_JAVA_PROBE_IMAGE:-eclipse-temurin:21.0.10_7-jre-noble@sha256:420374e45e8e9dce3057e768c87a3e8ba58e815049511d8df95ca88a041ec82b}
+probe_image=${OSCAR_JAVA_PROBE_IMAGE:-eclipse-temurin:25.0.5.1_2-jre-noble@sha256:2ec98aa522c472deadfd2b7c5b39bca680e33ef522a53a72f10789bdf89a6bb5}
 test_root=$(mktemp -d "$repo_root/.duckdb-native-test.XXXXXX")
 fixture_root="$test_root/fixture"
 
@@ -39,7 +39,7 @@ fi
 }
 
 mkdir "$fixture_root"
-javac --release 21 -d "$fixture_root" "$fixture"
+javac --release 25 -d "$fixture_root" "$fixture"
 cp -- "$duckdb_jar" "$fixture_root/duckdb.jar"
 # Docker Desktop virtualizes bind-mount permissions, while a native Linux
 # daemon enforces the host modes. Let the deliberately unrelated container UID
@@ -58,6 +58,7 @@ baseline_log="$test_root/noexec-baseline.log"
 if docker "${container_arguments[@]}" \
     --volume "$fixture_root:/test:ro" \
     --entrypoint java "$probe_image" \
+    --enable-native-access=ALL-UNNAMED \
     -Doscar.data.tmpdir=/tmp -cp '/test:/test/duckdb.jar' \
     DuckDBNativeTempSmoke /tmp /tmp >"$baseline_log" 2>&1; then
     printf 'DuckDB unexpectedly loaded its JNI library from noexec /tmp.\n' >&2
@@ -73,6 +74,7 @@ docker "${container_arguments[@]}" \
     --tmpfs /run/oscar-native:rw,exec,nosuid,nodev,size=256m,mode=0700,uid=10001,gid=10001 \
     --volume "$fixture_root:/test:ro" \
     --entrypoint java "$probe_image" \
+    --enable-native-access=ALL-UNNAMED \
     -Djava.io.tmpdir=/run/oscar-native -Doscar.data.tmpdir=/tmp \
     -cp '/test:/test/duckdb.jar' \
     DuckDBNativeTempSmoke /run/oscar-native /tmp
