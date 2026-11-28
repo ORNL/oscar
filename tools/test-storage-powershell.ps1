@@ -1502,11 +1502,12 @@ SELECT 'single quote '' and $dollar';
     $wslFixtureDir = Join-Path $temporaryRoot 'wsl-profile'
     $wslFixturePath = Join-Path $wslFixtureDir '.wslconfig'
     $createdWslCfg = Ensure-BoundedWslConfig $true $wslFixturePath
-    Assert-True ($createdWslCfg.Present -and $createdWslCfg.Bounded -and $createdWslCfg.WroteFile) `
-        "Ensure-BoundedWslConfig did not create a bounded .wslconfig when absent: $($createdWslCfg.Detail)"
+    Assert-True ($createdWslCfg.Present -and $createdWslCfg.Bounded -and $createdWslCfg.WroteFile -and
+        $createdWslCfg.SparseVhdEnabled -and $createdWslCfg.AutoMemoryReclaim -ceq 'gradual') `
+        "Ensure-BoundedWslConfig did not create a bounded .wslconfig with sparseVhd=true when absent: $($createdWslCfg.Detail)"
     [IO.File]::WriteAllText($wslFixturePath, "[wsl2]`r`nmemory=10GB`r`nprocessors=5`r`n", [Text.UTF8Encoding]::new($false))
     $preservedWslCfg = Ensure-BoundedWslConfig $true $wslFixturePath
-    Assert-True ($preservedWslCfg.Bounded -and -not $preservedWslCfg.WroteFile -and
+    Assert-True ($preservedWslCfg.Bounded -and -not $preservedWslCfg.WroteFile -and -not $preservedWslCfg.SparseVhdEnabled -and
         $preservedWslCfg.Memory -ceq '10GB' -and $preservedWslCfg.Processors -ceq '5') `
         'Ensure-BoundedWslConfig overwrote an existing operator .wslconfig without -ForceWslConfig.'
     [IO.File]::WriteAllText($wslFixturePath, "[wsl2]`r`nnetworkingMode=nat`r`n", [Text.UTF8Encoding]::new($false))
@@ -1516,8 +1517,8 @@ SELECT 'single quote '' and $dollar';
     $ForceWslConfig = $true
     try {
         $forcedWslCfg = Ensure-BoundedWslConfig $true $wslFixturePath
-        Assert-True ($forcedWslCfg.Bounded -and $forcedWslCfg.WroteFile) `
-            'Ensure-BoundedWslConfig did not rewrite an unbounded .wslconfig under -ForceWslConfig.'
+        Assert-True ($forcedWslCfg.Bounded -and $forcedWslCfg.WroteFile -and $forcedWslCfg.SparseVhdEnabled) `
+            'Ensure-BoundedWslConfig did not rewrite an unbounded .wslconfig with sparseVhd=true under -ForceWslConfig.'
     } finally {
         $ForceWslConfig = $false
     }

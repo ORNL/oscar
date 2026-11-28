@@ -124,6 +124,17 @@ if (Object.entries(expectedVideoRetention).some(([field, expected]) =>
     archive?.rollbackGraceDays !== 3 ||
     archive?.deleteHotAfterArchive !== true ||
     archive?.requireParityReceipt !== true ||
+    archive?.telemetryPressureEnabled !== true ||
+    archive?.telemetryPressureTriggerUsagePercent !== 85 ||
+    archive?.telemetryPressureTargetUsagePercent !== 80 ||
+    archive?.telemetryPressureMinimumRetentionDays !== 365 ||
+    archive?.telemetryPressureCriticalUsagePercent !== 92 ||
+    archive?.telemetryPressureCriticalMinimumRetentionDays !== 30 ||
+    archive?.maximumTelemetryPressureRetirementsPerCycle !== 24 ||
+    service?.storagePressureRetentionConfig?.earlySecondaryPruneUsagePercent !== 75 ||
+    service?.storagePressureRetentionConfig?.triggerUsagePercent !== 85 ||
+    service?.storagePressureRetentionConfig?.targetUsagePercent !== 80 ||
+    service?.storagePressureRetentionConfig?.ocrCropRetentionDays !== 365 ||
     dailyJournal?.sealedJournalRetentionDays !== 30 ||
     dailyJournal?.requireBackupBeforeSealedJournalDeletion !== false ||
     JSON.stringify(archive?.outputNames) !== JSON.stringify(outputs)) {
