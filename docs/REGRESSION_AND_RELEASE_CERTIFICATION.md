@@ -154,29 +154,45 @@ Maintainers with **Write** (or higher) access on `ORNL/oscar` can trigger an aut
 ### 5.1 Security Boundary & Trigger Rules
 
 - **Strictly manual `workflow_dispatch` only:** Because `ORNL/oscar` is a public repository, `.github/workflows/staging-50-lane-certification.yml` intentionally forbids `pull_request`, `pull_request_target`, and `push` triggers so untrusted external forks can never execute code on the self-hosted `oscar-50-lane-staging` runner.
-- **Allowlisted wrapper invocation:** The workflow runs only the fixed host wrapper `/usr/local/bin/oscar-self-test` (`run-smoke` or `run-full`), validates `--scenario` against `^[a-z0-9,-]+$`, serializes executions via `concurrency: group: oscar-50-lane-staging`, and automatically redacts IPv4 literals, tailnet hostnames, and SSH usernames before writing `GITHUB_STEP_SUMMARY` or uploading the 14-day `oscar-50-lane-staging-report-<suite>-<run_number>` artifact bundle.
+- **Isolated branch builds (zero direct staging access):** When a Write+ maintainer sets `deploy_branch=true` to test a feature/fix branch without SSH or Tailscale access to the staging host, Job 1 (`build-branch-release`) builds and unit-tests the connected release ZIP strictly inside a disposable **GitHub-hosted `ubuntu-latest` VM** from `ORNL/*` refs only (never untrusted external forks) and records its exact SHA-256 digest.
+- **Allowlisted wrapper invocation & mandatory ZFS rollback:** Job 2 (`certify-50-lane-staging`) runs only the fixed root-owned host wrapper `/usr/local/bin/oscar-self-test` (`run-smoke`, `run-full`, or `run-branch-test`), validates all branch refs and `--scenario` filters strictly, verifies the downloaded branch ZIP's exact SHA-256 before extraction (with zip-slip rejection), serializes staging runs via job-level `concurrency: group: oscar-50-lane-staging`, forces mandatory `@pre-test` ZFS rollback + baseline Docker image tag restoration on exit (including failures or cancellations) for every branch test, and redacts IPv4 literals, tailnet hostnames, and SSH usernames before writing `GITHUB_STEP_SUMMARY` or uploading the 14-day `oscar-50-lane-staging-report-<suite>-<run_number>` artifact bundle.
 
 ### 5.2 Workflow Inputs & Triggering from GitHub UI or CLI
 
 | Input | Type / Default | Effect |
 | :--- | :--- | :--- |
-| `suite` | `smoke` *(default)* \| `full` | Maps to `/usr/local/bin/oscar-self-test run-smoke` (read-only) or `run-full` (all 28 scenarios including fault/alarm injection, OCR, Cargo UFF, Training Sandbox, WebRelay, EML, federation, and natural Parquet retirement). |
-| `scenario` | `string` *(empty = all)* | Optional comma-separated filter (for example `preflight` or `multi-node-federation`). Remember: targeted `--scenario` runs never substitute for an unfiltered `full` release sign-off. |
-| `with_fed_peer` | `boolean` *(`false`)* | Boots the ephemeral local federated peer stack (`:8445`) during `smoke` runs (`run-full` always boots it automatically for `multi-node-federation`). |
-| `rollback_after_test` | `boolean` *(`true`)* | Automatically rolls back and destroys the ephemeral `@pre-test` ZFS snapshot after the run finishes so injected faults, alarms, and test adjudications leave zero residue on the staging baseline. Set `false` only when diagnosing a failure interactively on the staging host. |
+| `suite` | `smoke` *(default)* \| `full` | Runs read-only `smoke` (~6–8 min) or full 28-scenario `full` (~45 min including fault/alarm injection, OCR, Cargo UFF, Training Sandbox, WebRelay, EML, `:8445` federation, and natural Parquet retirement). |
+| `scenario` | `string` *(empty = all)* | Optional comma-separated filter (for example `preflight,viewer-navigation` or `multi-node-federation`). Remember: targeted `--scenario` runs never substitute for an unfiltered `full` release sign-off. |
+| `deploy_branch` | `boolean` *(`false`)* | When `false`, tests the currently deployed staging baseline. When `true`, builds the requested `ORNL/*` branch(es) in GitHub-hosted `ubuntu-latest`, ephemerally upgrades staging under an `@pre-test` ZFS snapshot, executes `suite`, and **always** rolls staging back to its exact baseline ZFS state and Docker images on exit. |
+| `oscar_ref` | `string` *(`main`)* | `ORNL/oscar` branch or tag to build when `deploy_branch=true` (for example `main` or `feat/my-branch`). |
+| `modules_branch` | `string` *(empty)* | Optional `ORNL/osh-oakridge-modules` branch override when `deploy_branch=true` (leave blank to use `oscar_ref`'s pinned submodule commit). |
+| `viewer_branch` | `string` *(empty)* | Optional `ORNL/oscar-viewer` branch override when `deploy_branch=true` (leave blank to use `oscar_ref`'s pinned submodule commit). |
+| `addons_branch` | `string` *(empty)* | Optional `ORNL/osh-addons` branch override when `deploy_branch=true` (leave blank to use `oscar_ref`'s pinned submodule commit). |
+| `with_fed_peer` | `boolean` *(`false`)* | Boots the ephemeral local federated peer stack (`:8445`) during `smoke` runs (`full` always boots it automatically for `multi-node-federation`). |
+| `rollback_after_test` | `boolean` *(`true`)* | Rolls back and destroys the ephemeral `@pre-test` ZFS snapshot after baseline runs (`deploy_branch=true` always enforces rollback regardless of this toggle). |
 
-Trigger via GitHub CLI (`gh`):
+Trigger via GitHub Actions UI (**Actions → Staging 50-Lane Certification (Manual) → Run workflow** on `main`) or via GitHub CLI (`gh`):
 
 ```sh
-# Fast read-only smoke check on the 50-lane staging node
+# 1. Fast read-only smoke check on the current 50-lane staging baseline
 gh workflow run staging-50-lane-certification.yml -R ORNL/oscar -f suite=smoke
 
-# Full unfiltered 50-lane release certification (includes ephemeral :8445 federation peer & @pre-test ZFS rollback)
+# 2. Test a maintainer's branch across 50 lanes (zero SSH/Tailscale access, mandatory ZFS rollback)
 gh workflow run staging-50-lane-certification.yml -R ORNL/oscar \
-  -f suite=full \
-  -f rollback_after_test=true
+  -f deploy_branch=true \
+  -f oscar_ref=main \
+  -f modules_branch=feat/my-backend-fix \
+  -f viewer_branch=feat/my-viewer-fix \
+  -f suite=smoke \
+  -f scenario=preflight,viewer-navigation,adjudication
 
-# Watch run progress and download redacted CSV/Markdown reports once complete
+# 3. Full unfiltered 28-scenario 50-lane branch certification
+gh workflow run staging-50-lane-certification.yml -R ORNL/oscar \
+  -f deploy_branch=true \
+  -f oscar_ref=feat/my-release-branch \
+  -f suite=full
+
+# 4. Watch run progress and download redacted CSV/Markdown reports once complete
 gh run list -R ORNL/oscar --workflow staging-50-lane-certification.yml --limit 5
 gh run download <RUN_ID> -R ORNL/oscar -D /tmp/staging-report
 ```

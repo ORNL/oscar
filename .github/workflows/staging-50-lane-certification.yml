@@ -4,6 +4,12 @@ name: Staging 50-Lane Certification (Manual)
 # Strictly manual workflow_dispatch (available only to repository Write+ collaborators).
 # NEVER add pull_request, pull_request_target, or push triggers to a self-hosted runner
 # workflow on a public repository.
+#
+# When deploy_branch=true, the branch release ZIP is built exclusively inside an isolated
+# GitHub-hosted ubuntu-latest VM from ORNL/* branches only, verified by SHA-256 on the
+# staging runner, ephemerally upgraded via the allowlisted /usr/local/bin/oscar-self-test
+# run-branch-test wrapper, and ALWAYS rolled back to the baseline ZFS snapshot and Docker
+# images on exit (including failure or cancellation).
 on:
   workflow_dispatch:
     inputs:
@@ -16,7 +22,32 @@ on:
           - smoke
           - full
       scenario:
-        description: 'Optional comma-separated scenario filter (e.g. preflight or multi-node-federation); leave empty for full profile'
+        description: 'Optional comma-separated scenario filter (e.g. preflight,viewer-navigation); leave empty for full profile'
+        required: false
+        type: string
+        default: ''
+      deploy_branch:
+        description: 'Build and ephemerally test ORNL/* branch(es) on 50-lane staging with mandatory ZFS rollback (false = test current staging baseline)'
+        required: false
+        type: boolean
+        default: false
+      oscar_ref:
+        description: 'ORNL/oscar branch or tag to build when deploy_branch=true (e.g. main or feat/my-branch)'
+        required: false
+        type: string
+        default: 'main'
+      modules_branch:
+        description: 'Optional ORNL/osh-oakridge-modules branch override when deploy_branch=true (blank = use oscar_ref pin)'
+        required: false
+        type: string
+        default: ''
+      viewer_branch:
+        description: 'Optional ORNL/oscar-viewer branch override when deploy_branch=true (blank = use oscar_ref pin)'
+        required: false
+        type: string
+        default: ''
+      addons_branch:
+        description: 'Optional ORNL/osh-addons branch override when deploy_branch=true (blank = use oscar_ref pin)'
         required: false
         type: string
         default: ''
@@ -26,7 +57,7 @@ on:
         type: boolean
         default: false
       rollback_after_test:
-        description: 'Roll back and destroy ephemeral @pre-test ZFS snapshot after the run'
+        description: 'Roll back and destroy ephemeral @pre-test ZFS snapshot after baseline runs (always forced true when deploy_branch=true)'
         required: false
         type: boolean
         default: true
@@ -34,60 +65,236 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: oscar-50-lane-staging
-  cancel-in-progress: false
+env:
+  JAVA_VERSION: '21'
+  NODE_VERSION: '22'
 
 jobs:
+  build-branch-release:
+    name: Build Branch Release ZIP (GitHub-Hosted)
+    if: ${{ inputs.deploy_branch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      zip_name: ${{ steps.pkg.outputs.zip_name }}
+      zip_sha256: ${{ steps.pkg.outputs.zip_sha256 }}
+      build_label: ${{ steps.pkg.outputs.build_label }}
+      resolved_summary: ${{ steps.pkg.outputs.resolved_summary }}
+    steps:
+      - name: Validate branch and ref inputs
+        env:
+          INPUT_OSCAR_REF: ${{ inputs.oscar_ref }}
+          INPUT_MODULES_BRANCH: ${{ inputs.modules_branch }}
+          INPUT_VIEWER_BRANCH: ${{ inputs.viewer_branch }}
+          INPUT_ADDONS_BRANCH: ${{ inputs.addons_branch }}
+        run: |
+          set -euo pipefail
+          validate_ref() {
+            local name="$1" val="$2" allow_empty="$3"
+            if [ -z "$val" ]; then
+              if [ "$allow_empty" = "1" ]; then return 0; fi
+              echo "::error::${name} must not be empty when deploy_branch=true."
+              exit 2
+            fi
+            if ! printf '%s' "$val" | grep -Eq '^[A-Za-z0-9._/-]{1,128}$'; then
+              echo "::error::Invalid characters in ${name}: ${val}"
+              exit 2
+            fi
+            case "$val" in
+              -*|/*|*/*/*..*|*..*|*//*|*.lock)
+                echo "::error::Unsafe ref format in ${name}: ${val}"
+                exit 2 ;;
+            esac
+          }
+          validate_ref "oscar_ref" "$INPUT_OSCAR_REF" 0
+          validate_ref "modules_branch" "$INPUT_MODULES_BRANCH" 1
+          validate_ref "viewer_branch" "$INPUT_VIEWER_BRANCH" 1
+          validate_ref "addons_branch" "$INPUT_ADDONS_BRANCH" 1
+
+      - name: Checkout ORNL/oscar at requested ref
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.oscar_ref }}
+          submodules: recursive
+
+      - name: Apply optional ORNL/* submodule branch overrides
+        env:
+          INPUT_MODULES_BRANCH: ${{ inputs.modules_branch }}
+          INPUT_VIEWER_BRANCH: ${{ inputs.viewer_branch }}
+          INPUT_ADDONS_BRANCH: ${{ inputs.addons_branch }}
+        run: |
+          set -euo pipefail
+          checkout_ornl_submodule_branch() {
+            local sub_path="$1" expected_repo="$2" branch="$3"
+            [ -n "$branch" ] || return 0
+            echo "Checking out ORNL/${expected_repo} branch '${branch}' in ${sub_path}..."
+            (
+              cd "$sub_path"
+              remote_url=$(git remote get-url origin)
+              case "$remote_url" in
+                "https://github.com/ORNL/${expected_repo}"|"https://github.com/ORNL/${expected_repo}.git") ;;
+                *)
+                  echo "::error::Submodule ${sub_path} origin is not ORNL/${expected_repo}: ${remote_url}"
+                  exit 2 ;;
+              esac
+              git fetch --depth 1 origin "refs/heads/${branch}"
+              git checkout --detach FETCH_HEAD
+              git log -1 --oneline
+            )
+          }
+          checkout_ornl_submodule_branch "include/osh-oakridge-modules" "osh-oakridge-modules" "$INPUT_MODULES_BRANCH"
+          checkout_ornl_submodule_branch "web/oscar-viewer" "oscar-viewer" "$INPUT_VIEWER_BRANCH"
+          checkout_ornl_submodule_branch "include/osh-addons" "osh-addons" "$INPUT_ADDONS_BRANCH"
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: zulu
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/oscar-viewer/package-lock.json
+
+      - name: Build and unit-test branch connected release
+        run: ./build-all.sh
+
+      - name: Package branch artifact metadata and SHA-256
+        id: pkg
+        env:
+          INPUT_OSCAR_REF: ${{ inputs.oscar_ref }}
+          INPUT_MODULES_BRANCH: ${{ inputs.modules_branch }}
+          INPUT_VIEWER_BRANCH: ${{ inputs.viewer_branch }}
+          INPUT_ADDONS_BRANCH: ${{ inputs.addons_branch }}
+        run: |
+          set -euo pipefail
+          zip_path=$(ls -1 build/distributions/oscar-*.zip | head -n 1)
+          [ -f "$zip_path" ] || { echo "::error::Connected release ZIP not produced."; exit 1; }
+          zip_name=$(basename "$zip_path")
+          zip_sha=$(sha256sum "$zip_path" | awk '{print $1}')
+          oscar_sha=$(git rev-parse --short HEAD)
+          mod_sha=$(git -C include/osh-oakridge-modules rev-parse --short HEAD)
+          view_sha=$(git -C web/oscar-viewer rev-parse --short HEAD)
+          add_sha=$(git -C include/osh-addons rev-parse --short HEAD)
+          safe_ref=$(printf '%s' "$INPUT_OSCAR_REF" | sed -E 's/[^A-Za-z0-9._-]+/-/g' | cut -c1-48)
+          build_label="branch-${safe_ref}-${oscar_sha}"
+          resolved="oscar=${INPUT_OSCAR_REF}@${oscar_sha}; modules=${INPUT_MODULES_BRANCH:-pinned}@${mod_sha}; viewer=${INPUT_VIEWER_BRANCH:-pinned}@${view_sha}; addons=${INPUT_ADDONS_BRANCH:-pinned}@${add_sha}"
+          echo "zip_name=${zip_name}" >> "$GITHUB_OUTPUT"
+          echo "zip_sha256=${zip_sha}" >> "$GITHUB_OUTPUT"
+          echo "build_label=${build_label}" >> "$GITHUB_OUTPUT"
+          echo "resolved_summary=${resolved}" >> "$GITHUB_OUTPUT"
+          echo "Built ${zip_name} (SHA-256 ${zip_sha}) — ${resolved}"
+
+      - name: Upload branch release ZIP for staging runner
+        uses: actions/upload-artifact@v4
+        with:
+          name: oscar-branch-candidate-${{ github.run_id }}
+          path: build/distributions/oscar-*.zip
+          retention-days: 1
+          if-no-files-found: error
+
   certify-50-lane-staging:
     name: Self-Contained 50-Lane Staging Certification
+    needs: [build-branch-release]
+    if: ${{ always() && (!inputs.deploy_branch || needs.build-branch-release.result == 'success') }}
     runs-on: [self-hosted, linux, x64, oscar-50-lane-staging]
     timeout-minutes: 150
+    concurrency:
+      group: oscar-50-lane-staging
+      cancel-in-progress: false
     steps:
+      - name: Download SHA-256-verified branch release ZIP
+        if: ${{ inputs.deploy_branch }}
+        uses: actions/download-artifact@v4
+        with:
+          name: oscar-branch-candidate-${{ github.run_id }}
+          path: ${{ runner.temp }}/branch-candidate
+
       - name: Run allowlisted oscar-self-test certification and redact report
         id: run_cert
         env:
           INPUT_SUITE: ${{ inputs.suite }}
           INPUT_SCENARIO: ${{ inputs.scenario }}
+          INPUT_DEPLOY_BRANCH: ${{ inputs.deploy_branch }}
           INPUT_WITH_FED_PEER: ${{ inputs.with_fed_peer }}
           INPUT_ROLLBACK: ${{ inputs.rollback_after_test }}
+          BRANCH_ZIP_NAME: ${{ needs.build-branch-release.outputs.zip_name }}
+          BRANCH_ZIP_SHA256: ${{ needs.build-branch-release.outputs.zip_sha256 }}
+          BRANCH_BUILD_LABEL: ${{ needs.build-branch-release.outputs.build_label }}
+          BRANCH_RESOLVED_SUMMARY: ${{ needs.build-branch-release.outputs.resolved_summary }}
         run: |
           set -euo pipefail
 
           case "$INPUT_SUITE" in
-            smoke) subcmd="run-smoke" ;;
-            full)  subcmd="run-full" ;;
-            *)     echo "::error::Invalid suite input: $INPUT_SUITE"; exit 2 ;;
+            smoke|full) ;;
+            *) echo "::error::Invalid suite input: $INPUT_SUITE"; exit 2 ;;
           esac
 
-          args=()
-          if [ "$INPUT_ROLLBACK" = "false" ]; then
-            args+=("--no-rollback")
-          fi
-          if [ "$INPUT_SUITE" = "smoke" ] && [ "$INPUT_WITH_FED_PEER" = "true" ]; then
-            args+=("--with-fed-peer")
-          fi
           if [ -n "$INPUT_SCENARIO" ]; then
             if ! printf '%s' "$INPUT_SCENARIO" | grep -Eq '^[a-z0-9,-]+$'; then
               echo "::error::Invalid scenario filter characters."
               exit 2
             fi
-            args+=("--scenario" "$INPUT_SCENARIO")
           fi
 
           before_latest=$(ls -1dt /srv/oscar-test/results/* 2>/dev/null | head -n 1 || true)
           set +e
-          /usr/local/bin/oscar-self-test "$subcmd" "${args[@]}" 2>&1 \
-            | sed -E \
-              -e 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/<STAGING_NODE>/g' \
-              -e 's/[A-Za-z0-9._-]+\.ts\.net/<TAILNET_HOST>/g'
-          run_rc=${PIPESTATUS[0]}
+          if [ "$INPUT_DEPLOY_BRANCH" = "true" ]; then
+            zip_file="${RUNNER_TEMP}/branch-candidate/${BRANCH_ZIP_NAME}"
+            args=(
+              "--zip" "$zip_file"
+              "--sha256" "$BRANCH_ZIP_SHA256"
+              "--suite" "$INPUT_SUITE"
+              "--label" "$BRANCH_BUILD_LABEL"
+            )
+            if [ "$INPUT_SUITE" = "smoke" ] && [ "$INPUT_WITH_FED_PEER" = "true" ]; then
+              args+=("--with-fed-peer")
+            fi
+            if [ -n "$INPUT_SCENARIO" ]; then
+              args+=("--scenario" "$INPUT_SCENARIO")
+            fi
+            /usr/local/bin/oscar-self-test run-branch-test "${args[@]}" 2>&1 \
+              | sed -E \
+                -e 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/<STAGING_NODE>/g' \
+                -e 's/[A-Za-z0-9._-]+\.ts\.net/<TAILNET_HOST>/g'
+            run_rc=${PIPESTATUS[0]}
+          else
+            subcmd="run-${INPUT_SUITE}"
+            args=()
+            if [ "$INPUT_ROLLBACK" = "false" ]; then
+              args+=("--no-rollback")
+            fi
+            if [ "$INPUT_SUITE" = "smoke" ] && [ "$INPUT_WITH_FED_PEER" = "true" ]; then
+              args+=("--with-fed-peer")
+            fi
+            if [ -n "$INPUT_SCENARIO" ]; then
+              args+=("--scenario" "$INPUT_SCENARIO")
+            fi
+            /usr/local/bin/oscar-self-test "$subcmd" "${args[@]}" 2>&1 \
+              | sed -E \
+                -e 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/<STAGING_NODE>/g' \
+                -e 's/[A-Za-z0-9._-]+\.ts\.net/<TAILNET_HOST>/g'
+            run_rc=${PIPESTATUS[0]}
+          fi
           set -e
 
           after_latest=$(ls -1dt /srv/oscar-test/results/* 2>/dev/null | head -n 1 || true)
           out_dir="${RUNNER_TEMP}/staging-report"
           rm -rf "$out_dir"
           mkdir -p "$out_dir"
+
+          if [ "$INPUT_DEPLOY_BRANCH" = "true" ]; then
+            {
+              echo "### Ephemeral Branch Staging Test"
+              echo "- **Target Refs:** \`${BRANCH_RESOLVED_SUMMARY}\`"
+              echo "- **Release ZIP SHA-256:** \`${BRANCH_ZIP_SHA256}\`"
+              echo "- **Rollback:** Mandatory \`@pre-test\` ZFS rollback + baseline Docker image restore completed"
+              echo ""
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
           if [ -n "$after_latest" ] && [ "$after_latest" != "$before_latest" ] && [ -d "$after_latest" ]; then
             for fname in summary.md summary.csv functional-results.csv storage-performance.csv performance.csv errors.csv; do
@@ -105,6 +312,10 @@ jobs:
           fi
 
           exit "$run_rc"
+
+      - name: Clean up temporary branch candidate archive
+        if: ${{ always() && inputs.deploy_branch }}
+        run: rm -rf "${RUNNER_TEMP}/branch-candidate"
 
       - name: Upload redacted certification report
         if: always()
