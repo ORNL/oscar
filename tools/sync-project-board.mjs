@@ -73,6 +73,25 @@ const BOARD_ITEMS = [
     { repo: 'ORNL/oscar-regression', kind: 'pr', number: 35, targetColumn: 'Done' },
     { repo: 'ORNL/oscar-regression', kind: 'pr', number: 36, targetColumn: 'Done' },
     { repo: 'ORNL/oscar', kind: 'pr', number: 93, targetColumn: 'Done' },
+
+    // Incorporated (v3.12.2 — 10-Year Scale Hardening, Tiered Storage-Pressure Policies, WSL 2 sparseVhd & Non-Admin Staging Isolation)
+    { repo: 'ORNL/osh-core', kind: 'pr', number: 12, targetColumn: 'Done' },
+    { repo: 'ORNL/osh-addons', kind: 'pr', number: 23, targetColumn: 'Done' },
+    { repo: 'ORNL/osh-addons', kind: 'pr', number: 24, targetColumn: 'Done' },
+    { repo: 'ORNL/osh-addons', kind: 'pr', number: 25, targetColumn: 'Done' },
+    { repo: 'ORNL/osh-addons', kind: 'pr', number: 26, targetColumn: 'Done' },
+    { repo: 'ORNL/osh-oakridge-modules', kind: 'pr', number: 66, targetColumn: 'Done' },
+    { repo: 'ORNL/osh-oakridge-modules', kind: 'pr', number: 67, targetColumn: 'Done' },
+    { repo: 'ORNL/osh-oakridge-modules', kind: 'pr', number: 68, targetColumn: 'Done' },
+    { repo: 'ORNL/oscar-viewer', kind: 'pr', number: 56, targetColumn: 'Done' },
+    { repo: 'ORNL/oscar-viewer', kind: 'pr', number: 57, targetColumn: 'Done' },
+    { repo: 'ORNL/oscar', kind: 'pr', number: 94, targetColumn: 'Done' },
+    { repo: 'ORNL/oscar', kind: 'pr', number: 95, targetColumn: 'Done' },
+    { repo: 'ORNL/oscar', kind: 'pr', number: 96, targetColumn: 'Done' },
+    { repo: 'ORNL/oscar', kind: 'pr', number: 97, targetColumn: 'Done' },
+    { repo: 'ORNL/oscar', kind: 'pr', number: 98, targetColumn: 'Done' },
+    { repo: 'ORNL/oscar', kind: 'pr', number: 99, targetColumn: 'Done' },
+    { repo: 'ORNL/oscar', kind: 'pr', number: 100, targetColumn: 'Done' },
 ];
 
 function ghGraphql(query, variables = {}) {

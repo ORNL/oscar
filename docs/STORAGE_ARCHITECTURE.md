@@ -1,6 +1,6 @@
-# OSCAR 3.12.1 storage architecture
+# OSCAR 3.12.2 storage architecture
 
-OSCAR 3.12.1 separates live operational data, durable RPM source records, retained media, and
+OSCAR 3.12.2 separates live operational data, durable RPM source records, retained media, and
 long-term observation history. PostgreSQL remains the authoritative hot store and metadata catalog;
 immutable Apache Parquet V2 files carry the high-volume history using a **Split-at-Export +
 Event-Only Multi-Tier Compaction** design. This keeps normal Open Sensor Hub (OSH) reads and
@@ -352,9 +352,25 @@ When extending CQL filters, statistics, reports, or Parquet archive code:
   zero-fills into one pass per batch, then targeted DuckDB
   `read_parquet(..., filename=true, union_by_name=true)` registered in
   `DuckDbResourcePolicy.AdmissionController.isBackgroundCountOperation`) on the
-  `oscar-base-summary-backfill` daemon thread, latching completed phases so
-  steady-state maintenance performs zero full-table scans.
-  always remains free for interactive queries.
+  `oscar-base-summary-backfill` daemon thread, latching completed phases via the additive
+  `summary_backfill_flags` bitmask on `oscar_archive_generation` (`SCHEMA_VERSION = 5`, zero
+  growing indexes, `< 1 ms` caught-up steady-state probe) and writing compact
+  `summary_version = 2` metadata without full-table rescans.
+- **Keep DuckDB interactive headroom, overlay maintenance, and PostgreSQL `/dev/shm` bounded:**
+  During archive export and background scans, `DuckDbResourcePolicy` reserves one interactive
+  DuckDB permit (`activeLifecycleCount` capped below the 2-session global ceiling) so user queries
+  are never starved behind background jobs; bloat-gated online `oscar_obs_overlay` maintenance and
+  tightened catalog/overlay autovacuum keep hot tables compact without `ACCESS EXCLUSIVE` locks;
+  all programmatic `VACUUM` statements emit `VACUUM (ANALYZE, PARALLEL 0)` paired with
+  `shm_size: 256m` on `oscar-postgres-1` so PostgreSQL 16 parallel maintenance never exhausts
+  Docker's default `64 MiB` `/dev/shm`.
+- **Cold-archive telemetry storage-pressure protection (`telemetryPressureEnabled = true`):**
+  When archive filesystem usage reaches `85%` (target `80%`), the lifecycle worker reclaims oldest
+  write-once `RAW_TELEMETRY` / `DAILY_TELEMETRY` generations older than `365 days` (or `30 days`
+  at `>= 92%` critical usage, up to `24` generations/cycle, subtracting pending `DELETING` bytes)
+  through reader-pin-safe `DELETING -> drainDeletingGenerations()`, while preserving **100%** of
+  `RAW_EVENTS`, `DAILY_EVENTS`, `MONTHLY_EVENTS`, `RAW_GATED`, active `oscar_retention_hold` rows,
+  and `oscar_obs_latest`.
 - **Version persisted `base_summary_mask` bits:** New `JsonCqlEvaluator.computeSummaryMask` bits
   must be gated behind a version bit (`BIT_MASK_V2 = 1 << 30`) so pre-upgrade persisted masks on
   `oscar_obs_overlay` and `oscar_tombstone` never silently mis-evaluate new predicates.
@@ -528,7 +544,7 @@ policy to hot, cold, exported, and backup copies.
 
 ## 3.12.0 compatibility boundary
 
-OSCAR 3.12.1 is a substantial storage-profile update. A new installation uses:
+OSCAR 3.12.2 is a substantial storage-profile update. A new installation uses:
 
 - `OscarTieredObsSystemDatabaseConfig` with explicit `PARQUET_PRIMARY`, sequential IDs, and batched
   commit-durable PostgreSQL staging for the allowlisted immutable outputs;

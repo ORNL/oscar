@@ -1,6 +1,6 @@
-# OSCAR 3.12.1 Vehicle OCR Field Deployment, Tuning & Operations Guide
+# OSCAR 3.12.2 Vehicle OCR Field Deployment, Tuning & Operations Guide
 
-OSCAR 3.12.1 includes an optional, strictly opt-in, on-premise **Vehicle OCR** pipeline (`sensorhub-process-ocr` + `LaneSystem`) that asynchronously reads **ISO 6346 shipping container numbers** (with check-digit validation) and **license plates** from recorded occupancy camera clips — requiring zero external cloud services, zero GPU hardware, and zero runtime overhead on lanes where OCR is disabled.
+OSCAR 3.12.2 includes an optional, strictly opt-in, on-premise **Vehicle OCR** pipeline (`sensorhub-process-ocr` + `LaneSystem`) that asynchronously reads **ISO 6346 shipping container numbers** (with check-digit validation) and **license plates** from recorded occupancy camera clips — requiring zero external cloud services, zero GPU hardware, and zero runtime overhead on lanes where OCR is disabled.
 
 > **Companion References:**
 > - **Video Walkthroughs:** Watch [Module 17 — Vehicle OCR Auto-Fill, Multi-Pass Compare & Linked Adjudication](https://github.com/ORNL/oscar-video-guides/blob/main/videos/17-vehicle-ocr-and-adjudication.mp4), [Module 23 — Windows 11 Host Readiness & OCR Lane Scaling](https://github.com/ORNL/oscar-video-guides/blob/main/videos/23-windows-wsl2-host-readiness-and-ocr-scaling.mp4), and [Module 25 — Pluggable Runtime Extensions, OCR Packs & Offline Maps](https://github.com/ORNL/oscar-video-guides/blob/main/videos/25-pluggable-runtime-extensions-and-pmtiles.mp4) in [VIDEO_GUIDES.md](VIDEO_GUIDES.md).
