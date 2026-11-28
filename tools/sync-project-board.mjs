@@ -85,6 +85,7 @@ const BOARD_ITEMS = [
     { repo: 'ORNL/osh-oakridge-modules', kind: 'pr', number: 68, targetColumn: 'Done' },
     { repo: 'ORNL/oscar-viewer', kind: 'pr', number: 56, targetColumn: 'Done' },
     { repo: 'ORNL/oscar-viewer', kind: 'pr', number: 57, targetColumn: 'Done' },
+    { repo: 'ORNL/oscar-regression', kind: 'pr', number: 37, targetColumn: 'Done' },
     { repo: 'ORNL/oscar', kind: 'pr', number: 94, targetColumn: 'Done' },
     { repo: 'ORNL/oscar', kind: 'pr', number: 95, targetColumn: 'Done' },
     { repo: 'ORNL/oscar', kind: 'pr', number: 96, targetColumn: 'Done' },
@@ -92,6 +93,12 @@ const BOARD_ITEMS = [
     { repo: 'ORNL/oscar', kind: 'pr', number: 98, targetColumn: 'Done' },
     { repo: 'ORNL/oscar', kind: 'pr', number: 99, targetColumn: 'Done' },
     { repo: 'ORNL/oscar', kind: 'pr', number: 100, targetColumn: 'Done' },
+    { repo: 'ORNL/oscar', kind: 'pr', number: 104, targetColumn: 'Done' },
+
+    // Planned Future Platform Roadmap (v3.13.0 & v4.0.0)
+    { repo: 'ORNL/oscar', kind: 'issue', number: 101, targetColumn: 'Todo' },
+    { repo: 'ORNL/oscar', kind: 'issue', number: 102, targetColumn: 'Todo' },
+    { repo: 'ORNL/oscar', kind: 'issue', number: 103, targetColumn: 'Todo' },
 ];
 
 function ghGraphql(query, variables = {}) {
