@@ -163,7 +163,7 @@ require_admin() {
 
 require_supported_storage_host() {
     [[ $(uname -s) != Darwin ]] ||
-        fail "OSCAR $(release_version) storage deployment is not supported on macOS Docker Desktop because its unprivileged bind-mount transport cannot preserve both service write access and administrator-only root identity protection. Use Ubuntu 24.04 or Windows."
+        fail "OSCAR $(release_version) storage deployment is not supported on macOS Docker Desktop because its unprivileged bind-mount transport cannot preserve both service write access and administrator-only root identity protection. Use Ubuntu 24.04/26.04 LTS or Windows."
 }
 
 offline_manifest_hash() {
@@ -238,12 +238,16 @@ install_bundled_prerequisites() {
     heading 'Docker prerequisite'
     case "$(uname -s)" in
         Linux)
-            local installer_dir="$script_dir/installers/ubuntu-24.04-x86_64"
+            local host_os_ver='24.04'
+            if [[ -f /etc/os-release ]]; then
+                host_os_ver=$(. /etc/os-release && printf '%s' "${VERSION_ID:-24.04}")
+            fi
+            local installer_dir="$script_dir/installers/ubuntu-${host_os_ver}-x86_64"
             local packages=()
             if [[ -d $installer_dir ]]; then
                 while IFS= read -r -d '' package; do packages+=("$package"); done < <(find "$installer_dir" -maxdepth 1 -type f -name '*.deb' -print0)
             fi
-            ((${#packages[@]})) || fail "Docker is unavailable. Place the official Ubuntu 24.04 x86-64 Docker .deb bundle in $installer_dir and run setup again."
+            ((${#packages[@]})) || fail "Docker is unavailable. Place the official Ubuntu ${host_os_ver} x86-64 Docker .deb bundle in $installer_dir and run setup again."
             printf 'Installing bundled official Docker packages...\n'
             dpkg -i "${packages[@]}"
             systemctl enable --now docker

@@ -2,13 +2,13 @@
 # TCP interleaved RTP sequence/FU-A corruption with physical Reolink RTSP cameras.
 FROM bluenviron/mediamtx:1.12.2@sha256:691bd1d4cef49226d1d3c86db2e9abe1fe8c7f98547cdc77d1c464637adadb6e AS mediamtx-bin
 
-FROM eclipse-temurin:25.0.5.1_2-jre-noble@sha256:2ec98aa522c472deadfd2b7c5b39bca680e33ef522a53a72f10789bdf89a6bb5 AS app-tree
+FROM eclipse-temurin:25.0.5.1_2-jre-resolute@sha256:a0862ac8790c648f6b5db8a113b9990d24fbe8e65f3c4ba8d68b0302d270c1e6 AS app-tree
 
 COPY --chown=root:root osh-node-oscar/ /opt/oscar/
 RUN find /opt/oscar -type d -exec chmod 0555 {} + \
     && find /opt/oscar -type f -exec chmod 0444 {} +
 
-FROM eclipse-temurin:25.0.5.1_2-jre-noble@sha256:2ec98aa522c472deadfd2b7c5b39bca680e33ef522a53a72f10789bdf89a6bb5
+FROM eclipse-temurin:25.0.5.1_2-jre-resolute@sha256:a0862ac8790c648f6b5db8a113b9990d24fbe8e65f3c4ba8d68b0302d270c1e6
 
 ARG OSCAR_VERSION=local
 ARG OSCAR_UID=10001

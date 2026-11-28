@@ -19,7 +19,7 @@ fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
     fail "OSCAR storage launcher must be a regular, non-symlink file: $script_path"
 require_supported_storage_host() {
     [[ $(uname -s) != Darwin ]] ||
-        fail 'OSCAR 3.11.0 storage administration is not supported on macOS Docker Desktop; use Ubuntu 24.04 or Windows.'
+        fail 'OSCAR 3.11.0 storage administration is not supported on macOS Docker Desktop; use Ubuntu 24.04/26.04 LTS or Windows.'
 }
 heading() { printf '\n== %s ==\n' "$*"; }
 compose() {

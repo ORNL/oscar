@@ -3804,7 +3804,7 @@ Restore and archive purge are destructive and require explicit confirmation.
 try {
     if ($Command -ne 'help') {
         if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
-            Fail 'The PowerShell OSCAR storage launcher is supported only on Windows; use the Bash launcher on Ubuntu 24.04.'
+            Fail 'The PowerShell OSCAR storage launcher is supported only on Windows; use the Bash launcher on Ubuntu 24.04/26.04 LTS.'
         }
         Assert-Administrator; Assert-Configured
         if ($Command -in @('backup', 'backup-verify', 'backup-prune', 'restore')) { Assert-BackupModeEnabled }

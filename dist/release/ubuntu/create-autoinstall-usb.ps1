@@ -1346,7 +1346,10 @@ function Show-AutoinstallUsbGui([string]$InitialIso, [string]$InitialBundle, [st
     Add-Type -AssemblyName System.Drawing
     [System.Windows.Forms.Application]::EnableVisualStyles()
 
-    $defaultIso = if ($InitialIso) { $InitialIso } else { Find-DefaultFile 'ubuntu-24.04*-live-server-amd64.iso' }
+    $defaultIso = if ($InitialIso) { $InitialIso } else {
+        $iso26 = Find-DefaultFile 'ubuntu-26.04*-live-server-amd64.iso'
+        if ($iso26) { $iso26 } else { Find-DefaultFile 'ubuntu-24.04*-live-server-amd64.iso' }
+    }
     $defaultBundle = if ($InitialBundle) { $InitialBundle } else { Find-DefaultFile 'oscar-*-ubuntu-x86_64-offline-full.zip' }
     $defaultPubKey = ''
     $sshDir = Join-Path $HOME '.ssh'
@@ -1356,7 +1359,7 @@ function Show-AutoinstallUsbGui([string]$InitialIso, [string]$InitialBundle, [st
     }
 
     $form = New-Object System.Windows.Forms.Form
-    $form.Text = 'OSCAR Bare-Metal Ubuntu 24.04 Offline Autoinstall USB Creator'
+    $form.Text = 'OSCAR Bare-Metal Ubuntu 24.04 / 26.04 LTS Offline Autoinstall USB Creator'
     $form.ClientSize = New-Object System.Drawing.Size(760, 868)
     $form.StartPosition = 'CenterScreen'
     $form.FormBorderStyle = 'FixedDialog'
@@ -1364,7 +1367,7 @@ function Show-AutoinstallUsbGui([string]$InitialIso, [string]$InitialBundle, [st
     $form.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 
     $lblBanner = New-Object System.Windows.Forms.Label
-    $lblBanner.Text = 'Build a UEFI Secure-Boot Ubuntu Server 24.04 LTS + Air-Gapped OSCAR Autoinstall USB Drive'
+    $lblBanner.Text = 'Build a UEFI Secure-Boot Ubuntu Server 24.04 / 26.04 LTS + Air-Gapped OSCAR Autoinstall USB Drive'
     $lblBanner.Font = New-Object System.Drawing.Font('Segoe UI', 10.5, [System.Drawing.FontStyle]::Bold)
     $lblBanner.Location = New-Object System.Drawing.Point(16, 12)
     $lblBanner.Size = New-Object System.Drawing.Size(728, 24)
@@ -2039,8 +2042,9 @@ if (-not $selectedCandidate) {
 }
 
 if (-not $IsoPath) {
-    $defaultIso = Find-DefaultFile 'ubuntu-24.04*-live-server-amd64.iso'
-    $promptIso = if ($defaultIso) { "Path to ubuntu-24.04.x-live-server-amd64.iso [$defaultIso]" } else { 'Path to ubuntu-24.04.x-live-server-amd64.iso' }
+    $defaultIso = Find-DefaultFile 'ubuntu-26.04*-live-server-amd64.iso'
+    if (-not $defaultIso) { $defaultIso = Find-DefaultFile 'ubuntu-24.04*-live-server-amd64.iso' }
+    $promptIso = if ($defaultIso) { "Path to ubuntu-26.04.x/24.04.x-live-server-amd64.iso [$defaultIso]" } else { 'Path to ubuntu-26.04.x/24.04.x-live-server-amd64.iso' }
     $replyIso = Read-Host $promptIso
     $IsoPath = if ($replyIso) { $replyIso.Trim('"') } else { $defaultIso }
 }

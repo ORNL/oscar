@@ -255,7 +255,7 @@ run_host_check() {
                 cat <<'EOF'
 Usage: sudo bash oscar.sh host-check [--strict] [--json] [--allow-dhcp]
 
-Audits Ubuntu 24.04 LTS readiness for 24/7 OSCAR operation, hotel-room staging,
+Audits Ubuntu 24.04 / 26.04 LTS readiness for 24/7 OSCAR operation, hotel-room staging,
 and air-gapped field cutover.
 EOF
                 return 0
@@ -268,7 +268,7 @@ EOF
     check_statuses=()
     check_details=()
 
-    # 1. OS Version
+    # 1. OS Version (Dual-LTS: Ubuntu 24.04 Noble and Ubuntu 26.04 Resolute)
     local os_id='' os_ver='' os_arch
     if [[ -f "${etc_dir}/os-release" ]]; then
         # shellcheck disable=SC1090
@@ -277,12 +277,12 @@ EOF
         os_ver=${VERSION_ID:-}
     fi
     os_arch=$(uname -m)
-    if [[ $os_id == ubuntu && $os_ver == 24.04 && $os_arch == x86_64 ]]; then
-        record_check "os-version" "PASS" "Ubuntu 24.04 LTS x86_64 detected."
+    if [[ $os_id == ubuntu && ( $os_ver == 24.04 || $os_ver == 26.04 ) && $os_arch == x86_64 ]]; then
+        record_check "os-version" "PASS" "Ubuntu ${os_ver} LTS x86_64 detected (certified dual-LTS target: 24.04 / 26.04)."
     elif [[ $os_id == ubuntu && $os_arch == x86_64 ]]; then
-        record_check "os-version" "WARN" "Ubuntu ${os_ver:-unknown} x86_64 detected (Ubuntu 24.04 LTS is the certified release target)."
+        record_check "os-version" "WARN" "Ubuntu ${os_ver:-unknown} x86_64 detected (Ubuntu 24.04 LTS and 26.04 LTS are the certified release targets)."
     else
-        record_check "os-version" "WARN" "Detected ${os_id:-unknown} ${os_ver:-unknown} (${os_arch}); Ubuntu 24.04 LTS x86_64 is recommended."
+        record_check "os-version" "WARN" "Detected ${os_id:-unknown} ${os_ver:-unknown} (${os_arch}); Ubuntu 24.04 LTS or 26.04 LTS x86_64 is recommended."
     fi
 
     # 2. Snap Docker absence
@@ -581,7 +581,7 @@ Options:
   --ufw-disable-ssh        Block inbound OpenSSH (22/tcp) in UFW for local-console-only portals (implies --configure-ufw)
   --require-sudo-password  Remove autoinstall NOPASSWD:ALL sudoers drop-in so sudo requires OS password re-entry
   --ssh-keys-only          Disable SSH password login in sshd_config.d (verifies authorized_keys exists first)
-  --offline                Install Docker & field utilities strictly from bundled installers/ubuntu-24.04-x86_64/*.deb
+  --offline                Install Docker & field utilities strictly from bundled installers/ubuntu-<24.04|26.04>-x86_64/*.deb
   --hold-docker            Pin docker-ce & containerd.io via apt-mark hold so background APT runs never restart containers
 EOF
                 return 0
@@ -593,8 +593,12 @@ EOF
     require_linux
     require_root
 
-    local docker_deb_dir="$script_dir/installers/ubuntu-24.04-x86_64"
-    local tools_deb_dir="$script_dir/installers/ubuntu-24.04-x86_64/host-tools"
+    local host_os_ver='24.04'
+    if [[ -f "${etc_dir}/os-release" ]]; then
+        host_os_ver=$(. "${etc_dir}/os-release" && printf '%s' "${VERSION_ID:-24.04}")
+    fi
+    local docker_deb_dir="$script_dir/installers/ubuntu-${host_os_ver}-x86_64"
+    local tools_deb_dir="$docker_deb_dir/host-tools"
     if [[ $offline_mode == auto ]]; then
         if [[ -d $docker_deb_dir ]] && compgen -G "${docker_deb_dir}/*.deb" >/dev/null; then
             offline_mode=true
@@ -612,9 +616,9 @@ EOF
     # 2. Install Docker Engine + Compose v2 + field utilities (online APT or offline bundled .debs)
     if [[ -z $host_root ]]; then
         if [[ $offline_mode == true ]]; then
-            info "Preparing packages from local offline bundle (zero internet required)..."
+            info "Preparing packages from local offline bundle for Ubuntu ${host_os_ver} (zero internet required)..."
             if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
-                [[ -d $docker_deb_dir ]] || fail "Offline mode requested, but ${docker_deb_dir} was not found. Use oscar-3.11.1-ubuntu-x86_64-offline-full.zip."
+                [[ -d $docker_deb_dir ]] || fail "Offline mode requested for Ubuntu ${host_os_ver}, but ${docker_deb_dir} was not found. Use an Ubuntu dual-LTS offline bundle (oscar-<version>-ubuntu-x86_64-offline-full.zip)."
                 install_packages_offline_dir "$docker_deb_dir"
             fi
             [[ -d $tools_deb_dir ]] && install_packages_offline_dir "$tools_deb_dir" || true
@@ -847,7 +851,7 @@ EOF
         fi
     fi
 
-    info "Ubuntu 24.04 host preparation complete."
+    info "Ubuntu ${host_os_ver} host preparation complete."
     run_host_check --allow-dhcp || true
 }
 

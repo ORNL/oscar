@@ -4917,4 +4917,27 @@ bash -eu -c '
     [[ $(resolve_snapshot_pg_tar_rel "$2" s2) == "packs/postgres/pg-s2.tar" ]]
 ' _ "$repo_root/dist/release/oscar-usb-backup.sh" "$test_root/usb-pg-resolver"
 
+# Verify Ubuntu Dual-LTS (24.04 Noble + 26.04 Resolute) host-check os-version detection and Resolute container base.
+dual_lts_dir="$test_root/dual-lts-check"
+for lts_case in "24.04:noble:PASS" "26.04:resolute:PASS" "25.10:questing:WARN"; do
+    IFS=: read -r ver code expected_status <<<"$lts_case"
+    case_root="$dual_lts_dir/$ver"
+    mkdir -p "$case_root/etc/systemd/system" "$case_root/etc/ssh/sshd_config.d" "$case_root/etc/chrony/conf.d"
+    cat >"$case_root/etc/os-release" <<EOF
+ID=ubuntu
+VERSION_ID="$ver"
+VERSION_CODENAME=$code
+EOF
+    lts_json=$(OSCAR_UBUNTU_HOST_TEST_ROOT="$case_root" \
+        bash "$repo_root/dist/release/configure-ubuntu-host.sh" host-check --json --allow-dhcp || true)
+    grep -Fq "\"id\": \"os-version\", \"status\": \"$expected_status\"" <<<"$lts_json" || {
+        printf 'Expected os-version %s for Ubuntu %s (%s):\n%s\n' "$expected_status" "$ver" "$code" "$lts_json" >&2
+        exit 1
+    }
+done
+grep -Fq 'eclipse-temurin:25.0.5.1_2-jre-resolute@sha256:' "$repo_root/dist/release/docker/oscar/Dockerfile" || {
+    printf 'Expected Ubuntu 26.04 Resolute Temurin 25 runtime base in oscar Dockerfile.\n' >&2
+    exit 1
+}
+
 printf 'OSCAR storage script safety tests passed.\n'

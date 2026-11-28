@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the Ubuntu 24.04 LTS x86-64 air-gapped offline installation bundle:
+# Builds the Ubuntu 24.04 / 26.04 Dual-LTS x86-64 air-gapped offline installation bundle:
 #   build/offline/oscar-<version>-ubuntu-x86_64-offline-full.zip
 #   build/offline/oscar-<version>-ubuntu-x86_64-offline-full.zip.sha256
 #
@@ -67,7 +67,7 @@ expanded_release="${repo_root}/build/install/oscar"
     exit 1
 }
 
-mkdir -p "${output_root}/.cache/images" "${output_root}/.cache/ubuntu-24.04-x86_64"
+mkdir -p "${output_root}/.cache/images" "${output_root}/.cache/ubuntu-24.04-x86_64" "${output_root}/.cache/ubuntu-26.04-x86_64"
 # Reuse the Windows offline builder's Linux amd64 image tar if it was already exported in the same CI job
 cached_win_tar="${output_root}/.cache/images/oscar-${version}-nginx-1.30.8-windows-x86_64-offline-images.tar"
 cached_ubuntu_tar="${output_root}/.cache/images/oscar-${version}-nginx-1.30.8-ubuntu-x86_64-offline-images.tar"
@@ -99,41 +99,47 @@ elif ! $skip_image_export || [[ ! -s $cached_ubuntu_tar ]]; then
     image_tar="$cached_ubuntu_tar"
 fi
 
-deb_cache="${output_root}/.cache/ubuntu-24.04-x86_64"
-if ! compgen -G "${deb_cache}/docker/*.deb" >/dev/null; then
-    printf '==> Resolving Ubuntu 24.04 LTS (noble amd64) offline Docker & host-tool .deb closure...\n'
-    rm -rf "${deb_cache}/docker" "${deb_cache}/host-tools"
-    mkdir -p "${deb_cache}/docker" "${deb_cache}/host-tools"
-    docker run --rm --platform linux/amd64 \
-        -v "${deb_cache}:/out" \
-        ubuntu:24.04 bash -Eeuo pipefail -c '
-            export DEBIAN_FRONTEND=noninteractive
-            apt-get update -qq
-            apt-get install -y -qq --no-install-recommends ca-certificates curl gnupg systemd python3 openssh-server ufw iproute2 >/dev/null
-            install -m 0755 -d /etc/apt/keyrings
-            curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-            chmod a+r /etc/apt/keyrings/docker.asc
-            echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable" > /etc/apt/sources.list.d/docker.list
-            apt-get update -qq
+ubuntu_lts_targets=("24.04:noble" "26.04:resolute")
+for target_spec in "${ubuntu_lts_targets[@]}"; do
+    lts_ver=${target_spec%%:*}
+    lts_code=${target_spec##*:}
+    deb_cache="${output_root}/.cache/ubuntu-${lts_ver}-x86_64"
+    if ! compgen -G "${deb_cache}/docker/*.deb" >/dev/null; then
+        printf '==> Resolving Ubuntu %s LTS (%s amd64) offline Docker & host-tool .deb closure...\n' "$lts_ver" "$lts_code"
+        rm -rf "${deb_cache}/docker" "${deb_cache}/host-tools"
+        mkdir -p "${deb_cache}/docker" "${deb_cache}/host-tools"
+        docker run --rm --platform linux/amd64 \
+            -v "${deb_cache}:/out" \
+            -e "OSCAR_UBUNTU_CODENAME=${lts_code}" \
+            "ubuntu:${lts_ver}" bash -Eeuo pipefail -c '
+                export DEBIAN_FRONTEND=noninteractive
+                apt-get update -qq
+                apt-get install -y -qq --no-install-recommends ca-certificates curl gnupg systemd python3 openssh-server ufw iproute2 >/dev/null
+                install -m 0755 -d /etc/apt/keyrings
+                curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+                chmod a+r /etc/apt/keyrings/docker.asc
+                echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${OSCAR_UBUNTU_CODENAME} stable" > /etc/apt/sources.list.d/docker.list
+                apt-get update -qq
 
-            mkdir -p /tmp/dl-docker/partial /tmp/dl-tools/partial
-            apt-get install -y --no-install-recommends --download-only -o Dir::Cache::archives=/tmp/dl-docker \
-                docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin \
-                iptables libltdl7 pigz >/dev/null
-            for f in /tmp/dl-docker/*.deb; do
-                base=$(basename "$f")
-                cp -f "$f" "/out/docker/${base//%/_}"
-            done
+                mkdir -p /tmp/dl-docker/partial /tmp/dl-tools/partial
+                apt-get install -y --no-install-recommends --download-only -o Dir::Cache::archives=/tmp/dl-docker \
+                    docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin \
+                    iptables libltdl7 pigz >/dev/null
+                for f in /tmp/dl-docker/*.deb; do
+                    base=$(basename "$f")
+                    cp -f "$f" "/out/docker/${base//%/_}"
+                done
 
-            apt-get install -y --no-install-recommends --download-only -o Dir::Cache::archives=/tmp/dl-tools \
-                chrony ethtool nmap arp-scan jq ntfs-3g rsync >/dev/null
-            for f in /tmp/dl-tools/*.deb; do
-                base=$(basename "$f")
-                cp -f "$f" "/out/host-tools/${base//%/_}"
-            done
-            chmod -R a+rX /out
-        '
-fi
+                apt-get install -y --no-install-recommends --download-only -o Dir::Cache::archives=/tmp/dl-tools \
+                    chrony ethtool nmap arp-scan jq ntfs-3g rsync >/dev/null
+                for f in /tmp/dl-tools/*.deb; do
+                    base=$(basename "$f")
+                    cp -f "$f" "/out/host-tools/${base//%/_}"
+                done
+                chmod -R a+rX /out
+            '
+    fi
+done
 
 bundle_name="oscar-${version}-ubuntu-x86_64-offline-full"
 staging_dir="${output_root}/${bundle_name}"
@@ -145,50 +151,56 @@ cp -f "$image_tar" "${staging_dir}/offline-images.tar"
 # Remove duplicate osh-node-oscar Docker build context (already baked into oscar:<version> image)
 rm -rf -- "${staging_dir}/osh-node-oscar"
 
-# Populate Ubuntu 24.04 .deb directories and generated component manifest
+# Populate Ubuntu 24.04 & 26.04 dual-LTS .deb directories and generated component manifests
 rm -rf -- "${staging_dir}/installers/windows-x86_64"
-mkdir -p "${staging_dir}/installers/ubuntu-24.04-x86_64/host-tools"
-cp -f "${deb_cache}/docker/"*.deb "${staging_dir}/installers/ubuntu-24.04-x86_64/"
-cp -f "${deb_cache}/host-tools/"*.deb "${staging_dir}/installers/ubuntu-24.04-x86_64/host-tools/"
+for target_spec in "${ubuntu_lts_targets[@]}"; do
+    lts_ver=${target_spec%%:*}
+    deb_cache="${output_root}/.cache/ubuntu-${lts_ver}-x86_64"
+    mkdir -p "${staging_dir}/installers/ubuntu-${lts_ver}-x86_64/host-tools"
+    cp -f "${deb_cache}/docker/"*.deb "${staging_dir}/installers/ubuntu-${lts_ver}-x86_64/"
+    cp -f "${deb_cache}/host-tools/"*.deb "${staging_dir}/installers/ubuntu-${lts_ver}-x86_64/host-tools/"
+done
 
 python3 - "$staging_dir" "$version" <<'PY'
 import hashlib, json, pathlib, subprocess, sys
 
 staging = pathlib.Path(sys.argv[1])
 version = sys.argv[2]
-components = []
-for deb in sorted((staging / "installers/ubuntu-24.04-x86_64").rglob("*.deb")):
-    rel = deb.relative_to(staging).as_posix()
-    sha = hashlib.sha256(deb.read_bytes()).hexdigest()
-    pkg = subprocess.check_output(["dpkg-deb", "-f", str(deb), "Package"], text=True).strip()
-    ver = subprocess.check_output(["dpkg-deb", "-f", str(deb), "Version"], text=True).strip()
-    components.append({
-        "name": pkg,
-        "version": ver,
-        "file": rel,
-        "sha256": sha,
-    })
+for lts_ver in ("24.04", "26.04"):
+    plat = f"ubuntu-{lts_ver}-x86_64"
+    components = []
+    for deb in sorted((staging / f"installers/{plat}").rglob("*.deb")):
+        rel = deb.relative_to(staging).as_posix()
+        sha = hashlib.sha256(deb.read_bytes()).hexdigest()
+        pkg = subprocess.check_output(["dpkg-deb", "-f", str(deb), "Package"], text=True).strip()
+        ver = subprocess.check_output(["dpkg-deb", "-f", str(deb), "Version"], text=True).strip()
+        components.append({
+            "name": pkg,
+            "version": ver,
+            "file": rel,
+            "sha256": sha,
+        })
 
-manifest = {
-    "schemaVersion": 1,
-    "platform": "ubuntu-24.04-x86_64",
-    "oscarVersion": version,
-    "components": components,
-}
-out_file = staging / "installers/components.ubuntu-24.04-x86_64.json"
-out_file.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    manifest = {
+        "schemaVersion": 1,
+        "platform": plat,
+        "oscarVersion": version,
+        "components": components,
+    }
+    out_file = staging / f"installers/components.{plat}.json"
+    out_file.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 PY
 
 cat > "${staging_dir}/BUNDLE-INFO.txt" <<EOF
 OSCAR offline installation bundle
 Version: ${version}
-Platform: Ubuntu Server / Desktop 24.04 LTS x86-64
+Platform: Ubuntu Server / Desktop 24.04 LTS & 26.04 LTS x86-64 (Dual-LTS)
 Profile: Full
-Contents: Full air-gapped installation media with official Ubuntu 24.04 Docker Engine .deb packages, host/network tools, and container images.
+Contents: Full air-gapped installation media with official Ubuntu 24.04 & 26.04 Docker Engine .deb packages, host/network tools, and container images.
 Generated UTC: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 Images: oscar:${version}, oscar-postgis:${version}, oscar-rpm-proxy:${version}, nginx/nginx-unprivileged:1.30.8-alpine
 
-Extract this archive on the target Ubuntu 24.04 x86-64 machine, then run:
+Extract this archive on the target Ubuntu 24.04 or 26.04 LTS x86-64 machine, then run:
   sudo bash verify-bundle.sh
   sudo bash oscar.sh prepare-host --offline --expand-lvm
   sudo bash oscar.sh stage-site-network

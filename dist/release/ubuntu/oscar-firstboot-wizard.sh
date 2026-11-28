@@ -126,9 +126,13 @@ ensure_host_prepared() {
         return 0
     fi
 
-    info "Optimizing Ubuntu 24.04 host (Docker Engine, LVM capacity, sysctl, UFW, and USB-NVMe stability quirks)..."
+    local host_os_ver='24.04'
+    if [[ -f /etc/os-release ]]; then
+        host_os_ver=$(. /etc/os-release && printf '%s' "${VERSION_ID:-24.04}")
+    fi
+    info "Optimizing Ubuntu ${host_os_ver} LTS host (Docker Engine, LVM capacity, sysctl, UFW, and USB-NVMe stability quirks)..."
     local -a prep_args=(prepare-host --expand-lvm --hold-docker --configure-ufw)
-    if [[ -d "$release_dir/installers/ubuntu-24.04-x86_64" ]]; then
+    if [[ -d "$release_dir/installers/ubuntu-${host_os_ver}-x86_64" ]]; then
         prep_args+=(--offline)
     fi
     bash "$release_dir/oscar.sh" "${prep_args[@]}"

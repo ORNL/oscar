@@ -1046,16 +1046,18 @@ if ! $has_zenity && [[ -t 0 && -t 1 ]] && command -v whiptail >/dev/null 2>&1 &&
 fi
 
 find_default_iso() {
-    local cand
-    for cand in \
-        "$PWD"/ubuntu-24.04*-live-server-amd64.iso \
-        "$ubuntu_dir"/ubuntu-24.04*-live-server-amd64.iso \
-        "$(dirname "$release_dir")"/ubuntu-24.04*-live-server-amd64.iso \
-        "${SUDO_USER:+/home/$SUDO_USER/Downloads}"/ubuntu-24.04*-live-server-amd64.iso \
-        /srv/oscar/ubuntu-24.04*-live-server-amd64.iso \
-        /tmp/*/ubuntu-24.04*-live-server-amd64.iso \
-        /tmp/ubuntu-24.04*-live-server-amd64.iso; do
-        if [[ -f $cand ]]; then printf '%s' "$cand"; return 0; fi
+    local cand ver
+    for ver in 26.04 24.04; do
+        for cand in \
+            "$PWD"/ubuntu-"$ver"*-live-server-amd64.iso \
+            "$ubuntu_dir"/ubuntu-"$ver"*-live-server-amd64.iso \
+            "$(dirname "$release_dir")"/ubuntu-"$ver"*-live-server-amd64.iso \
+            "${SUDO_USER:+/home/$SUDO_USER/Downloads}"/ubuntu-"$ver"*-live-server-amd64.iso \
+            /srv/oscar/ubuntu-"$ver"*-live-server-amd64.iso \
+            /tmp/*/ubuntu-"$ver"*-live-server-amd64.iso \
+            /tmp/ubuntu-"$ver"*-live-server-amd64.iso; do
+            if [[ -f $cand ]]; then printf '%s' "$cand"; return 0; fi
+        done
     done
 }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OSCAR Zero-Login GitHub & Offline Bundle System Update Manager (Ubuntu 24.04 LTS)
+# OSCAR Zero-Login GitHub & Offline Bundle System Update Manager (Ubuntu 24.04 / 26.04 LTS)
 # Discovers, SHA-256 verifies, extracts to a clean sibling release directory, and
 # upgrades OSCAR in place (with automatic fail-safe rollback on failure) without
 # requiring a GitHub account, Personal Access Token, or docker.sock inside containers.

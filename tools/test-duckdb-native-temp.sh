@@ -5,7 +5,7 @@ script_path=${BASH_SOURCE[0]}
 repo_root=$(CDPATH= cd -- "${script_path%/*}/.." && pwd -P)
 fixture="$repo_root/tools/test-fixtures/DuckDBNativeTempSmoke.java"
 duckdb_jar=${1:-}
-probe_image=${OSCAR_JAVA_PROBE_IMAGE:-eclipse-temurin:25.0.5.1_2-jre-noble@sha256:2ec98aa522c472deadfd2b7c5b39bca680e33ef522a53a72f10789bdf89a6bb5}
+probe_image=${OSCAR_JAVA_PROBE_IMAGE:-eclipse-temurin:25.0.5.1_2-jre-resolute@sha256:a0862ac8790c648f6b5db8a113b9990d24fbe8e65f3c4ba8d68b0302d270c1e6}
 test_root=$(mktemp -d "$repo_root/.duckdb-native-test.XXXXXX")
 fixture_root="$test_root/fixture"
 
@@ -24,7 +24,7 @@ command -v docker >/dev/null 2>&1 || {
     exit 1
 }
 command -v javac >/dev/null 2>&1 || {
-    printf 'JDK 21 javac is required for the DuckDB native-temp integration test.\n' >&2
+    printf 'JDK 25 javac is required for the DuckDB native-temp integration test.\n' >&2
     exit 1
 }
 docker info >/dev/null
