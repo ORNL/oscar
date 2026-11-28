@@ -5,6 +5,19 @@ name: Staging 50-Lane Certification (Manual)
 # NEVER add pull_request, pull_request_target, or push triggers to a self-hosted runner
 # workflow on a public repository.
 #
+# Four-layer isolation boundary:
+# 1. Protected default branch rulesets + read-only workflow permissions (`contents: read`):
+#    non-Admin (`Write`) maintainers cannot modify `main` or this workflow file.
+# 2. Pre-job host hook (`ACTIONS_RUNNER_HOOK_JOB_STARTED=/usr/local/libexec/oscar-runner-job-hook.sh`)
+#    on the staging runner verifies `ORNL/oscar`, `workflow_dispatch`, `refs/heads/main`, and
+#    exact workflow ref before step 0 executes.
+# 3. `authorize-dispatch` enforces that non-Admin (`Write`) maintainers can only run with
+#    `deploy_branch=true`, mandatory `@pre-test` ZFS rollback, and at least one non-default
+#    feature branch (blocking baseline and `main`-only dispatches).
+# 4. Dedicated least-privilege `oscar-runner` OS account (no login shell, zero Docker/ZFS/
+#    secret/results access) whose sudoers rule allows only allowlisted `oscar-self-test`
+#    test and redacted-report export subcommands.
+#
 # When deploy_branch=true, the branch release ZIP is built exclusively inside an isolated
 # GitHub-hosted ubuntu-latest VM from ORNL/* branches only, verified by SHA-256 on the
 # staging runner, ephemerally upgraded via the allowlisted /usr/local/bin/oscar-self-test
@@ -70,8 +83,115 @@ env:
   NODE_VERSION: '22'
 
 jobs:
+  authorize-dispatch:
+    name: Authorize Dispatch & Enforce Branch-Only Policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      is_admin: ${{ steps.policy.outputs.is_admin }}
+    steps:
+      - name: Enforce main-only workflow dispatch and non-Admin branch-only guardrails
+        id: policy
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_ACTOR: ${{ github.actor }}
+          ADMIN_ACTORS: ${{ vars.STAGING_ADMIN_ACTORS }}
+          INPUT_DEPLOY_BRANCH: ${{ inputs.deploy_branch }}
+          INPUT_OSCAR_REF: ${{ inputs.oscar_ref }}
+          INPUT_MODULES_BRANCH: ${{ inputs.modules_branch }}
+          INPUT_VIEWER_BRANCH: ${{ inputs.viewer_branch }}
+          INPUT_ADDONS_BRANCH: ${{ inputs.addons_branch }}
+          INPUT_ROLLBACK: ${{ inputs.rollback_after_test }}
+        run: |
+          set -euo pipefail
+
+          if [ "$DISPATCH_REF" != "refs/heads/main" ]; then
+            echo "::error::Staging certification must be dispatched from refs/heads/main (got: ${DISPATCH_REF})."
+            echo "::error::Select 'Use workflow from: main' and pass your feature branch in oscar_ref / modules_branch / viewer_branch / addons_branch."
+            exit 2
+          fi
+
+          admin_list="${ADMIN_ACTORS:-tyronechrisharris}"
+          actor_lc=$(printf '%s' "$DISPATCH_ACTOR" | tr '[:upper:]' '[:lower:]')
+          is_admin="false"
+          IFS=',' read -ra admins <<< "$admin_list"
+          for entry in "${admins[@]}"; do
+            cleaned=$(printf '%s' "$entry" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+            if [ -n "$cleaned" ] && [ "$actor_lc" = "$cleaned" ]; then
+              is_admin="true"
+              break
+            fi
+          done
+          echo "is_admin=${is_admin}" >> "$GITHUB_OUTPUT"
+
+          is_non_default_branch() {
+            local repo="$1" val="$2"
+            [ -n "$val" ] || return 1
+            local lc
+            lc=$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')
+            case "$repo" in
+              oscar)
+                case "$lc" in
+                  main|master|head|refs/heads/main|refs/heads/master|v[0-9]*) return 1 ;;
+                  *) return 0 ;;
+                esac
+                ;;
+              addons)
+                case "$lc" in
+                  oscar|main|master|head|refs/heads/oscar|refs/heads/main|refs/heads/master) return 1 ;;
+                  *) return 0 ;;
+                esac
+                ;;
+              *)
+                case "$lc" in
+                  main|master|head|refs/heads/main|refs/heads/master) return 1 ;;
+                  *) return 0 ;;
+                esac
+                ;;
+            esac
+          }
+
+          if [ "$is_admin" != "true" ]; then
+            if [ "$INPUT_DEPLOY_BRANCH" != "true" ]; then
+              echo "::error::Non-Admin maintainers must set deploy_branch=true to test a feature branch on staging (baseline runs are Admin-only)."
+              exit 2
+            fi
+            if [ "$INPUT_ROLLBACK" != "true" ]; then
+              echo "::error::Non-Admin maintainers cannot disable mandatory @pre-test ZFS rollback (rollback_after_test must be true)."
+              exit 2
+            fi
+            if [ -n "$INPUT_MODULES_BRANCH" ] && ! is_non_default_branch modules "$INPUT_MODULES_BRANCH"; then
+              echo "::error::modules_branch must target a non-default feature branch (got: ${INPUT_MODULES_BRANCH})."
+              exit 2
+            fi
+            if [ -n "$INPUT_VIEWER_BRANCH" ] && ! is_non_default_branch viewer "$INPUT_VIEWER_BRANCH"; then
+              echo "::error::viewer_branch must target a non-default feature branch (got: ${INPUT_VIEWER_BRANCH})."
+              exit 2
+            fi
+            if [ -n "$INPUT_ADDONS_BRANCH" ] && ! is_non_default_branch addons "$INPUT_ADDONS_BRANCH"; then
+              echo "::error::addons_branch must target a non-default feature branch (got: ${INPUT_ADDONS_BRANCH})."
+              exit 2
+            fi
+
+            has_feature_branch="false"
+            if is_non_default_branch oscar "$INPUT_OSCAR_REF"; then has_feature_branch="true"; fi
+            if is_non_default_branch modules "$INPUT_MODULES_BRANCH"; then has_feature_branch="true"; fi
+            if is_non_default_branch viewer "$INPUT_VIEWER_BRANCH"; then has_feature_branch="true"; fi
+            if is_non_default_branch addons "$INPUT_ADDONS_BRANCH"; then has_feature_branch="true"; fi
+
+            if [ "$has_feature_branch" != "true" ]; then
+              echo "::error::Non-Admin maintainers cannot run staging certification targeting main/default branches only."
+              echo "::error::Specify at least one non-default feature branch in oscar_ref, modules_branch, viewer_branch, or addons_branch."
+              exit 2
+            fi
+            echo "Authorized non-Admin branch-only staging test for actor=${DISPATCH_ACTOR}."
+          else
+            echo "Authorized Admin staging certification dispatch for actor=${DISPATCH_ACTOR}."
+          fi
+
   build-branch-release:
     name: Build Branch Release ZIP (GitHub-Hosted)
+    needs: [authorize-dispatch]
     if: ${{ inputs.deploy_branch }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -198,8 +318,8 @@ jobs:
 
   certify-50-lane-staging:
     name: Self-Contained 50-Lane Staging Certification
-    needs: [build-branch-release]
-    if: ${{ always() && (!inputs.deploy_branch || needs.build-branch-release.result == 'success') }}
+    needs: [authorize-dispatch, build-branch-release]
+    if: ${{ always() && needs.authorize-dispatch.result == 'success' && (!inputs.deploy_branch || needs.build-branch-release.result == 'success') }}
     runs-on: [self-hosted, linux, x64, oscar-50-lane-staging]
     timeout-minutes: 150
     concurrency:
@@ -213,7 +333,7 @@ jobs:
           name: oscar-branch-candidate-${{ github.run_id }}
           path: ${{ runner.temp }}/branch-candidate
 
-      - name: Run allowlisted oscar-self-test certification and redact report
+      - name: Run allowlisted oscar-self-test certification and export redacted report
         id: run_cert
         env:
           INPUT_SUITE: ${{ inputs.suite }}
@@ -240,7 +360,7 @@ jobs:
             fi
           fi
 
-          before_latest=$(ls -1dt /srv/oscar-test/results/* 2>/dev/null | head -n 1 || true)
+          before_id=$(sudo -n /usr/local/bin/oscar-self-test latest-result-id 2>/dev/null || true)
           set +e
           if [ "$INPUT_DEPLOY_BRANCH" = "true" ]; then
             zip_file="${RUNNER_TEMP}/branch-candidate/${BRANCH_ZIP_NAME}"
@@ -256,7 +376,7 @@ jobs:
             if [ -n "$INPUT_SCENARIO" ]; then
               args+=("--scenario" "$INPUT_SCENARIO")
             fi
-            /usr/local/bin/oscar-self-test run-branch-test "${args[@]}" 2>&1 \
+            sudo -n /usr/local/bin/oscar-self-test run-branch-test "${args[@]}" 2>&1 \
               | sed -E \
                 -e 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/<STAGING_NODE>/g' \
                 -e 's/[A-Za-z0-9._-]+\.ts\.net/<TAILNET_HOST>/g'
@@ -264,16 +384,13 @@ jobs:
           else
             subcmd="run-${INPUT_SUITE}"
             args=()
-            if [ "$INPUT_ROLLBACK" = "false" ]; then
-              args+=("--no-rollback")
-            fi
             if [ "$INPUT_SUITE" = "smoke" ] && [ "$INPUT_WITH_FED_PEER" = "true" ]; then
               args+=("--with-fed-peer")
             fi
             if [ -n "$INPUT_SCENARIO" ]; then
               args+=("--scenario" "$INPUT_SCENARIO")
             fi
-            /usr/local/bin/oscar-self-test "$subcmd" "${args[@]}" 2>&1 \
+            sudo -n /usr/local/bin/oscar-self-test "$subcmd" "${args[@]}" 2>&1 \
               | sed -E \
                 -e 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/<STAGING_NODE>/g' \
                 -e 's/[A-Za-z0-9._-]+\.ts\.net/<TAILNET_HOST>/g'
@@ -281,10 +398,12 @@ jobs:
           fi
           set -e
 
-          after_latest=$(ls -1dt /srv/oscar-test/results/* 2>/dev/null | head -n 1 || true)
           out_dir="${RUNNER_TEMP}/staging-report"
-          rm -rf "$out_dir"
-          mkdir -p "$out_dir"
+          export_args=("$out_dir")
+          if [ -n "$before_id" ]; then
+            export_args+=("--after-id" "$before_id")
+          fi
+          sudo -n /usr/local/bin/oscar-self-test export-redacted-report "${export_args[@]}" || true
 
           if [ "$INPUT_DEPLOY_BRANCH" = "true" ]; then
             {
@@ -296,19 +415,8 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
-          if [ -n "$after_latest" ] && [ "$after_latest" != "$before_latest" ] && [ -d "$after_latest" ]; then
-            for fname in summary.md summary.csv functional-results.csv storage-performance.csv performance.csv errors.csv; do
-              if [ -f "${after_latest}/${fname}" ]; then
-                sed -E \
-                  -e 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/<STAGING_NODE>/g' \
-                  -e 's/[A-Za-z0-9._-]+\.ts\.net/<TAILNET_HOST>/g' \
-                  -e 's/oscaradmin@[^[:space:],"]+/oscaradmin@<STAGING_NODE>/g' \
-                  "${after_latest}/${fname}" > "${out_dir}/${fname}"
-              fi
-            done
-            if [ -f "${out_dir}/summary.md" ]; then
-              cat "${out_dir}/summary.md" >> "$GITHUB_STEP_SUMMARY"
-            fi
+          if [ -f "${out_dir}/summary.md" ]; then
+            cat "${out_dir}/summary.md" >> "$GITHUB_STEP_SUMMARY"
           fi
 
           exit "$run_rc"

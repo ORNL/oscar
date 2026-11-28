@@ -206,12 +206,14 @@
     },
     "storagePressureRetentionConfig": {
       "objClass": "com.botts.impl.service.oscar.retention.StoragePressureRetentionConfig",
+      "earlySecondaryPruneUsagePercent": 75,
       "triggerUsagePercent": 85,
       "targetUsagePercent": 80,
       "checkPeriodMinutes": 1,
       "minimumObjectAgeMinutes": 10,
       "maximumMediaSetsPerCycle": 200,
-      "storagePath": "files"
+      "storagePath": "files",
+      "ocrCropRetentionDays": 365
     },
     "nodeId": "default",
     "databaseID": "a445cf15-c2ab-4d92-beab-3241667a8976",
@@ -309,6 +311,13 @@
         "deleteHotAfterArchive": true,
         "requireParityReceipt": true,
         "zstdCompressionLevel": 6,
+        "telemetryPressureEnabled": true,
+        "telemetryPressureTriggerUsagePercent": 85,
+        "telemetryPressureTargetUsagePercent": 80,
+        "telemetryPressureMinimumRetentionDays": 365,
+        "telemetryPressureCriticalUsagePercent": 92,
+        "telemetryPressureCriticalMinimumRetentionDays": 30,
+        "maximumTelemetryPressureRetirementsPerCycle": 24,
         "outputNames": [
           "gammaCounts",
           "gammaThreshold",

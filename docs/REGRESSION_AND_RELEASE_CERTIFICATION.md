@@ -169,7 +169,13 @@ Maintainers with **Write** (or higher) access on `ORNL/oscar` can trigger an aut
 | `viewer_branch` | `string` *(empty)* | Optional `ORNL/oscar-viewer` branch override when `deploy_branch=true` (leave blank to use `oscar_ref`'s pinned submodule commit). |
 | `addons_branch` | `string` *(empty)* | Optional `ORNL/osh-addons` branch override when `deploy_branch=true` (leave blank to use `oscar_ref`'s pinned submodule commit). |
 | `with_fed_peer` | `boolean` *(`false`)* | Boots the ephemeral local federated peer stack (`:8445`) during `smoke` runs (`full` always boots it automatically for `multi-node-federation`). |
-| `rollback_after_test` | `boolean` *(`true`)* | Rolls back and destroys the ephemeral `@pre-test` ZFS snapshot after baseline runs (`deploy_branch=true` always enforces rollback regardless of this toggle). |
+| `rollback_after_test` | `boolean` *(`true`)* | Rolls back and destroys the ephemeral `@pre-test` ZFS snapshot after Admin baseline runs (mandatory `true` for all non-Admin dispatches and all `deploy_branch=true` runs; `--no-rollback` is also blocked on the staging host for `oscar-runner`). |
+
+> **Four-Layer Non-Admin Isolation Boundary:**
+> 1. **Protected `main` & Read-Only Workflow Token:** Default-branch rulesets prevent non-Admin (`Write`) maintainers from editing `main` or `.github/workflows/staging-50-lane-certification.yml`, and the workflow runs with `permissions: contents: read`.
+> 2. **Host-Enforced Pre-Job Hook (`ACTIONS_RUNNER_HOOK_JOB_STARTED`):** A root-owned immutable hook on the staging runner verifies `ORNL/oscar`, `workflow_dispatch`, `refs/heads/main`, and exact workflow ref before step 0 runs, blocking any attempt to dispatch modified workflow YAML from a feature branch.
+> 3. **Non-Admin Branch-Only Policy (`authorize-dispatch`):** Non-Admin (`Write`) maintainers must run with `deploy_branch=true`, `rollback_after_test=true`, and at least one non-default feature branch (`oscar_ref` != `main`, or non-empty non-default `modules_branch` / `viewer_branch` / `addons_branch`). Baseline runs and `main`-only runs are Admin-only.
+> 4. **Dedicated Least-Privilege `oscar-runner` OS User:** The staging runner executes as an unprivileged `nologin` system user with zero Docker, ZFS, `.env`, secrets, TLS, SSH-key, or raw `results/` read access; its `/etc/sudoers.d/95-oscar-runner` rule permits only allowlisted `oscar-self-test` test and redacted-report export subcommands.
 
 Trigger via GitHub Actions UI (**Actions → Staging 50-Lane Certification (Manual) → Run workflow** on `main`) or via GitHub CLI (`gh`):
 
