@@ -1,6 +1,6 @@
-# OSCAR 3.12.1 Identity, Offline Passkeys, SSO & Multi-Node Federation Guide
+# OSCAR 3.12.2 Identity, Offline Passkeys, SSO & Multi-Node Federation Guide
 
-OSCAR 3.12.1 manages operator identities, offline phishing-resistant WebAuthn Passkeys, optional enterprise or self-hosted SSO, and multi-site data federation directly from **Users & Access (`/users`)** and **Servers (`/servers`)** — with zero external internet dependency for local operations.
+OSCAR 3.12.2 manages operator identities, offline phishing-resistant WebAuthn Passkeys, optional enterprise or self-hosted SSO, and multi-site data federation directly from **Users & Access (`/users`)** and **Servers (`/servers`)** — with zero external internet dependency for local operations.
 
 > **Companion References:**
 > - **Video Walkthroughs:** Watch [Module 19 — User Accounts, Roles, Passkeys & Access Management](https://github.com/ORNL/oscar-video-guides/blob/main/videos/19-viewer-users-passkeys-and-access.mp4), [Module 20 — Multi-Node Federation, Vehicle Search & Reports](https://github.com/ORNL/oscar-video-guides/blob/main/videos/20-multi-node-federation-vehicle-search-and-report.mp4), and [Module 21 — Federated SSO, Passkey Onboarding & Revocation](https://github.com/ORNL/oscar-video-guides/blob/main/videos/21-federated-sso-passkey-onboarding-and-revocation.mp4) in [VIDEO_GUIDES.md](VIDEO_GUIDES.md).
@@ -22,7 +22,7 @@ Open **Users & Access (`/users`)** in OSCAR Viewer. Administrators see six tabs:
 
 ### 1.2 Persistent Console Sessions vs. Timed Shift Kiosks
 
-Fresh OSCAR 3.12.1 deployments default to **"Stay Signed In Until Logout"** (`idleTimeoutSeconds = 0`, `absoluteTimeoutSeconds = 0`, `persistSessions = true`, `allowKeepSignedIn = true`, `persistentCookieMaxAgeSeconds = 31536000`) so unattended 24/7 gatehouse wallboards survive browser restarts, host reboots, and `oscar upgrade` without forcing repeated sign-ins.
+Fresh OSCAR 3.12.2 deployments default to **"Stay Signed In Until Logout"** (`idleTimeoutSeconds = 0`, `absoluteTimeoutSeconds = 0`, `persistSessions = true`, `allowKeepSignedIn = true`, `persistentCookieMaxAgeSeconds = 31536000`) so unattended 24/7 gatehouse wallboards survive browser restarts, host reboots, and `oscar upgrade` without forcing repeated sign-ins.
 
 - Only **SHA-256 digests** of active `OSCAR_SESSION` cookies are written to `/var/lib/oscar/.moduledata/oscar-identity.json` (`0600`) — never plaintext session tokens.
 - For **shared shift kiosks** where operators rotate at the same keyboard, open **Users & Access -> Sign-In & SSO Policy** and set explicit timeouts (for example `1800 s` idle / `28800 s` absolute) or disable **Allow Keep Me Signed In**.

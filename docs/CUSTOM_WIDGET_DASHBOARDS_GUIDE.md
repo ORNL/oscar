@@ -1,4 +1,4 @@
-# OSCAR 3.12.1 Custom Widget Dashboards Guide (Operators, Administrators & Developers)
+# OSCAR 3.12.2 Custom Widget Dashboards Guide (Operators, Administrators & Developers)
 
 **Custom Widget Dashboards (`/dashboards`)** provide an opt-in, drag-and-drop 12-column workspace for control rooms, gatehouse wallboards, mobile-patrol command desks, and shift supervisors — without altering any of OSCAR's 8 canonical console routes (`/`, `/map`, `/event-log`, `/lane-view`, `/report-view`, `/health`, `/servers`, `/users`).
 

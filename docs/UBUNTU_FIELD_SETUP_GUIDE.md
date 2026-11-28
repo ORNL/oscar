@@ -1,6 +1,6 @@
 # Ubuntu 24.04 Field Setup, Hotel-Room Staging & Air-Gapped Bare-Metal Guide
 
-This guide walks step-by-step through setting up an Ubuntu 24.04 LTS server for **OSCAR 3.12.1** from scratch — **even if you have never used Ubuntu Linux or OSCAR before**.
+This guide walks step-by-step through setting up an Ubuntu 24.04 LTS server for **OSCAR 3.12.2** from scratch — **even if you have never used Ubuntu Linux or OSCAR before**.
 
 It covers all three real-world field deployment scenarios:
 
@@ -28,15 +28,15 @@ Before traveling to a hotel or air-gapped site, prepare a compact **two-drive fi
 | **Rufus** *(Alternative single-ISO USB flasher for Windows)* | [https://rufus.ie/](https://rufus.ie/) | Download `rufus-<version>p.exe` (Portable). Writes one `.iso` to one USB stick; put the OSCAR `.zip` on a second USB stick. |
 | **balenaEtcher** *(Alternative USB flasher for macOS / Windows)* | [https://etcher.balena.io/](https://etcher.balena.io/) | Simple 3-click `.iso` USB writer (use a second USB stick for the OSCAR `.zip`). |
 
-### 1.2 Which OSCAR 3.12.1 Release File Should You Put on the USB Stick?
+### 1.2 Which OSCAR 3.12.2 Release File Should You Put on the USB Stick?
 
-Download from **[GitHub Releases — `ORNL/oscar` `v3.12.0`](https://github.com/ORNL/oscar/releases/tag/v3.12.1)**:
+Download from **[GitHub Releases — `ORNL/oscar` `v3.12.0`](https://github.com/ORNL/oscar/releases/tag/v3.12.2)**:
 
 | OSCAR Release Asset | Size | When to Use |
 | --- | --- | --- |
-| **`oscar-3.12.1-autoinstall-usb-creator.zip`** *(Standalone USB Builder — GUI + TUI + CLI)* | `~53 KB` | **Builds a zero-touch Ubuntu 24.04 + OSCAR Autoinstall USB directly on Windows 11 (`create-autoinstall-usb.bat` GUI/TUI/CLI) or Ubuntu (`create-autoinstall-usb.sh` GUI/TUI/CLI)** using `ubuntu-24.04.x-live-server-amd64.iso` and `oscar-3.12.1-ubuntu-x86_64-offline-full.zip` without unpacking the offline bundle first—including optional PBKDF2-hashed initial OSCAR web `admin` password, `lanes.csv` / `config.json` lane pre-configuration, and unattended first-boot OSCAR initialization. |
-| **`oscar-3.12.1-ubuntu-x86_64-offline-full.zip`** *(Best all-around field choice)* | `~1.1 GB` | **Works BOTH completely offline on-site AND in a hotel room.** Includes OSCAR 3.12.1, pre-built `oscar`, `oscar-postgis`, and `nginx` Docker images (`offline-images.tar`), *plus* official Ubuntu 24.04 `.deb` installers for Docker Engine, Compose v2, `chrony`, `ethtool`, `nmap`, and `arp-scan`. **Zero hotel Wi-Fi downloads needed!** |
-| **`oscar-3.12.1.zip`** *(Connected release)* | `~611 MB` | Smaller download when you know you will run `prepare-host` and `init` over fast internet (for example, in the office or hotel room). |
+| **`oscar-3.12.2-autoinstall-usb-creator.zip`** *(Standalone USB Builder — GUI + TUI + CLI)* | `~53 KB` | **Builds a zero-touch Ubuntu 24.04 + OSCAR Autoinstall USB directly on Windows 11 (`create-autoinstall-usb.bat` GUI/TUI/CLI) or Ubuntu (`create-autoinstall-usb.sh` GUI/TUI/CLI)** using `ubuntu-24.04.x-live-server-amd64.iso` and `oscar-3.12.2-ubuntu-x86_64-offline-full.zip` without unpacking the offline bundle first—including optional PBKDF2-hashed initial OSCAR web `admin` password, `lanes.csv` / `config.json` lane pre-configuration, and unattended first-boot OSCAR initialization. |
+| **`oscar-3.12.2-ubuntu-x86_64-offline-full.zip`** *(Best all-around field choice)* | `~1.1 GB` | **Works BOTH completely offline on-site AND in a hotel room.** Includes OSCAR 3.12.2, pre-built `oscar`, `oscar-postgis`, and `nginx` Docker images (`offline-images.tar`), *plus* official Ubuntu 24.04 `.deb` installers for Docker Engine, Compose v2, `chrony`, `ethtool`, `nmap`, and `arp-scan`. **Zero hotel Wi-Fi downloads needed!** |
+| **`oscar-3.12.2.zip`** *(Connected release)* | `~611 MB` | Smaller download when you know you will run `prepare-host` and `init` over fast internet (for example, in the office or hotel room). |
 
 Also download **`OSCAR-3.12.0-Administrator-Operator-Manual-en.pdf`** and **`OSCAR-3.12.0-SHA256SUMS.txt`** onto the USB stick so you have offline manuals and checksum verification on-site.
 
@@ -83,7 +83,7 @@ You can install Ubuntu Server 24.04 either **interactively** (5 minutes with key
    - **Language / Keyboard:** `English` / `US`.
    - **Install type:** `Ubuntu Server` (default).
    - **Network connections:**
-     - *In a hotel room:* Plug in hotel Ethernet (or select your Wi-Fi adapter -> enter hotel Wi-Fi credentials if simple WPA2; if hotel Wi-Fi has a browser captive portal, either install **Ubuntu Desktop 24.04**, tether your phone via USB cable, or use **`oscar-3.12.1-ubuntu-x86_64-offline-full.zip`** so zero internet is needed!).
+     - *In a hotel room:* Plug in hotel Ethernet (or select your Wi-Fi adapter -> enter hotel Wi-Fi credentials if simple WPA2; if hotel Wi-Fi has a browser captive portal, either install **Ubuntu Desktop 24.04**, tether your phone via USB cable, or use **`oscar-3.12.2-ubuntu-x86_64-offline-full.zip`** so zero internet is needed!).
      - *On an offline site with no DHCP:* Select **Continue without network** — you do **not** need network during Ubuntu installation!
    - **Proxy / Mirror:** Leave blank / default (`Done`).
    - **Guided storage configuration:** Keep `[X] Use an entire disk` and `[X] Set up this disk as an LVM group` -> press `Done`. On the **Storage configuration summary** page, if `ubuntu-lv` says `100.000G` on a larger SSD, select `ubuntu-lv` -> **Edit** -> type the full free size shown (or simply let `sudo bash oscar.sh prepare-host --expand-lvm` expand it later) -> `Done` -> `Continue`.
@@ -99,7 +99,7 @@ You can install Ubuntu Server 24.04 either **interactively** (5 minutes with key
 
 ### Option 3B — Declarative Zero-Touch Bare-Metal Install + First-Boot Wizard (`create-autoinstall-usb` + `oscar-wizard`)
 
-If you want a **single-stick unattended bare-metal installer** that installs Ubuntu Server 24.04 LTS onto the target server's internal NVMe/SSD (`100%` LVM capacity, never touching USB drives), configures USB-to-NVMe Bulk-Only Transport + No-LPM stability quirks from first boot, unpacks `oscar-3.12.1-ubuntu-x86_64-offline-full.zip` into `/srv/oscar/`, and launches an interactive menu on first login:
+If you want a **single-stick unattended bare-metal installer** that installs Ubuntu Server 24.04 LTS onto the target server's internal NVMe/SSD (`100%` LVM capacity, never touching USB drives), configures USB-to-NVMe Bulk-Only Transport + No-LPM stability quirks from first boot, unpacks `oscar-3.12.2-ubuntu-x86_64-offline-full.zip` into `/srv/oscar/`, and launches an interactive menu on first login:
 
 1. **Build the Bare-Metal Autoinstall USB Stick** on either **Windows 11** or **Ubuntu**:
    - **On Windows 11 (Administrator prompt, zero third-party tools needed):**
@@ -110,7 +110,7 @@ If you want a **single-stick unattended bare-metal installer** that installs Ubu
      ```bash
      sudo bash oscar.sh create-autoinstall-usb
      ```
-   Select your removable external USB drive (`16 GB+`), point to `ubuntu-24.04.x-live-server-amd64.iso` and `oscar-3.12.1-ubuntu-x86_64-offline-full.zip`, set a strong custom Linux password for `oscaradmin`, and optionally pre-configure the **initial OSCAR web `admin` password** (`14+` chars, hashed in memory via PBKDF2 so zero plaintext ever touches the USB stick), **`lanes.csv` or `config.json`**, and **Auto-initialize OSCAR on first boot** (`-AutoInitOscar` / `--auto-init-oscar`)—so on arrival at the site you only open `https://<hostname>/`, register site users, and upload `.pmtiles` or the site diagram! You can also supply an extra `seed/` folder containing `site-network.env`, `*.pmtiles`, or `backup-key.txt`.
+   Select your removable external USB drive (`16 GB+`), point to `ubuntu-24.04.x-live-server-amd64.iso` and `oscar-3.12.2-ubuntu-x86_64-offline-full.zip`, set a strong custom Linux password for `oscaradmin`, and optionally pre-configure the **initial OSCAR web `admin` password** (`14+` chars, hashed in memory via PBKDF2 so zero plaintext ever touches the USB stick), **`lanes.csv` or `config.json`**, and **Auto-initialize OSCAR on first boot** (`-AutoInitOscar` / `--auto-init-oscar`)—so on arrival at the site you only open `https://<hostname>/`, register site users, and upload `.pmtiles` or the site diagram! You can also supply an extra `seed/` folder containing `site-network.env`, `*.pmtiles`, or `backup-key.txt`.
    - **Production Bare-Metal Security Hardening (Strongly Recommended):** Because host `sudo` / physical disk access governs break-glass recovery (`sudo bash oscar.sh reset-admin-password`) and persistent volumes, lock down bare-metal autoinstall deployments from minute zero by passing **`--luks-passphrase-file FILE`** (`-LuksPassphraseFile FILE` on Windows) for **LUKS2 Full-Disk Encryption** across 100% of the internal NVMe (optionally enrolling hands-free TPM 2.0 `PCR 0+7` boot unlock afterward via `sudo systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+7 /dev/nvme0n1p3`), **`--require-sudo-password`** (`-RequireSudoPassword`) so `sudo` always requires OS password re-entry (never `NOPASSWD:ALL`), and **`--ssh-key-file ~/.ssh/id_ed25519.pub --ssh-keys-only`** (`-SshKeyFile ... -SshKeysOnly`) to disable SSH password and root logins. After commissioning, lock UEFI Setup with a supervisor password, keep Secure Boot enabled, disable external USB boot priority, store or erase the `CIDATA` installer stick, optionally restrict `22/tcp` via `sudo bash oscar.sh prepare-host --ufw-ssh-cidr <MGMT_CIDR>` (or `--ufw-disable-ssh` on local-console-only portals), never add operator accounts to the Linux OS or `docker` group, and verify with `sudo bash oscar.sh host-check --strict`.
    - **Printable Technician Handover One-Sheet PDF (Generated Automatically Locally):** Both the Windows 11 (`create-autoinstall-usb.bat` / `.ps1`) and Ubuntu (`create-autoinstall-usb.sh`) creators automatically save a single-page US Letter PDF (`OSCAR-Install-OneSheet-<hostname>-<timestamp>.pdf`) strictly to the staging workstation (`0600` on Linux, restricted current-user NTFS ACL on Windows — **never** written to the USB drive) listing the hostname, access URLs, Linux admin username/password, sudo policy, LUKS2 passphrase, SSH policy & keys, initial OSCAR web `admin` password, staged backup key & static IP summary (`site-network.env`), verified offline bundle SHA-256 checksum, staged seed files, post-autoinstall checklist, and a field sign-off block. Print it for the site security binder and securely delete the digital copy after handover (override path with `--one-sheet-pdf` / `-OneSheetPdfPath` or skip with `--no-one-sheet-pdf` / `-NoOneSheetPdf`).
 2. **Boot the Target Server Offline:** Insert the USB drive, choose it from the UEFI One-Time Boot Menu (`F9`/`F11`/`F12`), and wait ~4 minutes while Ubuntu 24.04 + `/srv/oscar/` install with zero prompts. Remove the installer USB when prompted and press `Enter`.
@@ -138,12 +138,12 @@ sudo chown "$USER:$USER" /srv/oscar
 cd /srv/oscar
 ```
 
-Copy `oscar-3.12.1-ubuntu-x86_64-offline-full.zip` (or `oscar-3.12.1.zip` if downloading over hotel Wi-Fi) into `/srv/oscar` and extract it:
+Copy `oscar-3.12.2-ubuntu-x86_64-offline-full.zip` (or `oscar-3.12.2.zip` if downloading over hotel Wi-Fi) into `/srv/oscar` and extract it:
 
 ```bash
-unzip oscar-3.12.1-ubuntu-x86_64-offline-full.zip
-cd oscar-3.12.1-ubuntu-x86_64-offline-full
-# (Or if using the connected zip: unzip oscar-3.12.1.zip && cd oscar-3.12.1)
+unzip oscar-3.12.2-ubuntu-x86_64-offline-full.zip
+cd oscar-3.12.2-ubuntu-x86_64-offline-full
+# (Or if using the connected zip: unzip oscar-3.12.2.zip && cd oscar-3.12.2)
 ```
 
 ### Step A2 — Run `prepare-host` (Installs Docker, Expands Disk, Disables Sleep & 2 AM Reboots)
@@ -153,9 +153,10 @@ sudo bash oscar.sh prepare-host --expand-lvm --configure-ufw
 ```
 
 What this single command configures automatically:
-- Installs official **Docker Engine + Docker Compose v2** (`docker-ce`, using bundled `.deb`s automatically if you extracted `offline-full`, or official APT over hotel internet if you extracted `oscar-3.12.1.zip`).
+- Installs official **Docker Engine + Docker Compose v2** (`docker-ce`, using bundled `.deb`s automatically if you extracted `offline-full`, or official APT over hotel internet if you extracted `oscar-3.12.2.zip`).
 - Expands Ubuntu's `100 GiB` LVM root volume (`--expand-lvm`) so 100% of your NVMe SSD is available.
 - Configures `/etc/docker/daemon.json` log rotation (`50m` × `5`), masks `sleep`/`suspend`/`hibernate`/lid-close, disables `unattended-upgrades` automatic reboots, tunes RTSP/PostgreSQL kernel socket buffers (`/etc/sysctl.d/90-oscar.conf`), bounds boot network wait to `10s` so offline sites never stall at boot, configures `chrony` offline clock stability, and opens `22/tcp`, `80/tcp`, and `443/tcp` in `ufw`.
+- Companion `sudo bash oscar.sh host-check` verifies LVM capacity, Docker health, `gateway-tls-cert` expiration (`<= 30 d` WARN, `<= 7 d` / expired FAIL), `postgres-xid-headroom` (`age(datfrozenxid)`), and network address stability, while `compose.yaml` pairs `shm_size: 256m` on `oscar-postgres-1` with G1GC concurrent periodic idle-heap uncommit (`-XX:G1PeriodicGCInterval=300000`) for sustained multi-year headroom.
 
 ### Step A3 — Physically Identify & Label the Server's Ethernet Ports (`identify-nics`)
 
@@ -207,7 +208,7 @@ When you arrive at the site:
 2. Log in at the server keyboard/monitor (or via hotel/laptop link) and activate your staged static IP plan with **one command**:
 
 ```bash
-cd /srv/oscar/oscar-3.12.1-ubuntu-x86_64-offline-full   # (or /srv/oscar/oscar-3.12.1)
+cd /srv/oscar/oscar-3.12.2-ubuntu-x86_64-offline-full   # (or /srv/oscar/oscar-3.12.2)
 sudo bash oscar.sh apply-site-network
 ```
 
@@ -232,7 +233,7 @@ Follow **[Option 3A](#option-3a--interactive-bare-metal-install-recommended-firs
 
 ### 5.2 Copy the OSCAR Offline Bundle Off Your USB Stick
 
-Plug in the USB stick containing **`oscar-3.12.1-ubuntu-x86_64-offline-full.zip`** and run these 4 commands to mount the USB drive and extract the bundle:
+Plug in the USB stick containing **`oscar-3.12.2-ubuntu-x86_64-offline-full.zip`** and run these 4 commands to mount the USB drive and extract the bundle:
 
 ```bash
 # 1. List attached disks/USB partitions (look for TYPE="part" on a removable USB drive, e.g. sdb1 or sdc1):
@@ -244,11 +245,11 @@ sudo mount -o ro /dev/sdb1 /mnt/usb
 
 # 3. Copy and extract the offline bundle onto the server's internal NVMe SSD:
 sudo chown "$USER:$USER" /srv/oscar
-unzip /mnt/usb/oscar-3.12.1-ubuntu-x86_64-offline-full.zip -d /srv/oscar
+unzip /mnt/usb/oscar-3.12.2-ubuntu-x86_64-offline-full.zip -d /srv/oscar
 sudo umount /mnt/usb
 
 # 4. Enter the extracted release directory and verify every SHA-256 checksum offline:
-cd /srv/oscar/oscar-3.12.1-ubuntu-x86_64-offline-full
+cd /srv/oscar/oscar-3.12.2-ubuntu-x86_64-offline-full
 sudo bash verify-bundle.sh
 ```
 
@@ -269,7 +270,7 @@ sudo bash oscar.sh apply-site-network
 sudo bash oscar.sh init
 ```
 
-OSCAR loads `oscar:3.12.1`, `oscar-postgis:3.12.1`, and `nginx/nginx-unprivileged:1.30.7-alpine` directly from `offline-images.tar`, generates your TLS certificate covering the static NIC IPs, initializes PostgreSQL with `data_checksums=on`, and starts all services cleanly offline.
+OSCAR loads `oscar:3.12.2`, `oscar-postgis:3.12.2`, and `nginx/nginx-unprivileged:1.30.7-alpine` directly from `offline-images.tar`, generates your TLS certificate covering the static NIC IPs, initializes PostgreSQL with `data_checksums=on`, and starts all services cleanly offline.
 
 ---
 

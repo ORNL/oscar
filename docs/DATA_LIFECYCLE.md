@@ -1,4 +1,4 @@
-# OSCAR 3.12.1 data lifecycle and retention policy
+# OSCAR 3.12.2 data lifecycle and retention policy
 
 This document defines when OSCAR data changes form, when it may be removed, and which safety gates
 apply. It complements the [storage architecture](STORAGE_ARCHITECTURE.md) and the operational
@@ -190,7 +190,7 @@ its rows in ID order, loads the exact hot IDs in bounded batches, and compares c
 digests. The receipt records expected/actual rows and success or failure. A failed receipt leaves
 all hot data in place.
 
-The shipped 3.12.1 profile sets `deleteHotAfterArchive=true`. In `PARQUET_PRIMARY`, this means
+The shipped 3.12.2 profile sets `deleteHotAfterArchive=true`. In `PARQUET_PRIMARY`, this means
 relation-level retirement rather than row-wise deletion or a rollback-grace overlap. Before a child
 can retire, every row must have an `ACTIVE` or `SEALED` exact owner with a successful
 `HOT_COLD_PARITY` receipt, and the worker re-hashes each authoritative Parquet object. Under the
@@ -471,17 +471,32 @@ playback path. Invalid or missing retained assets are not served as successful i
 
 ### Storage pressure
 
-The pressure worker checks the filesystem every minute. At 85 percent used, it consumes eligible
-complete media sets from a durable publication-order queue until usage reaches 80 percent. A set
-must be at least 10 minutes old, outside rollback grace, and not held. Each cycle inspects at most
-`maximumMediaSetsPerCycle` entries (200 by default), and the durable head resumes after restart.
-No pressure cycle enumerates or sorts the retained-media tree. A selected set is marked `DELETING`,
-assets and any remaining source are removed, and the manifest commit marker is removed last so an
-interrupted pass can retry.
+OSCAR enforces a coordinated three-tier storage-pressure cascade across both retained media and
+write-once cold telemetry so long-running deployments never exhaust local NVMe space while
+preserving 100% of evidentiary events:
 
-Pressure cleanup does **not** scan arbitrary files. It does not delete uncatalogued legacy videos,
-daily CSVs/journals, adjudication data, reports, or Parquet generations. If no eligible retained
-media can reach the target, OSCAR logs an error and preserves protected data.
+1. **Early Secondary-Frame Pruning (`75%` usage, `earlySecondaryPruneUsagePercent = 75`):** Before
+   full media eviction begins at `85%`, the pressure worker prunes non-primary frames
+   (`frame-1,2,4,5`) from eligible retained-media sets while preserving every event's primary
+   center frame (`frame-3.jpg`) and `frame-3` OCR evidence crops (`0` disables early pruning).
+2. **Media & Cold-Telemetry Pressure Cleanup (`85% → 80%`):** At `85%` used, the media pressure
+   worker checks every minute and consumes eligible complete media sets (`>= 10 min` old, outside
+   rollback grace, unheld, up to `maximumMediaSetsPerCycle = 200` per cycle) from its durable
+   publication-order queue until usage reaches `80%`, marking each set `DELETING` and removing the
+   manifest commit marker last so interrupted passes retry cleanly without enumerating or sorting
+   the retained-media tree. In parallel, the tiered Parquet cold archive (`telemetryPressureEnabled
+   = true`) reclaims oldest write-once `RAW_TELEMETRY` / `DAILY_TELEMETRY` generations older than
+   `365 days` (`telemetryPressureMinAgeDays = 365`, up to `24` generations/cycle, subtracting
+   pending `DELETING` bytes) through reader-pin-safe `DELETING -> drainDeletingGenerations()`.
+3. **Critical Pressure Floor (`>= 92%` usage):** If usage reaches `92%`, cold-telemetry pressure
+   relaxes its age floor to `30 days` (`telemetryPressureCriticalMinAgeDays = 30`) while continuing
+   to bound per-cycle work.
+
+Pressure cleanup does **not** scan arbitrary files and **never** deletes uncatalogued legacy
+videos, daily CSVs/journals, adjudications, reports, `RAW_EVENTS`, `DAILY_EVENTS`,
+`MONTHLY_EVENTS`, `RAW_GATED`, `oscar_obs_latest`, or generations protected by an active
+`oscar_retention_hold`. If no eligible media or telemetry generations remain to reach the target,
+OSCAR logs an error and preserves all protected data.
 
 ## Holds, overlays, tombstones, and audit records
 

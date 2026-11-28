@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 env:
-  RELEASE_VERSION: '3.12.1'
+  RELEASE_VERSION: '3.12.2'
   RELEASE_CODENAME: ''
   JAVA_VERSION: '21'
   NODE_VERSION: '22'

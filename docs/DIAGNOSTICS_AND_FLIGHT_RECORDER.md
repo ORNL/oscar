@@ -1,6 +1,6 @@
 # OSCAR Diagnostic Flight Recorder & Redacted Support Bundle Guide
 
-OSCAR 3.12.1 includes a built-in, zero-configuration **Diagnostic Flight Recorder** and **Redacted Support Bundle (`.zip`)** system spanning both the browser console (`SupportDiagnostics.ts`) and the OpenSensorHub/Docker backend (`SupportBundleHandler.java` + `oscar.sh` / `oscar.bat support-bundle`). Operators and site administrators can export a complete, secret-scrubbed troubleshooting archive in one click from the web UI—or from the host command line even when containers are stopped, degraded, or unable to boot.
+OSCAR 3.12.2 includes a built-in, zero-configuration **Diagnostic Flight Recorder** and **Redacted Support Bundle (`.zip`)** system spanning both the browser console (`SupportDiagnostics.ts`) and the OpenSensorHub/Docker backend (`SupportBundleHandler.java` + `oscar.sh` / `oscar.bat support-bundle`). Operators and site administrators can export a complete, secret-scrubbed troubleshooting archive in one click from the web UI—or from the host command line even when containers are stopped, degraded, or unable to boot.
 
 For a captioned 1080p walkthrough, watch [Module 18 (`18-operator-help-and-support-bundle.mp4`)](https://github.com/ORNL/oscar-video-guides/blob/main/videos/18-operator-help-and-support-bundle.mp4) in [VIDEO_GUIDES.md](VIDEO_GUIDES.md) or directly inside the OSCAR Viewer via **Help (`?`) -> Manual & Video Guides**.
 
@@ -20,11 +20,12 @@ No separate installation or daemon is required. Both tiers of the Flight Recorde
      - Privacy-safe browser environment capabilities (low-entropy User-Agent Client Hints, locale, timezone, viewport dimensions, online state, and `ServiceWorker` / `MediaSource` / `WebRTC` feature availability) plus node connectivity and active Operational View state (`SupportClientStateSummary`).
 2. **Server Rolling Logs & Diagnostic Handler (`SupportBundleHandler.java`):**
    - Writes bounded rolling application logs inside the `oscar_oscar_state` volume at `/var/lib/oscar/logs/oscar.log` (`10 MB` per file, `5` rotated archives, **`50 MB` total disk ceiling**).
-   - Exposes an authenticated, read-only `GET /sensorhub/buckets/reports/support-bundle?tailLines=<100..10000>` endpoint (`DEFAULT_TAIL_LINES = 2500`, `MAX_ZIP_BYTES = 15 MiB`, `POST`/`PUT`/`DELETE` rejected) requiring `reports` read permission.
+   - Exposes an authenticated, read-only `GET /sensorhub/buckets/reports/support-bundle?tailLines=<100..10000>` endpoint (`DEFAULT_TAIL_LINES = 2500`, `MAX_ZIP_BYTES = 15 MiB`, `POST`/`PUT`/`DELETE` rejected) requiring `reports` read permission, alongside the read-only gateway TLS expiry diagnostic endpoint `GET /sensorhub/oscar/diagnostics/tls-status` used by the conditional `/health` expiration banner.
    - Captures recursive module states (including nested `LaneSystem`, RPM TCP driver, FFmpeg/RTSP camera, `OcrResourceGovernor`, and `VideoRetention` error messages/stack traces), JVM heap/GC/thread snapshots, filesystem headroom, `PARQUET_PRIMARY` storage summary, and a sanitized copy of `config.json`.
-3. **Offline / Crash-Loop Host CLI Collector (`oscar.sh` / `oscar.bat support-bundle`):**
+3. **Offline / Crash-Loop Host CLI Collector (`oscar.sh` / `oscar.bat support-bundle`) & Host Readiness Audits (`host-check`):**
    - Operates directly on the Ubuntu Server 24.04 or Windows 11 + WSL 2 host without requiring the OSCAR web server or PostgreSQL container to be healthy.
    - Collects host OS/CPU/RAM/disk/WSL 2 state, public X.509 certificate metadata (`SAN` list, validity window, SHA-256 fingerprint), `docker compose ps`, Docker volume metadata, sanitized `docker inspect` output, container logs, and read-only `oscar_oscar_state` logs into `oscar-host-support-<UTC>.zip` (`<= 25 MiB`).
+   - Companion `oscar.sh host-check` / `oscar.bat host-check` runs proactive 10-year operational checks including `gateway-tls-cert` (`<= 30 d` WARN, `<= 7 d` / expired FAIL), `postgres-xid-headroom` (`age(datfrozenxid)` wraparound monitoring), and Windows `wsl2-sparse-vhd` (`[experimental] sparseVhd=true` virtual-disk block reclamation).
 
 ---
 
@@ -75,7 +76,7 @@ Unzipping an exported bundle (`unzip -l oscar-support-<UTC>.zip`) reveals determ
 
 | Entry Path | Source | Contents |
 | --- | --- | --- |
-| `summary.json` | Combined / CLI | Schema version (`1`), `bundleType`, `bundleSource` (`combined`, `client-only`, or `host-cli`), `oscarVersion` (`3.12.1`), UTC timestamp, event/error counts, and module health totals |
+| `summary.json` | Combined / CLI | Schema version (`1`), `bundleType`, `bundleSource` (`combined`, `client-only`, or `host-cli`), `oscarVersion` (`3.12.2`), UTC timestamp, event/error counts, and module health totals |
 | `redaction-report.json` | Combined / CLI | Audit trail of `automatic-edge-redaction` counts (`clientRedactions`, `backendRedactions`, `totalRedactions`) and the explicit `neverCollected` exclusion list |
 | `client/client-diagnostics.json` | Viewer UI | Sanitized current route, low-entropy browser environment, node list (without credentials), `eventCounts`, and the `events[]` flight-recorder ring buffer |
 | `backend/modules.json` | Server API | Every OpenSensorHub module and nested lane/RPM/camera state (`STARTED`, `INITIALIZED`, fault/error strings, and bounded stack frames) |

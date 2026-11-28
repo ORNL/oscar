@@ -1,4 +1,4 @@
-# OSCAR 3.12.1 storage operations
+# OSCAR 3.12.2 storage operations
 
 This is the administrator runbook for OSCAR's PostgreSQL hot store, primary Parquet cold tier,
 direct daily journal, retained media, and optional single coordinated snapshot. Commands assume the extracted 3.12.0
@@ -56,8 +56,11 @@ New installations receive these defaults from `dist/config/standard/config.json`
 | Archive work bounds | 2 generations / 2 verifications / 8 partition retirements / 15 min | Independently bounds each lifecycle phase and stops starting new generations at the duration bound; in-progress publication completes safely |
 | Maximum generation | 2,000,000 rows / lower of 2 GiB operator cap or 1/2 DuckDB memory for `RAW_TELEMETRY` (`128 MiB` standard) and 1/8 DuckDB memory for `RAW_EVENTS` (`32 MiB` standard) | Closed 30-minute windows split directly at export into write-once `RAW_TELEMETRY` (17 high-rate streams, 11 columns, `1.0x` write amplification) and Bloom-indexed `RAW_EVENTS` (9 searchable event/summary streams, 20 columns) via file-backed DuckDB + native `DuckDBAppender`; deterministic `(phenomenontime,id)` prefixes become same-window revisions, and a single oversized row fails closed in the LOGGED child |
 | DuckDB memory / threads | 256 MiB / 2 per connection | Bounds native memory and CPU for every export, verification, parity, delete, cold query, metadata scan, and count |
-| DuckDB session admission | 2 process-wide / 30 s wait | Fairly bounds the aggregate native-memory/CPU/spill multiplier; excess work fails busy and can be retried instead of opening an unbounded connection |
+| DuckDB session admission | 2 process-wide / 30 s wait (`1` interactive permit reserved during export) | Fairly bounds the aggregate native-memory/CPU/spill multiplier and prevents background archive exports from starving interactive Viewer queries |
 | DuckDB spill | 4 GiB per operation in `/var/lib/oscar/duckdb-tmp` | Each connection gets a mode-0700 private child that is removed on close; scratch must be disjoint from the immutable archive and is excluded from backup |
+| PostgreSQL shared memory & `VACUUM` | `shm_size: 256m` + `VACUUM (ANALYZE, PARALLEL 0)` | Prevents PostgreSQL 16 parallel maintenance from exhausting Docker's default `64 MiB` `/dev/shm`, paired with tightened catalog/overlay autovacuum and bloat-gated online `oscar_obs_overlay` maintenance |
+| JVM G1GC idle-heap uncommit | `-XX:G1PeriodicGCInterval=300000 -XX:+G1PeriodicGCInvokesConcurrent -XX:MinHeapFreeRatio=15 -XX:MaxHeapFreeRatio=35` | Periodically returns unused heap pages to the host OS during quiet periods without stop-the-world pauses |
+| Config backup rotation | `25` timestamped `config.json.bak.<yyyyMMddHHmmss>` files (`-Dosh.config.maxBackups`) | Bounds automatic backup accumulation in `/var/lib/oscar` on every `config.json` commit while preserving manually named backup files |
 | Parquet compression | ZSTD level 6 | Cold-storage size/CPU tradeoff |
 | Inactive `HOT_RETENTION` compatibility | 2 retention days / 60 min interval / 3 rollback days | Retained for configuration compatibility; these values do not impose a 72-hour raw PostgreSQL overlap in `PARQUET_PRIMARY` |
 | `deleteHotAfterArchive` | `true` | After object re-hash and exact parity, transactionally detaches and drops a complete primary-stage child; it does not delete mutable event/workflow rows |
@@ -67,8 +70,10 @@ New installations receive these defaults from `dist/config/standard/config.json`
 | Historical reconciliation | every 24 h / 24 h per pass | Durable repair path for older eligible observations |
 | Retained evidence | exactly 5 JPEGs, quality 85 | First, quarter, middle, three-quarter, and last decoded frames |
 | Source-video rollback grace | 24 h | MP4 preserved after a successful five-frame publication |
-| Storage pressure | trigger 85%, target 80% | Removes only eligible cataloged media sets |
+| Media storage pressure | early secondary prune `75%`, trigger `85%`, target `80%` | Prunes secondary frames (`frame-1,2,4,5`) at `75%` while preserving `frame-3.jpg`, then removes eligible complete media sets at `85% → 80%` |
+| Cold-telemetry storage pressure | `telemetryPressureEnabled = true`, `85% → 80%` (`365 d` floor), `>= 92%` (`30 d` floor), max `24`/cycle | Safely reclaims oldest write-once `RAW_TELEMETRY`/`DAILY_TELEMETRY` generations via reader-pin-safe `DELETING`, preserving `100%` of events, adjudications, legal holds, and `oscar_obs_latest` |
 | Pressure minimum age | 10 min | Prevents immediate removal of newly published sets |
+| Host readiness gates (`host-check`) | `gateway-tls-cert`, `postgres-xid-headroom`, Windows `wsl2-sparse-vhd` | Audits TLS expiry (`<= 30 d` WARN, `<= 7 d` / expired FAIL), PostgreSQL transaction-ID wraparound headroom, and Windows `.wslconfig` `[experimental] sparseVhd=true` block reclamation |
 | Backup mode | `disabled` | Backup creation, verification, restore, and retired prune command require explicit `single` opt-in |
 | Local recovery snapshots | 1 authenticated current snapshot | New schema-v2 snapshot commits through `CURRENT`; a prior snapshot is cleaned only after commit and independent full acceptance verification |
 
@@ -883,7 +888,7 @@ Track at least:
 | Retained-media lane parent cannot be resolved | No new manifest; source and retry state remain | Verify the RPM/camera systems are members of the intended OSH lane and that the deployed PostgreSQL datastore supports `getParent`; do not relabel an existing manifest by hand |
 | Media publication fails | Partial set stays invisible; source preserved; retry ledger records failure | Check FFmpeg, source integrity, filesystem/rename/space; allow idempotent retry |
 | Pressure cleanup cannot reach target | Protected data stays; error is logged | Add capacity or perform approved cold/media retention; never remove journal/adjudication files ad hoc |
-| PostgreSQL reports archiver activity or an external WAL mount | Deployment drifted from the 3.12.1 profile | Stop rollout, preserve legacy data, restore `archive_mode=off`/no-WAL-bind configuration through the supported release, and requalify backup/restore |
+| PostgreSQL reports archiver activity or an external WAL mount | Deployment drifted from the 3.12.2 profile | Stop rollout, preserve legacy data, restore `archive_mode=off`/no-WAL-bind configuration through the supported release, and requalify backup/restore |
 | Backup fails | `.partial` or finalized-but-unverified directory remains; services are resumed where possible | Check `status`, preserve diagnostics, correct the cause, then re-verify or run a new backup |
 | Restore fails | Deployment may remain stopped/partial | Keep producers disconnected; preserve `pre-restore-*`; repair cause and repeat from the same verified backup or escalate |
 | PostgreSQL shutdown errors appear during OSCAR stop/restart | Qualification fails; OSCAR may not complete its database-backed module drain | Use the release `oscar` launcher, which stops gateway, OSCAR, and PostgreSQL sequentially; confirm the media-retention cancellation log completes, preserve logs, and do not substitute an unscoped multi-service Compose stop/restart |
