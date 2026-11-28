@@ -722,7 +722,7 @@ jobs:
                 `oscar:${version}`,
                 `oscar-postgis:${version}`,
                 `oscar-rpm-proxy:${version}`,
-                "nginx/nginx-unprivileged:1.30.7-alpine",
+                "nginx/nginx-unprivileged:1.30.8-alpine",
               ].sort();
               if (JSON.stringify(actual) !== JSON.stringify(expected)) {
                 throw new Error(`expected image tags ${expected.join(", ")}; received ${actual.join(", ")}`);

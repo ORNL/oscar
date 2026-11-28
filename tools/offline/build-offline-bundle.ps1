@@ -121,7 +121,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $expandedRelease 'compose.yaml') -Pa
 }
 
 $imageCacheDirectory = Join-Path $OutputRoot '.cache/images'
-$archivePath = Join-Path $imageCacheDirectory "oscar-$version-nginx-1.30.7-windows-x86_64-offline-images.tar"
+$archivePath = Join-Path $imageCacheDirectory "oscar-$version-nginx-1.30.8-windows-x86_64-offline-images.tar"
 New-Item -ItemType Directory -Force -Path $imageCacheDirectory | Out-Null
 if (-not $SkipImageExport) {
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw 'Docker is required to build the offline image archive.' }
@@ -134,9 +134,9 @@ if (-not $SkipImageExport) {
         Invoke-Checked 'docker' @('compose', '-f', (Join-Path $expandedRelease 'compose.yaml'), 'build', 'oscar', 'postgres') $expandedRelease
         Invoke-Checked 'docker' @('build', '--platform', 'linux/amd64', '--build-arg', "OSCAR_VERSION=$version", '--tag', "oscar-rpm-proxy:$version", '--file', (Join-Path $expandedRelease 'docker/rpm-proxy/Dockerfile'), $expandedRelease) $expandedRelease
         Write-Host 'Fetching the pinned gateway image...' -ForegroundColor Cyan
-        Invoke-Checked 'docker' @('pull', '--platform', 'linux/amd64', 'nginx/nginx-unprivileged:1.30.7-alpine')
+        Invoke-Checked 'docker' @('pull', '--platform', 'linux/amd64', 'nginx/nginx-unprivileged:1.30.8-alpine')
         Write-Host 'Exporting container images for registry-free installation...' -ForegroundColor Cyan
-        Invoke-Checked 'docker' @('save', '--output', $archivePath, "oscar:$version", "oscar-postgis:$version", "oscar-rpm-proxy:$version", 'nginx/nginx-unprivileged:1.30.7-alpine')
+        Invoke-Checked 'docker' @('save', '--output', $archivePath, "oscar:$version", "oscar-postgis:$version", "oscar-rpm-proxy:$version", 'nginx/nginx-unprivileged:1.30.8-alpine')
     } finally {
         $env:OSCAR_VERSION = $previousVersion
         $env:OSCAR_POSTGIS_PLATFORM = $previousPostgisPlatform
@@ -224,7 +224,7 @@ Platform: Windows 11 x86-64
 Profile: $profile
 Contents: $bundleDescription
 Generated UTC: $([DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))
-Images: oscar:$version, oscar-postgis:$version, oscar-rpm-proxy:$version, nginx/nginx-unprivileged:1.30.7-alpine
+Images: oscar:$version, oscar-postgis:$version, oscar-rpm-proxy:$version, nginx/nginx-unprivileged:1.30.8-alpine
 
 Copy this entire directory to a local NTFS folder on the target Windows host.
 Run .\verify-bundle.ps1, then run .\oscar.bat init. The images-only profile

@@ -6,7 +6,7 @@ Start with [QUICKSTART.md](QUICKSTART.md) for installation, and see [VIDEO_GUIDE
 
 ## November 2026 NGINX security update
 
-The gateway and optional remote-access tunnel now use `nginx/nginx-unprivileged:1.30.7-alpine`. NGINX identifies this version as fixed for the November 18 vulnerabilities, including HTTP/2 CVE-2026-123007 and CVE-2026-123633 and TLS 1.3 CVE-2026-118899. See the [upstream security advisories](https://nginx.org/en/security_advisories.html).
+The gateway and optional remote-access tunnel now use `nginx/nginx-unprivileged:1.30.8-alpine`. NGINX identifies this version as fixed for the November 18 vulnerabilities, including HTTP/2 CVE-2026-123007 and CVE-2026-123633 and TLS 1.3 CVE-2026-118899. See the [upstream security advisories](https://nginx.org/en/security_advisories.html).
 
 Build and distribute this change as a new release; do not replace an already published release or image tag. Regenerate offline bundles so their `offline-images.tar` contains the patched gateway. The offline builders use new cache filenames to avoid reusing archives from before this update.
 

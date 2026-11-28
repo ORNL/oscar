@@ -69,8 +69,8 @@ expanded_release="${repo_root}/build/install/oscar"
 
 mkdir -p "${output_root}/.cache/images" "${output_root}/.cache/ubuntu-24.04-x86_64"
 # Reuse the Windows offline builder's Linux amd64 image tar if it was already exported in the same CI job
-cached_win_tar="${output_root}/.cache/images/oscar-${version}-nginx-1.30.7-windows-x86_64-offline-images.tar"
-cached_ubuntu_tar="${output_root}/.cache/images/oscar-${version}-nginx-1.30.7-ubuntu-x86_64-offline-images.tar"
+cached_win_tar="${output_root}/.cache/images/oscar-${version}-nginx-1.30.8-windows-x86_64-offline-images.tar"
+cached_ubuntu_tar="${output_root}/.cache/images/oscar-${version}-nginx-1.30.8-ubuntu-x86_64-offline-images.tar"
 image_tar="$cached_ubuntu_tar"
 if [[ -s $cached_win_tar ]]; then
     image_tar="$cached_win_tar"
@@ -89,12 +89,12 @@ elif ! $skip_image_export || [[ ! -s $cached_ubuntu_tar ]]; then
             --tag "oscar-rpm-proxy:${version}" \
             --file "${expanded_release}/docker/rpm-proxy/Dockerfile" \
             "$expanded_release"
-        docker pull --platform linux/amd64 nginx/nginx-unprivileged:1.30.7-alpine
+        docker pull --platform linux/amd64 nginx/nginx-unprivileged:1.30.8-alpine
         docker save --output "$cached_ubuntu_tar" \
             "oscar:${version}" \
             "oscar-postgis:${version}" \
             "oscar-rpm-proxy:${version}" \
-            "nginx/nginx-unprivileged:1.30.7-alpine"
+            "nginx/nginx-unprivileged:1.30.8-alpine"
     )
     image_tar="$cached_ubuntu_tar"
 fi
@@ -186,7 +186,7 @@ Platform: Ubuntu Server / Desktop 24.04 LTS x86-64
 Profile: Full
 Contents: Full air-gapped installation media with official Ubuntu 24.04 Docker Engine .deb packages, host/network tools, and container images.
 Generated UTC: $(date -u +%Y-%m-%dT%H:%M:%SZ)
-Images: oscar:${version}, oscar-postgis:${version}, oscar-rpm-proxy:${version}, nginx/nginx-unprivileged:1.30.7-alpine
+Images: oscar:${version}, oscar-postgis:${version}, oscar-rpm-proxy:${version}, nginx/nginx-unprivileged:1.30.8-alpine
 
 Extract this archive on the target Ubuntu 24.04 x86-64 machine, then run:
   sudo bash verify-bundle.sh
